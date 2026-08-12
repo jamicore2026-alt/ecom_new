@@ -1,0 +1,35 @@
+{
+  "name": "merchant-dashboard-api",
+  "version": "1.0.0",
+  "description": "Multi-tenant merchant dashboard REST API — ElysiaJS + Drizzle ORM + PostgreSQL",
+  "type": "module",
+  "module": "src/index.ts",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "bun src/database/seed.ts",
+    "db:studio": "drizzle-kit studio",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.2.0",
+    "@elysiajs/jwt": "^1.2.0",
+    "@elysiajs/swagger": "^1.2.0",
+    "@paralleldrive/cuid2": "^2.2.2",
+    "bcryptjs": "^2.4.3",
+    "drizzle-orm": "^0.45.2",
+    "drizzle-typebox": "^0.1.1",
+    "elysia": "^1.2.0",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@elysiajs/eden": "^1.2.0",
+    "@types/bcryptjs": "2.4.6",
+    "@types/bun": "^1.1.0",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^5.7.0"
+  }
+}
