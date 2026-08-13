@@ -12,6 +12,24 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ecom_merchant
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/ecom_merchant
+      JWT_ACCESS_SECRET: ci-access-secret
+      JWT_REFRESH_SECRET: ci-refresh-secret
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +51,7 @@ jobs:
         run: bun run check
 
       - name: Test
-        run: bun run test
+        run: bun run db:migrate && bun run db:seed && bun run test
 
       - name: Build
         run: bun run build
