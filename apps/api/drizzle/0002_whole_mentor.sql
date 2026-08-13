@@ -1,0 +1,1 @@
+ALTER TABLE "token_blacklist" ALTER COLUMN "jti" SET DATA TYPE varchar(64);
