@@ -1,6 +1,6 @@
 import { app } from './app'
 
-const port = Number(process.env.PORT ?? 3000)
+const port = Number(process.env.PORT ?? 3005)
 
 app.listen(port, () => {
   console.log(`🦊 Merchant Dashboard API running at http://localhost:${port}`)

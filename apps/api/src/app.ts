@@ -11,6 +11,7 @@ import { customersModule } from './modules/customers'
 import { discountsModule } from './modules/discounts'
 import { analyticsModule } from './modules/analytics'
 import { settingsModule } from './modules/settings'
+import { storefrontModule } from './modules/storefront'
 
 export const app = new Elysia()
   .onError(errorHandler)
@@ -41,7 +42,8 @@ export const app = new Elysia()
           { name: 'Customers', description: 'Customer directory and order history' },
           { name: 'Discounts', description: 'Coupons and promotions' },
           { name: 'Analytics', description: 'Sales, products, customers and conversion analytics' },
-          { name: 'Settings', description: 'Store, payments, shipping, taxes and staff' }
+          { name: 'Settings', description: 'Store, payments, shipping, taxes and staff' },
+          { name: 'Storefront', description: 'Public storefront endpoints (no auth required)' }
         ]
       }
     })
@@ -55,5 +57,6 @@ export const app = new Elysia()
   .use(discountsModule)
   .use(analyticsModule)
   .use(settingsModule)
+  .use(storefrontModule)
 
 export type App = typeof app

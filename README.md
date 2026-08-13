@@ -1,8 +1,12 @@
 # Merchant Dashboard API
 
-A multi-tenant **merchant dashboard REST API** for an e-commerce platform, built with **ElysiaJS**, **Drizzle ORM**, and **PostgreSQL**. Each merchant store is fully isolated by `merchant_id` derived from the authenticated JWT — no cross-tenant data leakage.
+A multi-tenant **e-commerce monorepo** (Turborepo + Bun) containing:
 
-> **Deliverable:** Backend API only. All routes are JSON, validated by TypeBox (via `drizzle-typebox`), live-documented at Swagger `/docs`, and consumable by a future frontend through Eden Treaty types.
+- `apps/api` — merchant dashboard REST API (**ElysiaJS**, **Drizzle ORM**, **PostgreSQL**). Each merchant store is fully isolated by `merchant_id` derived from the authenticated JWT — no cross-tenant data leakage.
+- `apps/web` — SvelteKit merchant dashboard UI.
+- `apps/storefront` — SvelteKit public customer storefront, multi-store via `/:slug`, powered by the unauthenticated `/api/store/:slug/*` endpoints.
+
+> **Deliverable:** Backend API + storefront. All routes are JSON, validated by TypeBox (via `drizzle-typebox`), live-documented at Swagger `/docs`, and consumable by a future frontend through Eden Treaty types.
 
 ---
 
@@ -245,7 +249,7 @@ The `role('admin')` macro protects staff-management routes → `403` for insuffi
 
 ## 7. API Reference
 
-Base URL: `http://localhost:3000/api` — Swagger UI at `http://localhost:3000/docs`.
+Base URL: `http://localhost:3005/api` — Swagger UI at `http://localhost:3005/docs`.
 
 ### 7.1 Auth
 
@@ -411,7 +415,7 @@ bun run db:migrate              # apply migrations
 bun run db:seed                 # load demo data
 
 # 5. Run
-bun run dev                     # http://localhost:3000 — Swagger at /docs
+bun run dev                     # http://localhost:3005 — Swagger at /docs
 ```
 
 ### Scripts
@@ -428,7 +432,7 @@ bun run dev                     # http://localhost:3000 — Swagger at /docs
 ### `.env.example`
 
 ```
-PORT=3000
+PORT=3005
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/ecom_merchant
 JWT_ACCESS_SECRET=change-me-access
 JWT_REFRESH_SECRET=change-me-refresh
@@ -443,12 +447,34 @@ JWT_REFRESH_SECRET=change-me-refresh
 ```ts
 import { edenTreaty } from '@elysiajs/eden'
 
-const client = edenTreaty<App>('http://localhost:3000')
+const client = edenTreaty<App>('http://localhost:3005')
 
 await client.api.overview.get({
   headers: { authorization: `Bearer ${token}` }
 })
 ```
+
+## 11b. Storefront (apps/storefront)
+
+Public, unauthenticated endpoints under `/api/store/:slug/*`:
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/store/:slug/store` | Store identity (name, logo, announcement, currency, shipping, taxes) |
+| GET | `/api/store/:slug/categories` | Active category tree with product counts |
+| GET | `/api/store/:slug/products` | Active products; query: `page, limit, search, category, minPrice, maxPrice, sort` |
+| GET | `/api/store/:slug/products/:productSlug` | Product detail + variants + related products |
+| GET | `/api/store/:slug/search` | Product search (alias of products with `search`) |
+
+The storefront app runs on port `5479` and proxies `/api` to the API on `:3005` (the web dashboard runs on `5478`). Home `/` redirects to `/{PUBLIC_DEFAULT_STORE}` (default `acme-store`).
+
+```bash
+bun run dev:api          # http://localhost:3005
+bun run dev:web          # http://localhost:5478
+bun run dev:storefront   # http://localhost:5479 — opens /acme-store
+```
+
+Set `PUBLIC_DEFAULT_STORE` in `apps/storefront/.env` (or the repo `.env` copied to `apps/storefront/`) to change the default store.
 
 ---
 
