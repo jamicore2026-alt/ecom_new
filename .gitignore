@@ -1,10 +1,16 @@
 node_modules/
 .env
+.env.local
+.env.*.local
 drizzle/
 *.log
 .DS_Store
 dist/
 build/
 .agents/
-web/node_modules/
-web/.svelte-kit/
+.svelte-kit/
+.turbo/
+
+# Local database (if any)
+*.db
+*.sqlite
