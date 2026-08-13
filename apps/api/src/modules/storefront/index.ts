@@ -1,6 +1,13 @@
 import { Elysia } from 'elysia'
 import { StorefrontService } from './service'
-import { storefrontQuery, storeParams, productSlugParams } from './model'
+import {
+  storefrontQuery,
+  storeParams,
+  productSlugParams,
+  checkoutPreviewBody,
+  checkoutBody,
+  orderParams
+} from './model'
 
 export const storefrontModule = new Elysia({ prefix: '/api/store' })
   .get(
@@ -47,5 +54,34 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
       params: storeParams,
       query: storefrontQuery,
       detail: { tags: ['Storefront'], summary: 'Public product search' }
+    }
+  )
+
+  .post(
+    '/:slug/checkout/preview',
+    ({ params, body }) => StorefrontService.preview(params.slug, body),
+    {
+      params: storeParams,
+      body: checkoutPreviewBody,
+      detail: { tags: ['Storefront'], summary: 'Validate cart and compute totals' }
+    }
+  )
+
+  .post(
+    '/:slug/checkout',
+    ({ params, body }) => StorefrontService.checkout(params.slug, body),
+    {
+      params: storeParams,
+      body: checkoutBody,
+      detail: { tags: ['Storefront'], summary: 'Place an order' }
+    }
+  )
+
+  .get(
+    '/:slug/orders/:orderNumber',
+    ({ params }) => StorefrontService.order(params.slug, params.orderNumber),
+    {
+      params: orderParams,
+      detail: { tags: ['Storefront'], summary: 'Public order confirmation' }
     }
   )

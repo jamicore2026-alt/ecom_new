@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cart } from '$lib/cart.svelte'
 	import type { Category, StoreInfo } from '$lib/types'
 
 	interface Props {
@@ -8,6 +9,10 @@
 	}
 
 	let { slug, store, categories }: Props = $props()
+
+	$effect(() => {
+		cart.setSlug(slug)
+	})
 </script>
 
 {#if store.settings.announcement}
@@ -76,9 +81,16 @@
 			</form>
 			<a
 				href={`/${slug}/cart`}
-				class="flex h-9 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+				class="relative flex h-9 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
 			>
 				Cart
+				{#if cart.count > 0}
+					<span
+						class="flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white"
+					>
+						{cart.count}
+					</span>
+				{/if}
 			</a>
 		</div>
 	</div>

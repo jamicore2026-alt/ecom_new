@@ -99,3 +99,100 @@ export interface Page<T> {
 export interface CategoryTree {
 	items: Category[]
 }
+
+export interface CartItemInput {
+	productId: string
+	variantId: string
+	quantity: number
+}
+
+export interface CheckoutLine {
+	productId: string
+	variantId: string
+	name: string
+	sku: string | null
+	price: number
+	image: string | null
+	optionValues: Record<string, string>
+	quantity: number
+	total: number
+}
+
+export interface CheckoutCoupon {
+	code: string
+	type: string
+	value: number
+	discount: number
+	freeShipping: boolean
+}
+
+export interface CheckoutSummary {
+	items: CheckoutLine[]
+	subtotal: number
+	discountTotal: number
+	shippingTotal: number
+	taxTotal: number
+	total: number
+	coupon: CheckoutCoupon | null
+	shipping: { method: string; rate: number }
+	currency: string
+}
+
+export interface AddressInput {
+	name?: string
+	line1?: string
+	line2?: string
+	city?: string
+	state?: string
+	postalCode?: string
+	country?: string
+	phone?: string
+}
+
+export interface CheckoutInput {
+	items: CartItemInput[]
+	couponCode?: string
+	email: string
+	shippingAddress: AddressInput
+	billingAddress?: AddressInput
+	paymentMethod: string
+	notes?: string
+}
+
+export interface CheckoutPreviewInput {
+	items: CartItemInput[]
+	couponCode?: string
+}
+
+export interface CheckoutOrder {
+	id: string
+	orderNumber: string
+	status: string
+	paymentStatus: string
+	total: number
+	currency: string
+	email: string
+	createdAt: string
+}
+
+export interface OrderLineItem {
+	id: string
+	productId: string | null
+	variantId: string | null
+	name: string
+	sku: string | null
+	price: number
+	quantity: number
+	total: number
+}
+
+export interface OrderDetail extends CheckoutOrder {
+	subtotal: number
+	shippingTotal: number
+	discountTotal: number
+	taxTotal: number
+	shippingAddress: AddressInput | null
+	billingAddress: AddressInput | null
+	notes: string | null
+	items: OrderLineItem[]
+}

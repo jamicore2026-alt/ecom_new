@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ProductCard from '$lib/components/ProductCard.svelte'
+	import { cart } from '$lib/cart.svelte'
 	import { money, inStock, placeholderImage } from '$lib/format'
 	import { untrack } from 'svelte'
 	import type { ProductVariant } from '$lib/types'
@@ -40,7 +41,21 @@
 	}
 
 	const addToCart = () => {
-		notice = `Added ${quantity} × ${product.name} to cart (checkout coming soon).`
+		if (!available) return
+		const variant = selectedVariant ?? product.variants[0]
+		cart.add({
+			productId: product.id,
+			variantId: variant?.id ?? product.id,
+			name: product.name,
+			sku: variant?.sku ?? product.sku,
+			price: selectedVariant?.price ?? product.price,
+			compareAtPrice: selectedVariant?.compareAtPrice ?? product.compareAtPrice,
+			image: variant?.image ?? product.image,
+			optionValues: variant?.optionValues ?? {},
+			quantity
+		})
+		notice = `Added ${quantity} × ${product.name} to cart`
+		quantity = 1
 		setTimeout(() => (notice = ''), 3500)
 	}
 

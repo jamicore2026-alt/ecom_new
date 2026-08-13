@@ -1,4 +1,15 @@
-import type { CategoryTree, Page, ProductDetail, ProductSummary, StoreInfo } from './types'
+import type {
+	CategoryTree,
+	CheckoutInput,
+	CheckoutOrder,
+	CheckoutPreviewInput,
+	CheckoutSummary,
+	OrderDetail,
+	Page,
+	ProductDetail,
+	ProductSummary,
+	StoreInfo
+} from './types'
 
 const base = '/api/store'
 
@@ -65,5 +76,20 @@ export const storefrontApi = {
 		request<ProductDetail>(fetchFn, `/${slug}/products/${productSlug}`),
 
 	search: (fetchFn: typeof fetch, slug: string, params: ProductListParams = {}) =>
-		request<Page<ProductSummary>>(fetchFn, `/${slug}/search${qs(params)}`)
+		request<Page<ProductSummary>>(fetchFn, `/${slug}/search${qs(params)}`),
+
+	checkoutPreview: (fetchFn: typeof fetch, slug: string, body: CheckoutPreviewInput) =>
+		request<CheckoutSummary>(fetchFn, `/${slug}/checkout/preview`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		}),
+
+	checkout: (fetchFn: typeof fetch, slug: string, body: CheckoutInput) =>
+		request<CheckoutOrder>(fetchFn, `/${slug}/checkout`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		}),
+
+	order: (fetchFn: typeof fetch, slug: string, orderNumber: string) =>
+		request<OrderDetail>(fetchFn, `/${slug}/orders/${orderNumber}`)
 }

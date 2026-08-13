@@ -23,7 +23,9 @@ A multi-tenant **e-commerce monorepo** (Turborepo + Bun) containing:
 9. [Seed Data](#9-seed-data)
 10. [Setup & Scripts](#10-setup--scripts)
 11. [Frontend Integration](#11-frontend-integration-future)
+11b. [Storefront (apps/storefront)](#11b-storefront-appsstorefront)
 12. [Roadmap](#12-roadmap)
+13. [Roadmap (next)](#13-roadmap-next)
 
 ---
 
@@ -465,6 +467,9 @@ Public, unauthenticated endpoints under `/api/store/:slug/*`:
 | GET | `/api/store/:slug/products` | Active products; query: `page, limit, search, category, minPrice, maxPrice, sort` |
 | GET | `/api/store/:slug/products/:productSlug` | Product detail + variants + related products |
 | GET | `/api/store/:slug/search` | Product search (alias of products with `search`) |
+| POST | `/api/store/:slug/checkout/preview` | Validate cart (stock/variants/coupon) and compute subtotal, shipping, tax, total |
+| POST | `/api/store/:slug/checkout` | Place an order (creates order + items, decrements inventory, logs, upserts customer) |
+| GET | `/api/store/:slug/orders/:orderNumber` | Public order confirmation (items, address, totals, status) |
 
 The storefront app runs on port `5479` and proxies `/api` to the API on `:3005` (the web dashboard runs on `5478`). Home `/` redirects to `/{PUBLIC_DEFAULT_STORE}` (default `acme-store`).
 
@@ -489,4 +494,13 @@ Set `PUBLIC_DEFAULT_STORE` in `apps/storefront/.env` (or the repo `.env` copied 
 - [ ] Discounts (coupons + promotions)
 - [ ] Analytics (sales / products / customers / conversion)
 - [ ] Settings (store, payments, shipping, taxes, staff)
+- [x] Storefront storefront basics — public API + storefront browse pages (`/store`, `/categories`, `/products`, `/search`)
+- [x] Storefront cart + checkout — cart store, `/cart`, `/checkout`, order confirmation, coupons, shipping + tax
+
+## 13. Roadmap (next)
+
+- [ ] Storefront auth / customer accounts + order history
+- [ ] Storefront search & filter polish, product reviews
+- [ ] Real payment gateway integration (Stripe)
+- [ ] Wishlists / saved carts / email notifications
 - [ ] Swagger polish, Eden export, smoke tests
