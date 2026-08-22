@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit'
 import type {
 	CategoryTree,
 	CheckoutInput,
@@ -92,4 +93,12 @@ export const storefrontApi = {
 
 	order: (fetchFn: typeof fetch, slug: string, orderNumber: string) =>
 		request<OrderDetail>(fetchFn, `/${slug}/orders/${orderNumber}`)
+}
+
+export function loadError(err: unknown, notFoundMessage: string): never {
+	if (err instanceof ApiError) {
+		if (err.status === 404) error(404, notFoundMessage)
+		error(err.status >= 500 ? 500 : err.status, err.message || 'Request failed')
+	}
+	throw err
 }

@@ -2,28 +2,20 @@ import { browser } from '$app/environment'
 import type { ApiErrorBody, AuthResponse, MeResponse } from './types'
 
 const ACCESS_KEY = 'md.access'
-const REFRESH_KEY = 'md.refresh'
 
 export function getAccessToken(): string | null {
 	if (!browser) return null
 	return localStorage.getItem(ACCESS_KEY)
 }
 
-export function getRefreshToken(): string | null {
-	if (!browser) return null
-	return localStorage.getItem(REFRESH_KEY)
-}
-
-export function setTokens(access: string, refresh: string) {
+export function setAccessToken(token: string | null) {
 	if (!browser) return
-	localStorage.setItem(ACCESS_KEY, access)
-	localStorage.setItem(REFRESH_KEY, refresh)
+	if (token) localStorage.setItem(ACCESS_KEY, token)
+	else localStorage.removeItem(ACCESS_KEY)
 }
 
 export function clearTokens() {
-	if (!browser) return
-	localStorage.removeItem(ACCESS_KEY)
-	localStorage.removeItem(REFRESH_KEY)
+	setAccessToken(null)
 }
 
 export class ApiError extends Error {
@@ -40,24 +32,29 @@ export class ApiError extends Error {
 	}
 }
 
-let refreshPromise: Promise<AuthResponse> | null = null
+let refreshPromise: Promise<void> | null = null
 
-async function refreshTokens(): Promise<AuthResponse> {
-	const refreshToken = getRefreshToken()
-	if (!refreshToken) throw new ApiError({ code: 'NO_REFRESH', message: 'No refresh token' }, 401)
-
+async function performRefresh(): Promise<void> {
 	const res = await fetch('/api/auth/refresh', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ refreshToken })
+		body: JSON.stringify({})
 	})
-	const body = (await res.json()) as AuthResponse | ApiErrorBody
-	if (!res.ok || !('data' in body)) {
-		clearTokens()
-		throw new ApiError('data' in body ? (body as never) : (body as ApiErrorBody).error, res.status)
+	const body = (await res.json().catch(() => null)) as AuthResponse | ApiErrorBody | null
+	if (!res.ok || !body || !('data' in body)) {
+		throw new ApiError(
+			body && 'error' in body ? (body as ApiErrorBody).error : { code: 'SESSION_EXPIRED', message: 'Session expired' },
+			res.status
+		)
 	}
-	setTokens(body.data.accessToken, body.data.refreshToken)
-	return body
+	setAccessToken(body.data.accessToken)
+}
+
+function refreshTokens(): Promise<void> {
+	refreshPromise ??= performRefresh().finally(() => {
+		refreshPromise = null
+	})
+	return refreshPromise
 }
 
 async function request<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
@@ -133,7 +130,7 @@ export async function login(input: { email: string; password: string; merchantSl
 	if (!res.ok || !('data' in body)) {
 		throw new ApiError('data' in body ? (body as never) : (body as ApiErrorBody).error, res.status)
 	}
-	setTokens(body.data.accessToken, body.data.refreshToken)
+	setAccessToken(body.data.accessToken)
 	return body
 }
 
@@ -143,12 +140,13 @@ export async function fetchMe(): Promise<MeResponse> {
 
 export async function logout() {
 	try {
-		await request('/api/auth/logout', {
+		await fetch('/api/auth/logout', {
 			method: 'POST',
-			body: JSON.stringify({ refreshToken: getRefreshToken() })
+			headers: { 'content-type': 'application/json' },
+			body: '{}'
 		})
 	} catch {
-		// ignore
+		// ignore network failures on sign-out
 	}
 	clearTokens()
 }

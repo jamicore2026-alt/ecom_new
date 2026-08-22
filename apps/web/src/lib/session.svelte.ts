@@ -1,4 +1,4 @@
-import { fetchMe, login, logout, getAccessToken, setTokens, getRefreshToken } from './api'
+import { fetchMe, login, logout, getAccessToken, setAccessToken } from './api'
 import type { AuthMerchant, AuthUser, Permission, StoreSettings } from './types'
 
 let user: AuthUser | null = $state(null)
@@ -52,16 +52,21 @@ export const session = {
 		const res = await login(input)
 		user = res.data.user
 		merchant = res.data.merchant
-		settings = null
+		try {
+			const me = await fetchMe()
+			settings = me.data.settings
+		} catch {
+			settings = null
+		}
 		return res
 	},
 	async logout() {
 		await logout()
+		setAccessToken(null)
 		user = null
 		merchant = null
 		settings = null
 	}
 }
 
-// Re-expose for components that need direct token access (rare)
-export { setTokens, getRefreshToken }
+export { setAccessToken }

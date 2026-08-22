@@ -13,11 +13,18 @@ import { analyticsModule } from './modules/analytics'
 import { settingsModule } from './modules/settings'
 import { storefrontModule } from './modules/storefront'
 
+const corsOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean)
+
+const devOrigins = [/^http:\/\/(localhost|127\.0\.0\.1):(5478|5479)$/]
+
 export const app = new Elysia()
   .onError(errorHandler)
   .use(
     cors({
-      origin: /.*/,
+      origin: corsOrigins.length > 0 ? corsOrigins : devOrigins,
       credentials: true,
       allowedHeaders: ['Content-Type', 'Authorization'],
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']

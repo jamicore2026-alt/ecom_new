@@ -1,22 +1,43 @@
-import { Elysia } from 'elysia'
+import { Elysia, t } from 'elysia'
 import { accessJwt, refreshJwt, authPlugin, isRevoked, revokeToken } from '../../plugins/auth'
 import { AuthService } from './service'
 import { loginBody, refreshBody, logoutBody, tokenPair, meResponse } from './model'
-import { unauthorized, badRequest } from '../../shared/errors'
+import { unauthorized } from '../../shared/errors'
 import { createId } from '@paralleldrive/cuid2'
 
 export const ACCESS_TOKEN_TTL = 60 * 60 // 1 hour
 export const REFRESH_TOKEN_TTL = 60 * 60 * 24 * 7 // 7 days
 
+export const REFRESH_COOKIE = 'md.refresh'
+
+const cookieSchema = t.Cookie({ [REFRESH_COOKIE]: t.Optional(t.String()) })
+
+const refreshCookieOptions = {
+  httpOnly: true,
+  sameSite: 'lax' as const,
+  secure: process.env.NODE_ENV === 'production',
+  path: '/api/auth',
+  maxAge: REFRESH_TOKEN_TTL
+}
+
+const expireRefreshCookie = {
+  value: '',
+  expires: new Date(0),
+  maxAge: 0,
+  httpOnly: true,
+  sameSite: 'lax' as const,
+  secure: process.env.NODE_ENV === 'production',
+  path: '/api/auth'
+}
+
 const now = () => new Date()
-const tokenExpiry = (ttl: number) => new Date(Date.now() + ttl * 1000)
 
 export const authModule = new Elysia({ prefix: '/api/auth' })
   .use(accessJwt)
   .use(refreshJwt)
   .post(
     '/login',
-    async ({ body, accessJwt, refreshJwt }) => {
+    async ({ body, accessJwt, refreshJwt, cookie }) => {
       const result = await AuthService.login(body)
       const { user, merchant } = result.data
 
@@ -36,6 +57,8 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
         exp: `${REFRESH_TOKEN_TTL}s`
       })
 
+      cookie[REFRESH_COOKIE]?.set({ value: refreshToken, ...refreshCookieOptions })
+
       return {
         success: true,
         data: {
@@ -46,16 +69,19 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
         }
       }
     },
-    { body: loginBody, response: tokenPair }
+    { body: loginBody, response: tokenPair, cookie: cookieSchema }
   )
   .post(
     '/refresh',
-    async ({ body, accessJwt, refreshJwt }) => {
-      const payload = await refreshJwt.verify(body.refreshToken)
+    async ({ body, accessJwt, refreshJwt, cookie }) => {
+      const token = body.refreshToken ?? cookie[REFRESH_COOKIE]?.value ?? ''
+      if (!token) throw unauthorized('Invalid refresh token')
+
+      const payload = await refreshJwt.verify(token)
       if (!payload || payload.type !== 'refresh' || !payload.jti) {
         throw unauthorized('Invalid refresh token')
       }
-      if (await isRevoked(body.refreshToken)) {
+      if (await isRevoked(token)) {
         throw unauthorized('Refresh token has been revoked')
       }
 
@@ -79,7 +105,9 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
       })
 
       // Rotate: revoke the old refresh token so it can't be replayed
-      await revokeToken(body.refreshToken, new Date(Number(payload.exp) * 1000), user.id)
+      await revokeToken(token, new Date(Number(payload.exp) * 1000), user.id)
+
+      cookie[REFRESH_COOKIE]?.set({ value: newRefreshToken, ...refreshCookieOptions })
 
       return {
         success: true,
@@ -92,22 +120,22 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
         }
       }
     },
-    { body: refreshBody, response: tokenPair }
+    { body: refreshBody, response: tokenPair, cookie: cookieSchema }
   )
   .post(
     '/logout',
-    async ({ body, refreshJwt }) => {
-      const payload = body.refreshToken ? await refreshJwt.verify(body.refreshToken) : null
-      if (payload && payload.jti) {
-        await revokeToken(
-          body.refreshToken as string,
-          new Date(Number(payload.exp) * 1000),
-          String(payload.sub ?? '')
-        )
+    async ({ body, refreshJwt, cookie }) => {
+      const token = body.refreshToken ?? cookie[REFRESH_COOKIE]?.value ?? null
+      if (token) {
+        const payload = await refreshJwt.verify(token)
+        if (payload && payload.jti) {
+          await revokeToken(token, new Date(Number(payload.exp) * 1000), String(payload.sub ?? ''))
+        }
       }
+      cookie[REFRESH_COOKIE]?.set(expireRefreshCookie)
       return { success: true, data: { message: 'Signed out successfully' } }
     },
-    { body: logoutBody }
+    { body: logoutBody, cookie: cookieSchema }
   )
   .use(authPlugin)
   .get(

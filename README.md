@@ -79,8 +79,7 @@ modules/<feature>/
 | Plugin | Responsibility |
 |---|---|
 | `plugins/errors.ts` | Global `onError` → consistent `{ success, error }` JSON |
-| `plugins/db.ts` | Decorates `db` (Drizzle instance) on the Elysia context |
-| `plugins/auth.ts` | JWT setup + `onBeforeHandle` guard + `role()` macro |
+| `plugins/auth.ts` | JWT setup + auth guard + permission helpers (services import `db` directly from `database/client.ts`) |
 
 ### Elysia conventions applied
 
@@ -102,39 +101,32 @@ Elysia controller  →  Service class  →  Drizzle ORM  →  PostgreSQL
 ## 4. Project Structure
 
 ```
-E:\Ecom_New\
-├── docker-compose.yml          # postgres:18-alpine
-├── drizzle.config.ts
-├── package.json                # scripts: dev, db:generate, db:migrate, db:seed, test
-├── tsconfig.json
-├── README.md
-├── .env.example                # PORT, DATABASE_URL, JWT secrets
-└── src/
-    ├── index.ts                # bootstrap: errors→db→auth→modules; listen(); export type App
-    ├── database/
-    │   ├── client.ts           # postgres + drizzle singletons
-    │   ├── schema.ts           # all Drizzle tables (see §5)
-    │   ├── utils.ts            # spread / spreads helpers
-    │   ├── model.ts            # TypeBox insert/select models per table
-    │   ├── seed.ts             # realistic demo data (see §9)
-    │   └── migrate.ts
-    ├── plugins/
-    │   ├── errors.ts
-    │   ├── db.ts
-    │   └── auth.ts             # guard + role macro
-    ├── shared/
-    │   ├── pagination.ts       # parse page/limit/search → offset/limit
-    │   └── types.ts            # enums: orderStatus, orderPaymentStatus, role, couponType…
-    └── modules/
-        ├── auth/               # login, refresh, logout, me
-        ├── overview/           # dashboard KPIs + sales chart
-        ├── products/           # + categories + variants + bulk edit
-        ├── orders/             # + returns + refunds
-        ├── inventory/
-        ├── customers/
-        ├── discounts/          # coupons + promotions
-        ├── analytics/
-        └── settings/           # store, payments, shipping, taxes, staff
+ecom_new/                        # Turborepo + Bun monorepo
+├── apps/
+│   ├── api/                     # Merchant dashboard REST API (ElysiaJS + Drizzle + Postgres)
+│   │   ├── drizzle/             # committed migrations (drizzle-kit)
+│   │   ├── src/
+│   │   │   ├── index.ts         # bootstrap + listen(); export type App
+│   │   │   ├── app.ts           # errors→cors→swagger→modules chain
+│   │   │   ├── database/
+│   │   │   │   ├── client.ts    # postgres + drizzle singletons
+│   │   │   │   ├── schema.ts    # all Drizzle tables (see §5)
+│   │   │   │   ├── utils.ts     # spread / spreads helpers
+│   │   │   │   ├── model.ts     # TypeBox insert/select models per table
+│   │   │   │   └── seed.ts      # realistic demo data (see §9)
+│   │   │   ├── plugins/
+│   │   │   │   ├── errors.ts    # global error handler
+│   │   │   │   └── auth.ts      # JWT guard + permission helpers
+│   │   │   ├── shared/          # pagination, response, errors, types
+│   │   │   └── modules/         # auth, overview, products, orders, inventory,
+│   │   │                        # customers, discounts, analytics, settings, storefront
+│   │   └── test/                # bun test: smoke, storefront, checkout
+│   ├── web/                     # SvelteKit merchant dashboard (:5478)
+│   └── storefront/              # SvelteKit public storefront (:5479)
+├── docker-compose.yml           # postgres:18-alpine
+├── turbo.json                   # task pipeline
+├── package.json                 # scripts: dev, build, check, typecheck, test, db:*
+└── .env.example                 # PORT, DATABASE_URL, JWT secrets, CORS_ORIGINS
 ```
 
 ---
@@ -231,10 +223,10 @@ All tables (except `merchants`) carry a `merchant_id` foreign key; every query i
 ## 6. Authentication & Authorization
 
 ### Flow
-1. `POST /api/auth/login` with `{ email, password }` → validate bcrypt hash → returns `accessToken` (1h) + `refreshToken` (7d).
+1. `POST /api/auth/login` with `{ email, password }` → validate bcrypt hash → returns `accessToken` (1h) + sets the `refreshToken` (7d) as an **httpOnly cookie** (`md.refresh`, path `/api/auth`). The body also carries `refreshToken` for non-browser API clients.
 2. Client sends `Authorization: Bearer <accessToken>` on every request.
 3. Guard (`plugins/auth.ts`) verifies the JWT, loads `user` + `merchant`, and decorates context with `{ user, merchantId }`.
-4. `POST /api/auth/refresh` rotates the refresh token; `POST /api/auth/logout` revokes it.
+4. `POST /api/auth/refresh` rotates the refresh token (cookie or body); `POST /api/auth/logout` revokes it and clears the cookie.
 
 ### Roles
 | role | scope |
@@ -258,7 +250,7 @@ Base URL: `http://localhost:3005/api` — Swagger UI at `http://localhost:3005/d
 | Method | Path | Body/Query | Description |
 |---|---|---|---|
 | POST | `/auth/login` | `{ email, password }` | Returns access + refresh token, user |
-| POST | `/auth/refresh` | `{ refreshToken }` | New token pair |
+| POST | `/auth/refresh` | `{ refreshToken? }` (or httpOnly cookie) | New token pair (rotates) |
 | POST | `/auth/logout` | — | Revoke refresh token |
 | GET | `/auth/me` | — | Current user + merchant + settings |
 
