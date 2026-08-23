@@ -5,6 +5,11 @@
     "DATABASE_URL",
     "JWT_ACCESS_SECRET",
     "JWT_REFRESH_SECRET",
+    "CORS_ORIGINS",
+    "ENCRYPTION_KEY",
+    "PUBLIC_API_URL",
+    "PUBLIC_STOREFRONT_URL",
+    "PUBLIC_DEFAULT_STORE",
     "PORT"
   ],
   "tasks": {

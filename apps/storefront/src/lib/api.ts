@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit'
 import type {
 	CategoryTree,
 	CheckoutInput,
@@ -6,8 +7,10 @@ import type {
 	CheckoutSummary,
 	OrderDetail,
 	Page,
+	PaymentSyncResult,
 	ProductDetail,
 	ProductSummary,
+	ProviderCheckoutSession,
 	StoreInfo
 } from './types'
 
@@ -90,6 +93,31 @@ export const storefrontApi = {
 			body: JSON.stringify(body)
 		}),
 
+	checkoutPay: (fetchFn: typeof fetch, slug: string, body: CheckoutInput) =>
+		request<ProviderCheckoutSession>(fetchFn, `/${slug}/checkout/pay`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		}),
+
+	syncOrder: (
+		fetchFn: typeof fetch,
+		slug: string,
+		orderNumber: string,
+		body: { paymentId?: string } = {}
+	) =>
+		request<PaymentSyncResult>(fetchFn, `/${slug}/orders/${encodeURIComponent(orderNumber)}/sync`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		}),
+
 	order: (fetchFn: typeof fetch, slug: string, orderNumber: string) =>
 		request<OrderDetail>(fetchFn, `/${slug}/orders/${orderNumber}`)
+}
+
+export function loadError(err: unknown, notFoundMessage: string): never {
+	if (err instanceof ApiError) {
+		if (err.status === 404) error(404, notFoundMessage)
+		error(err.status >= 500 ? 500 : err.status, err.message || 'Request failed')
+	}
+	throw err
 }

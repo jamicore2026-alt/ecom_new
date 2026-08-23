@@ -16,14 +16,22 @@
 			: []
 	)
 
-	const initialProduct = untrack(() => data.product)
-	const initialVariantId = initialProduct.variants.length ? initialProduct.variants[0].id : null
-	let selectedVariantId = $state<string | null>(initialVariantId)
+	const defaultVariantId = () =>
+		untrack(() => (data.product.variants.length ? data.product.variants[0].id : null))
+
+	let selectedVariantId = $state<string | null>(defaultVariantId())
 	let quantity = $state(1)
 	let notice = $state('')
 
+	$effect(() => {
+		void data.product.id
+		selectedVariantId = defaultVariantId()
+		quantity = 1
+		notice = ''
+	})
+
 	const selectedVariant = $derived(
-		product.variants.find((v) => v.id === selectedVariantId) ?? null
+		product.variants.find((v) => v.id === selectedVariantId) ?? product.variants[0] ?? null
 	)
 	const price = $derived(selectedVariant?.price ?? product.price)
 	const compareAt = $derived(selectedVariant?.compareAtPrice ?? product.compareAtPrice)

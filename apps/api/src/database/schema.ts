@@ -8,12 +8,14 @@ import {
   timestamp,
   jsonb,
   uniqueIndex,
-  index
+  index,
+  primaryKey
 } from 'drizzle-orm/pg-core'
 import { createId } from '@paralleldrive/cuid2'
 import type { Address, Permission } from '../shared/types'
 
-const money = (name: string) => numeric(name, { precision: 12, scale: 2, mode: 'number' })
+// scale 3 supports GCC currencies with 3 decimals (KWD/BHD/OMR)
+const money = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
 
 const id = (name: string) => varchar(name, { length: 30 }).$defaultFn(() => createId())
 
@@ -184,6 +186,9 @@ export const orders = pgTable(
     shippingAddress: jsonb('shipping_address').$type<Address>(),
     billingAddress: jsonb('billing_address').$type<Address>(),
     notes: text('notes'),
+    paymentMethod: varchar('payment_method', { length: 50 }),
+    paymentProvider: varchar('payment_provider', { length: 30 }),
+    expiresAt: timestamp('expires_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
@@ -248,6 +253,7 @@ export const refunds = pgTable(
     }),
     amount: money('amount').notNull().default(0),
     method: varchar('method', { length: 30 }).notNull().default('original'),
+    providerRef: varchar('provider_ref', { length: 255 }),
     status: varchar('status', { length: 20 }).notNull().default('pending'),
     createdAt: timestamp('created_at').defaultNow().notNull()
   },
@@ -321,6 +327,65 @@ export const paymentSettings = pgTable('payment_settings', {
   currency: varchar('currency', { length: 10 }).notNull().default('USD'),
   updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
+
+/* ------------------------------ payments (BYOK) ----------------------------- */
+
+export const PAYMENT_TXN_STATUSES = ['pending', 'authorized', 'paid', 'failed', 'refunded'] as const
+export type PaymentTxnStatus = (typeof PAYMENT_TXN_STATUSES)[number]
+
+export const paymentProviderConfigs = pgTable(
+  'payment_provider_configs',
+  {
+    merchantId: varchar('merchant_id', { length: 30 })
+      .notNull()
+      .references(() => merchants.id, { onDelete: 'cascade' }),
+    provider: varchar('provider', { length: 30 }).notNull(),
+    enabled: boolean('enabled').notNull().default(false),
+    mode: varchar('mode', { length: 10 }).notNull().default('test'),
+    country: varchar('country', { length: 5 }),
+    // AES-256-GCM ciphertext of the credential map ({ key: value }) — never stored in plaintext
+    credentials: text('credentials').notNull().default(''),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [primaryKey({ columns: [t.merchantId, t.provider] })]
+)
+
+export const paymentTransactions = pgTable(
+  'payment_transactions',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    orderId: varchar('order_id', { length: 30 })
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    provider: varchar('provider', { length: 30 }).notNull(),
+    providerRef: varchar('provider_ref', { length: 255 }),
+    status: varchar('status', { length: 20 }).$type<PaymentTxnStatus>().notNull().default('pending'),
+    amount: money('amount').notNull().default(0),
+    currency: varchar('currency', { length: 10 }).notNull().default('USD'),
+    raw: jsonb('raw'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    index('payment_transactions_order_idx').on(t.orderId),
+    index('payment_transactions_ref_idx').on(t.providerRef)
+  ]
+)
+
+export const webhookEvents = pgTable(
+  'webhook_events',
+  {
+    id: id('id').primaryKey(),
+    provider: varchar('provider', { length: 30 }).notNull(),
+    eventId: varchar('event_id', { length: 255 }).notNull(),
+    payload: jsonb('payload'),
+    processedAt: timestamp('processed_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [uniqueIndex('webhook_events_provider_event_idx').on(t.provider, t.eventId)]
+)
 
 export const shippingSettings = pgTable('shipping_settings', {
   merchantId: varchar('merchant_id', { length: 30 })
@@ -399,6 +464,9 @@ export const table = {
   promotions,
   storeSettings,
   paymentSettings,
+  paymentProviderConfigs,
+  paymentTransactions,
+  webhookEvents,
   shippingSettings,
   taxSettings,
   visits,
@@ -433,6 +501,9 @@ export type Promotion = typeof promotions.$inferSelect
 export type NewPromotion = typeof promotions.$inferInsert
 export type StoreSettings = typeof storeSettings.$inferSelect
 export type PaymentSettings = typeof paymentSettings.$inferSelect
+export type PaymentProviderConfig = typeof paymentProviderConfigs.$inferSelect
+export type PaymentTransaction = typeof paymentTransactions.$inferSelect
+export type WebhookEventRecord = typeof webhookEvents.$inferSelect
 export type ShippingSettings = typeof shippingSettings.$inferSelect
 export type TaxSettings = typeof taxSettings.$inferSelect
 export type Visit = typeof visits.$inferSelect

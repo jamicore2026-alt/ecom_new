@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gte, ilike, inArray, lte, ne, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, ilike, inArray, lt, lte, ne, or, sql } from 'drizzle-orm'
 import { db } from '../../database/client'
 import {
   categories,
@@ -8,7 +8,9 @@ import {
   merchants,
   orderItems,
   orders,
+  paymentProviderConfigs,
   paymentSettings,
+  paymentTransactions,
   products,
   productVariants,
   shippingSettings,
@@ -17,11 +19,13 @@ import {
 } from '../../database/schema'
 import { DiscountsService } from '../discounts/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
+import { roundForCurrency } from '../../shared/currency'
+import { getProvider, listProviders } from '../../payments/registry'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
+import type { CallbackResult } from '../../payments/types'
 
 const number = (v: unknown) => Number(v)
-const round = (n: number) => Math.round(n * 100) / 100
 
 export interface CheckoutItemInput {
   productId: string
@@ -55,6 +59,7 @@ interface StorePayload {
   payments: {
     methods: Array<{ id: string; label: string; enabled: boolean }>
     currency: string
+    providers?: Array<{ id: string; label: string }>
   }
   shipping: {
     zones: Array<{ name: string; countries: string[]; rate: number; freeAbove?: number }>
@@ -144,6 +149,15 @@ export class StorefrontService {
       .from(taxSettings)
       .where(eq(taxSettings.merchantId, merchant.id))
 
+    const providerRows = await db
+      .select()
+      .from(paymentProviderConfigs)
+      .where(and(eq(paymentProviderConfigs.merchantId, merchant.id), eq(paymentProviderConfigs.enabled, true)))
+    const defs = new Map(listProviders().map((d) => [d.id, d]))
+    const providers = providerRows
+      .filter((p) => defs.has(p.provider))
+      .map((p) => ({ id: p.provider, label: defs.get(p.provider)!.label }))
+
     return {
       merchant: {
         id: merchant.id,
@@ -162,7 +176,8 @@ export class StorefrontService {
       },
       payments: {
         methods: payments?.methods ?? [],
-        currency: payments?.currency ?? merchant.currency
+        currency: payments?.currency ?? merchant.currency,
+        providers
       },
       shipping: {
         zones: shipping?.zones ?? [],
@@ -442,7 +457,11 @@ export class StorefrontService {
 
   /* -------------------------------- checkout ------------------------------- */
 
-  private static async resolveItems(merchantId: string, items: CheckoutItemInput[]): Promise<CheckoutLine[]> {
+  private static async resolveItems(
+    merchantId: string,
+    items: CheckoutItemInput[],
+    currency: string
+  ): Promise<CheckoutLine[]> {
     const productIds = [...new Set(items.map((i) => i.productId))]
     const variantIds = [...new Set(items.map((i) => i.variantId))]
     const productRows = await db.select().from(products).where(inArray(products.id, productIds))
@@ -466,17 +485,18 @@ export class StorefrontService {
       if (product.trackInventory && variant.inventory < item.quantity) {
         throw badRequest('OUT_OF_STOCK', `Only ${variant.inventory} of ${product.name} available`)
       }
+      const price = number(variant.price)
       return {
         productId: product.id,
         variantId: variant.id,
         name: product.name,
         sku: variant.sku ?? product.sku,
-        price: number(variant.price),
+        price,
         image: variant.image ?? null,
         optionValues: variant.optionValues,
         trackInventory: product.trackInventory,
         quantity: item.quantity,
-        total: round(number(variant.price) * item.quantity)
+        total: roundForCurrency(price * item.quantity, currency)
       }
     })
   }
@@ -492,11 +512,11 @@ export class StorefrontService {
     return { method: zone.name, rate: number(zone.rate) }
   }
 
-  private static taxFor(store: StorePayload, taxable: number) {
+  private static taxFor(store: StorePayload, taxable: number, currency: string) {
     if (!store.taxes.autoCalculate) return 0
     const rates = store.taxes.rates
     if (!rates.length) return 0
-    return round(taxable * (number(rates[0].rate) / 100))
+    return roundForCurrency(taxable * (number(rates[0].rate) / 100), currency)
   }
 
   private static async buildSummary(
@@ -505,8 +525,9 @@ export class StorefrontService {
     country?: string
   ) {
     const store = await this.resolveStore(slug)
-    const items = await this.resolveItems(store.merchant.id, body.items)
-    const subtotal = round(items.reduce((sum, i) => sum + i.total, 0))
+    const currency = store.merchant.currency
+    const items = await this.resolveItems(store.merchant.id, body.items, currency)
+    const subtotal = roundForCurrency(items.reduce((sum, i) => sum + i.total, 0), currency)
 
     let coupon: {
       code: string
@@ -529,14 +550,14 @@ export class StorefrontService {
         discount: data.discount,
         freeShipping: data.freeShipping
       }
-      discountTotal = data.discount
+      discountTotal = roundForCurrency(data.discount, currency)
     }
 
     const shipping = coupon?.freeShipping
       ? { method: 'Free shipping', rate: 0 }
       : this.shippingRate(store, subtotal, country)
-    const taxTotal = this.taxFor(store, subtotal - discountTotal + shipping.rate)
-    const total = round(subtotal + shipping.rate - discountTotal + taxTotal)
+    const taxTotal = this.taxFor(store, subtotal - discountTotal + shipping.rate, currency)
+    const total = roundForCurrency(subtotal + shipping.rate - discountTotal + taxTotal, currency)
 
     return { store, items, subtotal, discountTotal, shipping, taxTotal, total, coupon }
   }
@@ -557,12 +578,61 @@ export class StorefrontService {
     })
   }
 
-  static async checkout(slug: string, body: CheckoutInput) {
-    const { store, items, subtotal, discountTotal, shipping, taxTotal, total, coupon } =
-      await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
+  /* ------------------------------ payments --------------------------------- */
+
+  private static async assertPaymentMethodAvailable(merchantId: string, method: string) {
+    const [payments] = await db
+      .select()
+      .from(paymentSettings)
+      .where(eq(paymentSettings.merchantId, merchantId))
+    const manual = (payments?.methods ?? []).some((m) => m.enabled && m.id === method)
+    if (manual) return { kind: 'manual' as const }
+
+    const [cfg] = await db
+      .select()
+      .from(paymentProviderConfigs)
+      .where(
+        and(
+          eq(paymentProviderConfigs.merchantId, merchantId),
+          eq(paymentProviderConfigs.provider, method),
+          eq(paymentProviderConfigs.enabled, true)
+        )
+      )
+    if (cfg && getProvider(method)) return { kind: 'provider' as const }
+
+    throw badRequest('PAYMENT_METHOD_UNAVAILABLE', `Payment method "${method}" is not available`)
+  }
+
+  private static orderUrls(slug: string, providerId: string, orderNumber: string) {
+    const storefrontBase = process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'
+    const apiBase =
+      process.env.PUBLIC_API_URL ?? `http://localhost:${process.env.PORT ?? 3005}`
+    return {
+      returnUrl: `${storefrontBase}/${slug}/checkout/return?order=${encodeURIComponent(orderNumber)}`,
+      cancelUrl: `${storefrontBase}/${slug}/checkout`,
+      webhookUrl: `${apiBase}/api/webhooks/${providerId}/${slug}`
+    }
+  }
+
+  /** Shared order-creation transaction used by COD checkout and provider checkout/pay. */
+  private static async createOrderTx(
+    store: Awaited<ReturnType<typeof StorefrontService.resolveStore>>,
+    body: CheckoutInput,
+    summary: {
+      items: CheckoutLine[]
+      subtotal: number
+      discountTotal: number
+      shipping: { rate: number; method: string }
+      taxTotal: number
+      total: number
+      coupon: { code: string } | null
+    },
+    opts: { paymentStatus: 'unpaid' | 'paid'; provider?: string; expiresAt?: Date | null }
+  ) {
+    const currency = store.merchant.currency
     const orderNumber = `#W${Date.now().toString(36).toUpperCase()}`
 
-    const result = await db.transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const email = body.email.trim().toLowerCase()
       let customerId: string | null = null
       const [existing] = await tx
@@ -574,7 +644,6 @@ export class StorefrontService {
         await tx
           .update(customers)
           .set({
-            totalSpent: Number(existing.totalSpent) + total,
             ordersCount: existing.ordersCount + 1,
             lastOrderAt: new Date()
           })
@@ -589,7 +658,6 @@ export class StorefrontService {
             firstName: name.split(' ')[0] ?? null,
             lastName: name.split(' ').slice(1).join(' ') || null,
             phone: (body.shippingAddress.phone as string | undefined) ?? null,
-            totalSpent: total,
             ordersCount: 1,
             lastOrderAt: new Date()
           })
@@ -604,21 +672,24 @@ export class StorefrontService {
           customerId,
           orderNumber,
           status: 'pending',
-          paymentStatus: 'paid',
+          paymentStatus: opts.paymentStatus,
           fulfillmentStatus: 'unfulfilled',
-          subtotal,
-          shippingTotal: shipping.rate,
-          discountTotal,
-          taxTotal,
-          total,
-          currency: store.merchant.currency,
+          subtotal: summary.subtotal,
+          shippingTotal: summary.shipping.rate,
+          discountTotal: summary.discountTotal,
+          taxTotal: summary.taxTotal,
+          total: summary.total,
+          currency,
           shippingAddress: body.shippingAddress,
           billingAddress: body.billingAddress ?? body.shippingAddress,
-          notes: body.notes ?? null
+          notes: body.notes ?? null,
+          paymentMethod: body.paymentMethod,
+          paymentProvider: opts.provider ?? null,
+          expiresAt: opts.expiresAt ?? null
         })
         .returning()
 
-      for (const item of items) {
+      for (const item of summary.items) {
         await tx.insert(orderItems).values({
           orderId: order.id,
           productId: item.productId,
@@ -656,15 +727,48 @@ export class StorefrontService {
         }
       }
 
-      if (coupon) {
+      if (summary.coupon) {
         await tx
           .update(coupons)
           .set({ usedCount: sql`${coupons.usedCount} + 1` })
-          .where(and(eq(coupons.merchantId, store.merchant.id), eq(coupons.code, coupon.code)))
+          .where(
+            and(
+              eq(coupons.merchantId, store.merchant.id),
+              eq(coupons.code, summary.coupon.code)
+            )
+          )
       }
 
       return order
     })
+  }
+
+  static async checkout(slug: string, body: CheckoutInput) {
+    const kind = await this.assertPaymentMethodAvailable(
+      (await this.resolveStore(slug)).merchant.id,
+      body.paymentMethod
+    )
+    if (kind.kind === 'provider') {
+      throw badRequest(
+        'PAYMENT_REQUIRES_REDIRECT',
+        `"${body.paymentMethod}" requires an online payment session — use /checkout/pay`
+      )
+    }
+
+    const { store, items, subtotal, discountTotal, shipping, taxTotal, total, coupon } =
+      await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
+
+    // Legacy "card" demo method is treated as paid-on-place; everything else waits for payment.
+    const paymentStatus = body.paymentMethod === 'card' ? 'paid' : 'unpaid'
+    const result = await this.createOrderTx(store, body, {
+      items,
+      subtotal,
+      discountTotal,
+      shipping,
+      taxTotal,
+      total,
+      coupon
+    }, { paymentStatus })
 
     return ok({
       id: result.id,
@@ -676,6 +780,255 @@ export class StorefrontService {
       email: body.email.trim().toLowerCase(),
       createdAt: result.createdAt
     })
+  }
+
+  static async createProviderCheckout(slug: string, body: CheckoutInput) {
+    const store = await this.resolveStore(slug)
+    const providerId = body.paymentMethod
+
+    const [configRow] = await db
+      .select()
+      .from(paymentProviderConfigs)
+      .where(
+        and(
+          eq(paymentProviderConfigs.merchantId, store.merchant.id),
+          eq(paymentProviderConfigs.provider, providerId),
+          eq(paymentProviderConfigs.enabled, true)
+        )
+      )
+    if (!configRow) {
+      throw badRequest('PAYMENT_METHOD_UNAVAILABLE', `Payment method "${providerId}" is not available`)
+    }
+    const adapter = getProvider(providerId)
+    if (!adapter) throw badRequest('PROVIDER_ERROR', `Unknown provider "${providerId}"`)
+
+    const { decryptJson } = await import('../../shared/crypto')
+    const config = {
+      providerId,
+      enabled: true,
+      mode: (configRow.mode === 'live' ? 'live' : 'test') as 'test' | 'live',
+      country: configRow.country ?? null,
+      credentials: decryptJson<Record<string, string>>(configRow.credentials)
+    }
+
+    const summary = await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
+
+    const order = await this.createOrderTx(store, body, {
+      items: summary.items,
+      subtotal: summary.subtotal,
+      discountTotal: summary.discountTotal,
+      shipping: summary.shipping,
+      taxTotal: summary.taxTotal,
+      total: summary.total,
+      coupon: summary.coupon
+    }, {
+      paymentStatus: 'unpaid',
+      provider: providerId,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000)
+    })
+
+    const urls = this.orderUrls(slug, providerId, order.orderNumber)
+    let session
+    try {
+      session = await adapter.createSession(config, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        total: number(order.total),
+        currency: order.currency,
+        customer: {
+          name: (body.shippingAddress.name as string | undefined) ?? undefined,
+          email: body.email.trim().toLowerCase(),
+          phone: (body.shippingAddress.phone as string | undefined) ?? undefined
+        },
+        items: summary.items.map((i) => ({ name: i.name, quantity: i.quantity, unitPrice: i.price })),
+        shippingAddress: body.shippingAddress,
+        ...urls
+      })
+    } catch (err) {
+      // Leave the order to expire via the sweep so held stock is released.
+      console.error(`[payments] ${providerId} createSession failed for ${order.orderNumber}:`, err)
+      throw err
+    }
+
+    await db.insert(paymentTransactions).values({
+      merchantId: store.merchant.id,
+      orderId: order.id,
+      provider: providerId,
+      providerRef: session.providerRef,
+      status: 'pending',
+      amount: number(order.total),
+      currency: order.currency,
+      raw: session.raw ?? null
+    })
+
+    return ok({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      requiresRedirect: true,
+      provider: providerId,
+      redirectUrl: session.redirectUrl,
+      total: number(order.total),
+      currency: order.currency
+    })
+  }
+
+  /** Applies a verified gateway result to the stored transaction and its order. */
+  static async applyPaymentResult(
+    merchantId: string,
+    providerId: string,
+    result: CallbackResult
+  ) {
+    const [txn] = await db
+      .select()
+      .from(paymentTransactions)
+      .where(
+        and(
+          eq(paymentTransactions.provider, providerId),
+          eq(paymentTransactions.providerRef, result.providerRef),
+          eq(paymentTransactions.merchantId, merchantId)
+        )
+      )
+    if (!txn) throw notFound('TRANSACTION_NOT_FOUND', 'No matching payment transaction')
+
+    const txnStatus =
+      result.status === 'paid' ? 'paid' : result.status === 'failed' ? 'failed' : 'pending'
+    await db
+      .update(paymentTransactions)
+      .set({ status: txnStatus, raw: result.raw ?? txn.raw, updatedAt: new Date() })
+      .where(eq(paymentTransactions.id, txn.id))
+
+    let orderUpdated = false
+    if (result.status === 'paid') {
+      const [order] = await db.select().from(orders).where(eq(orders.id, txn.orderId))
+      // Only flip unpaid → paid; refunds/cancellations stay untouched.
+      if (order && order.paymentStatus === 'unpaid') {
+        await db
+          .update(orders)
+          .set({ paymentStatus: 'paid', expiresAt: null, updatedAt: new Date() })
+          .where(eq(orders.id, order.id))
+        if (order.customerId) {
+          const [customer] = await db
+            .select()
+            .from(customers)
+            .where(eq(customers.id, order.customerId))
+          if (customer) {
+            await db
+              .update(customers)
+              .set({
+                totalSpent: number(customer.totalSpent) + number(order.total),
+                lastOrderAt: order.createdAt
+              })
+              .where(eq(customers.id, order.customerId))
+          }
+        }
+        orderUpdated = true
+      }
+    }
+
+    return { orderUpdated, orderId: txn.orderId }
+  }
+
+  /** Server-side re-verification used by the storefront return page. */
+  static async syncOrder(slug: string, orderNumber: string, payload?: { paymentId?: string }) {
+    const store = await this.resolveStore(slug)
+    const [order] = await db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.merchantId, store.merchant.id), eq(orders.orderNumber, orderNumber)))
+    if (!order || !order.paymentProvider) {
+      throw notFound('ORDER_NOT_FOUND', 'Order not found')
+    }
+
+    const adapter = getProvider(order.paymentProvider)
+    if (!adapter) throw badRequest('PROVIDER_ERROR', `Unknown provider "${order.paymentProvider}"`)
+
+    const [configRow] = await db
+      .select()
+      .from(paymentProviderConfigs)
+      .where(
+        and(
+          eq(paymentProviderConfigs.merchantId, store.merchant.id),
+          eq(paymentProviderConfigs.provider, order.paymentProvider)
+        )
+      )
+    if (!configRow) throw badRequest('PROVIDER_NOT_CONFIGURED', 'Provider is no longer configured')
+
+    const { decryptJson } = await import('../../shared/crypto')
+    const config = {
+      providerId: order.paymentProvider,
+      enabled: configRow.enabled,
+      mode: (configRow.mode === 'live' ? 'live' : 'test') as 'test' | 'live',
+      country: configRow.country ?? null,
+      credentials: decryptJson<Record<string, string>>(configRow.credentials)
+    }
+
+    const result = await adapter.verifyCallback(config, {
+      query: payload?.paymentId ? { paymentId: payload.paymentId } : {},
+      body: payload?.paymentId ? { paymentId: payload.paymentId } : null,
+      headers: {}
+    })
+
+    const applied = await this.applyPaymentResult(store.merchant.id, order.paymentProvider, result)
+    const [fresh] = await db.select().from(orders).where(eq(orders.id, order.id))
+    return ok({
+      orderNumber: fresh.orderNumber,
+      paymentStatus: fresh.paymentStatus,
+      status: fresh.status,
+      updated: applied.orderUpdated
+    })
+  }
+
+  /** Cancels stale unpaid online-payment orders and releases their stock. */
+  static async sweepExpiredOrders() {
+    const stale = await db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.status, 'pending'),
+          eq(orders.paymentStatus, 'unpaid'),
+          lt(orders.expiresAt, new Date())
+        )
+      )
+      .limit(200)
+
+    for (const order of stale) {
+      try {
+        await db.transaction(async (tx) => {
+          const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, order.id))
+          for (const item of items) {
+            if (!item.variantId) continue
+            const [variant] = await tx
+              .select()
+              .from(productVariants)
+              .where(eq(productVariants.id, item.variantId))
+              .for('update')
+            if (!variant) continue
+            const afterValue = variant.inventory + item.quantity
+            await tx
+              .update(productVariants)
+              .set({ inventory: afterValue })
+              .where(eq(productVariants.id, variant.id))
+            await tx.insert(inventoryLogs).values({
+              merchantId: order.merchantId,
+              variantId: variant.id,
+              change: item.quantity,
+              beforeValue: variant.inventory,
+              afterValue,
+              reason: 'cancel',
+              reference: order.orderNumber
+            })
+          }
+          await tx
+            .update(orders)
+            .set({ status: 'cancelled', paymentStatus: 'failed', updatedAt: new Date() })
+            .where(eq(orders.id, order.id))
+        })
+      } catch (err) {
+        console.error(`[payments] failed to expire order ${order.orderNumber}:`, err)
+      }
+    }
+    return stale.length
   }
 
   static async order(slug: string, orderNumber: string) {

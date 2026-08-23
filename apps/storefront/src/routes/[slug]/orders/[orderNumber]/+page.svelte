@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation'
+	import { browser } from '$app/environment'
+	import { ApiError, storefrontApi } from '$lib/api'
+	import { cart } from '$lib/cart.svelte'
 	import { money } from '$lib/format'
 	import type { PageProps } from './$types'
 
@@ -7,10 +11,40 @@
 	const slug = $derived(data.slug)
 	const order = $derived(data.order)
 
+	const pendingPayment = $derived(
+		order.status === 'pending' && order.paymentStatus !== 'paid' && order.paymentStatus !== 'failed'
+	)
+
 	const addressLines = (addr: typeof order.shippingAddress | null | undefined) => {
 		if (!addr) return []
 		return [addr.name, addr.line1, addr.line2, [addr.city, addr.state, addr.postalCode].filter(Boolean).join(', '), addr.country, addr.phone]
 			.filter((v): v is string => !!v)
+	}
+
+	// Provider checkout marks the cart as "pending this order" before redirecting.
+	// Once confirmed paid, that cart belongs to a placed order — release it.
+	let checkingPayment = $state(false)
+	$effect(() => {
+		if (!browser) return
+		const flagKey = `ecom:pending:${slug}`
+		const pending = sessionStorage.getItem(flagKey)
+		if (pending !== order.orderNumber) return
+		sessionStorage.removeItem(flagKey)
+		if (order.paymentStatus === 'paid') cart.clear()
+	})
+
+	const checkPayment = async () => {
+		checkingPayment = true
+		try {
+			const result = await storefrontApi.syncOrder(fetch, slug, order.orderNumber)
+			if (result.paymentStatus === 'paid') {
+				await invalidateAll()
+			}
+		} catch {
+			/* keep showing pending state */
+		} finally {
+			checkingPayment = false
+		}
 	}
 </script>
 
@@ -34,6 +68,21 @@
 		<p class="mt-1 text-sm text-gray-500">
 			A confirmation email was sent to <span class="font-medium text-gray-900">{order.email}</span>
 		</p>
+
+		{#if pendingPayment}
+			<div class="mx-auto mt-6 max-w-md rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+				Payment for this order is still being confirmed. If you completed the payment, it will update
+				shortly.
+				<button
+					type="button"
+					class="ml-2 font-semibold text-amber-900 underline disabled:opacity-50"
+					disabled={checkingPayment}
+					onclick={checkPayment}
+				>
+					{checkingPayment ? 'Checking…' : 'Check now'}
+				</button>
+			</div>
+		{/if}
 
 		<a
 			href={`/${slug}`}

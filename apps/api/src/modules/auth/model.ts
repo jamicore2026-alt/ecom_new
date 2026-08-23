@@ -7,7 +7,7 @@ export const loginBody = t.Object({
 })
 
 export const refreshBody = t.Object({
-  refreshToken: t.String({ minLength: 1 })
+  refreshToken: t.Optional(t.String())
 })
 
 export const logoutBody = t.Object({

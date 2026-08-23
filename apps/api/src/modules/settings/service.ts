@@ -3,14 +3,18 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../../database/client'
 import {
   merchants,
+  paymentProviderConfigs,
   paymentSettings,
   shippingSettings,
   storeSettings,
   taxSettings,
   users
 } from '../../database/schema'
+import { getProvider, listProviders } from '../../payments/registry'
+import { decryptJson, encryptJson, isMaskedValue } from '../../shared/crypto'
 import { ok } from '../../shared/response'
 import { badRequest, conflict, forbidden, notFound } from '../../shared/errors'
+import type { ResolvedProviderConfig } from '../../payments/types'
 import type { User } from '../../database/schema'
 import type { Permission } from '../../shared/types'
 
@@ -98,6 +102,157 @@ export class SettingsService {
       currency: input.currency ?? current.data.currency
     })
     return this.getPayments(merchantId)
+  }
+
+  /* ------------------------- payment providers (BYOK) ----------------------- */
+
+  private static async resolveProviderConfig(
+    merchantId: string,
+    providerId: string
+  ): Promise<{ config: ResolvedProviderConfig } | null> {
+    const [row] = await db
+      .select()
+      .from(paymentProviderConfigs)
+      .where(
+        and(eq(paymentProviderConfigs.merchantId, merchantId), eq(paymentProviderConfigs.provider, providerId))
+      )
+    if (!row) return null
+    return {
+      config: {
+        providerId,
+        enabled: row.enabled,
+        mode: (row.mode === 'live' ? 'live' : 'test') as 'test' | 'live',
+        country: row.country ?? null,
+        credentials: decryptJson<Record<string, string>>(row.credentials)
+      }
+    }
+  }
+
+  /** Runtime (decrypted) provider config for checkout/webhook flows. */
+  static async getEnabledProvider(merchantId: string, providerId: string) {
+    const resolved = await this.resolveProviderConfig(merchantId, providerId)
+    if (!resolved || !resolved.config.enabled) throw notFound('PROVIDER_NOT_FOUND', `Payment provider "${providerId}" is not available for this store`)
+    return resolved.config
+  }
+
+  static async listPaymentProviders(merchantId: string) {
+    const rows = await db
+      .select()
+      .from(paymentProviderConfigs)
+      .where(eq(paymentProviderConfigs.merchantId, merchantId))
+    const byProvider = new Map(rows.map((r) => [r.provider, r]))
+
+    // Secrets are write-only — never returned to the client.
+    return ok(
+      listProviders().map((def) => {
+        const cfg = byProvider.get(def.id)
+        return {
+          id: def.id,
+          label: def.label,
+          description: def.description,
+          countries: def.countries,
+          currencies: def.currencies,
+          credentialFields: def.credentialFields,
+          enabled: cfg?.enabled ?? false,
+          mode: cfg?.mode ?? 'test',
+          country: cfg?.country ?? null,
+          configured: !!cfg && Object.keys(cfg.credentials).length > 0,
+          updatedAt: cfg?.updatedAt ?? null
+        }
+      })
+    )
+  }
+
+  static async updatePaymentProvider(
+    merchantId: string,
+    providerId: string,
+    input: {
+      enabled?: boolean
+      mode?: 'test' | 'live'
+      country?: string | null
+      credentials?: Record<string, string | null>
+    }
+  ) {
+    const adapter = getProvider(providerId)
+    if (!adapter) throw notFound('NOT_FOUND', `Unknown payment provider: ${providerId}`)
+
+    const existing = await this.resolveProviderConfig(merchantId, providerId)
+    const stored = existing ? { ...existing.config.credentials } : {}
+
+    if (input.credentials) {
+      for (const [key, value] of Object.entries(input.credentials)) {
+        if (typeof value === 'string' && value !== '' && !isMaskedValue(value)) stored[key] = value
+        // empty / null / masked values keep whatever is already stored
+      }
+    }
+
+    const enabled = input.enabled ?? existing?.config.enabled ?? false
+    if (enabled) {
+      const missing = adapter.def.credentialFields.filter(
+        (f) => f.required && !stored[f.key]
+      )
+      if (missing.length > 0) {
+        throw badRequest(
+          'BAD_REQUEST',
+          `${missing.map((m) => m.label).join(', ')} required to enable ${adapter.def.label}`
+        )
+      }
+    }
+    const invalidCountry =
+      input.country &&
+      adapter.def.countries.length > 0 &&
+      !adapter.def.countries.includes(input.country.toUpperCase())
+    if (invalidCountry) {
+      throw badRequest(
+        'BAD_REQUEST',
+        `${input.country} is not supported by ${adapter.def.label} (supported: ${adapter.def.countries.join(', ')})`
+      )
+    }
+
+    await db
+      .insert(paymentProviderConfigs)
+      .values({
+        merchantId,
+        provider: providerId,
+        enabled,
+        mode: input.mode ?? existing?.config.mode ?? 'test',
+        country:
+          input.country === undefined
+            ? (existing?.config.country ?? null)
+            : input.country
+              ? input.country.toUpperCase()
+              : null,
+        credentials: encryptJson(stored)
+      })
+      .onConflictDoUpdate({
+        target: [paymentProviderConfigs.merchantId, paymentProviderConfigs.provider],
+        set: {
+          enabled,
+          mode: input.mode ?? existing?.config.mode ?? 'test',
+          country:
+            input.country === undefined
+              ? (existing?.config.country ?? null)
+              : input.country
+                ? input.country.toUpperCase()
+                : null,
+          credentials: encryptJson(stored),
+          updatedAt: new Date()
+        }
+      })
+
+    return ok({ providerId, enabled })
+  }
+
+  static async testPaymentProvider(merchantId: string, providerId: string) {
+    const adapter = getProvider(providerId)
+    if (!adapter) throw notFound('NOT_FOUND', `Unknown payment provider: ${providerId}`)
+
+    const resolved = await this.resolveProviderConfig(merchantId, providerId)
+    if (!resolved) {
+      throw badRequest('PROVIDER_NOT_CONFIGURED', `${adapter.def.label} has no saved credentials`)
+    }
+    await adapter.ping(resolved.config)
+    return ok({ providerId, status: 'ok' })
   }
 
   static async getShipping(merchantId: string) {

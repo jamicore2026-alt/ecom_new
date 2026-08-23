@@ -1,4 +1,4 @@
-import { storefrontApi } from '$lib/api'
+import { storefrontApi, loadError } from '$lib/api'
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ params, fetch, url }) => {
@@ -10,13 +10,16 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
 	if (minPrice) query.minPrice = minPrice
 	if (maxPrice) query.maxPrice = maxPrice
 
-	const products = await storefrontApi.products(fetch, params.slug, {
-		page: url.searchParams.get('page') ?? '1',
-		limit: 12,
-		sort: (sort ?? undefined) as 'price_asc' | 'price_desc' | 'newest' | undefined,
-		minPrice: minPrice ?? undefined,
-		maxPrice: maxPrice ?? undefined
-	})
-
-	return { products, query }
+	try {
+		const products = await storefrontApi.products(fetch, params.slug, {
+			page: url.searchParams.get('page') ?? '1',
+			limit: 12,
+			sort: (sort ?? undefined) as 'price_asc' | 'price_desc' | 'newest' | undefined,
+			minPrice: minPrice ?? undefined,
+			maxPrice: maxPrice ?? undefined
+		})
+		return { products, query }
+	} catch (e) {
+		loadError(e, 'Products are unavailable right now')
+	}
 }

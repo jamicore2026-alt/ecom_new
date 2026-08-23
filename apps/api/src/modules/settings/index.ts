@@ -1,7 +1,16 @@
 import { Elysia } from 'elysia'
 import { authPlugin, isAdmin } from '../../plugins/auth'
 import { SettingsService } from './service'
-import { paymentBody, shippingBody, staffCreateBody, staffUpdateBody, storeBody, taxBody } from './model'
+import {
+  paymentBody,
+  providerBody,
+  providerParams,
+  shippingBody,
+  staffCreateBody,
+  staffUpdateBody,
+  storeBody,
+  taxBody
+} from './model'
 import { forbidden } from '../../shared/errors'
 
 const requireAdmin = new Elysia({ name: 'require-admin' })
@@ -24,6 +33,21 @@ export const settingsModule = new Elysia({ prefix: '/api' })
       .put('/payments', async ({ body, auth }) => SettingsService.updatePayments(auth.merchant.id, body), {
         body: paymentBody
       })
+      .get(
+        '/payments/providers',
+        async ({ auth }) => SettingsService.listPaymentProviders(auth.merchant.id)
+      )
+      .put(
+        '/payments/providers/:provider',
+        async ({ params, body, auth }) =>
+          SettingsService.updatePaymentProvider(auth.merchant.id, params.provider, body),
+        { body: providerBody, params: providerParams }
+      )
+      .post(
+        '/payments/providers/:provider/test',
+        async ({ params, auth }) => SettingsService.testPaymentProvider(auth.merchant.id, params.provider),
+        { params: providerParams }
+      )
       .get('/shipping', async ({ auth }) => SettingsService.getShipping(auth.merchant.id))
       .put('/shipping', async ({ body, auth }) => SettingsService.updateShipping(auth.merchant.id, body), {
         body: shippingBody

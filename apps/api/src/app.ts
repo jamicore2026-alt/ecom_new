@@ -12,12 +12,20 @@ import { discountsModule } from './modules/discounts'
 import { analyticsModule } from './modules/analytics'
 import { settingsModule } from './modules/settings'
 import { storefrontModule } from './modules/storefront'
+import { webhooksModule } from './modules/webhooks'
+
+const corsOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean)
+
+const devOrigins = [/^http:\/\/(localhost|127\.0\.0\.1):(5478|5479)$/]
 
 export const app = new Elysia()
   .onError(errorHandler)
   .use(
     cors({
-      origin: /.*/,
+      origin: corsOrigins.length > 0 ? corsOrigins : devOrigins,
       credentials: true,
       allowedHeaders: ['Content-Type', 'Authorization'],
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
@@ -42,8 +50,9 @@ export const app = new Elysia()
           { name: 'Customers', description: 'Customer directory and order history' },
           { name: 'Discounts', description: 'Coupons and promotions' },
           { name: 'Analytics', description: 'Sales, products, customers and conversion analytics' },
-          { name: 'Settings', description: 'Store, payments, shipping, taxes and staff' },
-          { name: 'Storefront', description: 'Public storefront endpoints (no auth required)' }
+        { name: 'Settings', description: 'Store, payments, shipping, taxes and staff' },
+        { name: 'Storefront', description: 'Public storefront endpoints (no auth required)' },
+        { name: 'Webhooks', description: 'Payment provider webhooks (signed/verified server-side)' }
         ]
       }
     })
@@ -58,5 +67,6 @@ export const app = new Elysia()
   .use(analyticsModule)
   .use(settingsModule)
   .use(storefrontModule)
+  .use(webhooksModule)
 
 export type App = typeof app

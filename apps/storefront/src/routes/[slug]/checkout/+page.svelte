@@ -13,6 +13,7 @@
 	const paymentMethods = $derived(
 		store.payments.methods.filter((m) => m.enabled)
 	)
+	const onlineProviders = $derived(store.payments.providers ?? [])
 
 	let email = $state('')
 	let shippingName = $state('')
@@ -21,9 +22,9 @@
 	let city = $state('')
 	let region = $state('')
 	let postalCode = $state('')
-	let country = $state('US')
+	let country = $state('SA')
 	let phone = $state('')
-	let paymentMethod = $state('card')
+	let paymentMethod = $state('')
 	let couponCode = $state('')
 	let notes = $state('')
 
@@ -34,7 +35,15 @@
 	let placing = $state(false)
 	let previewed = $state(false)
 
-	const countries = ['US', 'CA', 'GB', 'DE', 'FR']
+	const countries = ['SA', 'AE', 'KW', 'QA', 'BH', 'OM', 'US', 'GB', 'DE', 'FR']
+
+	$effect(() => {
+		if (!paymentMethod) {
+			paymentMethod = onlineProviders[0]?.id ?? paymentMethods[0]?.id ?? ''
+		}
+	})
+
+	const selectedIsProvider = $derived(onlineProviders.some((p) => p.id === paymentMethod))
 
 	const lineOptions = (options: Record<string, string>) =>
 		Object.entries(options).map(([k, v]) => `${k}: ${v}`).join(' · ')
@@ -132,7 +141,7 @@
 		}
 		placing = true
 		try {
-			const order = await storefrontApi.checkout(fetch, slug, {
+			const payload = {
 				items: cart.items.map((i) => ({
 					productId: i.productId,
 					variantId: i.variantId,
@@ -152,7 +161,16 @@
 				},
 				paymentMethod,
 				notes: notes.trim() || undefined
-			})
+			}
+
+			if (selectedIsProvider) {
+				const session = await storefrontApi.checkoutPay(fetch, slug, payload)
+				sessionStorage.setItem(`ecom:pending:${slug}`, session.orderNumber)
+				window.location.href = session.redirectUrl
+				return
+			}
+
+			const order = await storefrontApi.checkout(fetch, slug, payload)
 			cart.clear()
 			await goto(`/${slug}/orders/${order.orderNumber}`)
 		} catch (e) {
@@ -293,6 +311,27 @@
 				<section class="rounded-2xl border border-gray-200 bg-white p-6">
 					<h2 class="text-lg font-semibold text-gray-900">Payment method</h2>
 					<div class="mt-4 space-y-3">
+						{#each onlineProviders as provider (provider.id)}
+							<label
+								class="flex cursor-pointer items-center gap-3 rounded-lg border p-4
+									{paymentMethod === provider.id ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}"
+							>
+								<input
+									type="radio"
+									name="paymentMethod"
+									value={provider.id}
+									bind:group={paymentMethod}
+									class="accent-indigo-600"
+								/>
+								<span class="text-sm font-medium text-gray-800">{provider.label}</span>
+								<span class="ml-auto text-xs text-gray-400">Secure checkout</span>
+							</label>
+						{/each}
+						{#if onlineProviders.length > 0 && paymentMethods.length > 0}
+							<p class="pt-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+								Pay on delivery
+							</p>
+						{/if}
 						{#each paymentMethods as method (method.id)}
 							<label
 								class="flex cursor-pointer items-center gap-3 rounded-lg border p-4
@@ -306,7 +345,6 @@
 									class="accent-indigo-600"
 								/>
 								<span class="text-sm font-medium text-gray-800">{method.label}</span>
-								<span class="ml-auto text-xs text-gray-400">Demo — no real charge</span>
 							</label>
 						{/each}
 					</div>
@@ -434,11 +472,17 @@
 					disabled={placing}
 					onclick={placeOrder}
 				>
-					{placing ? 'Placing order…' : 'Place order'}
+					{placing ? 'Placing order…' : selectedIsProvider ? `Pay with ${onlineProviders.find((p) => p.id === paymentMethod)?.label ?? 'provider'}` : 'Place order'}
 				</button>
-				<p class="mt-3 text-center text-xs text-gray-400">
-					This is a demo checkout — no real payment is taken.
-				</p>
+				{#if !selectedIsProvider}
+					<p class="mt-3 text-center text-xs text-gray-400">
+						Payment is collected on delivery or per the store's instructions.
+					</p>
+				{:else}
+					<p class="mt-3 text-center text-xs text-gray-400">
+						You will be redirected to a secure payment page.
+					</p>
+				{/if}
 			</aside>
 		</div>
 	{/if}
