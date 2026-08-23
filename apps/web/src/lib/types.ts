@@ -331,6 +331,27 @@ export interface PaymentSettings {
 	updatedAt: string
 }
 
+export interface PaymentCredentialField {
+	key: string
+	label: string
+	secret: boolean
+	required: boolean
+}
+
+export interface PaymentProviderView {
+	id: string
+	label: string
+	description: string
+	countries: string[] | null
+	currencies: string[]
+	credentialFields: PaymentCredentialField[]
+	enabled: boolean
+	mode: 'test' | 'live'
+	country: string | null
+	configured: boolean
+	updatedAt: string | null
+}
+
 export interface ShippingSettings {
 	merchantId: string
 	zones: Array<{ name: string; countries: string[]; rate: number; freeAbove?: number }>

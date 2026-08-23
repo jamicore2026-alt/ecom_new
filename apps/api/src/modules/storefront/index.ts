@@ -6,7 +6,8 @@ import {
   productSlugParams,
   checkoutPreviewBody,
   checkoutBody,
-  orderParams
+  orderParams,
+  syncOrderBody
 } from './model'
 
 export const storefrontModule = new Elysia({ prefix: '/api/store' })
@@ -73,7 +74,20 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
     {
       params: storeParams,
       body: checkoutBody,
-      detail: { tags: ['Storefront'], summary: 'Place an order' }
+      detail: { tags: ['Storefront'], summary: 'Place an order (COD / manual methods)' }
+    }
+  )
+
+  .post(
+    '/:slug/checkout/pay',
+    ({ params, body }) => StorefrontService.createProviderCheckout(params.slug, body),
+    {
+      params: storeParams,
+      body: checkoutBody,
+      detail: {
+        tags: ['Storefront'],
+        summary: 'Create order + provider payment session (redirect URL)'
+      }
     }
   )
 
@@ -83,5 +97,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
     {
       params: orderParams,
       detail: { tags: ['Storefront'], summary: 'Public order confirmation' }
+    }
+  )
+
+  .post(
+    '/:slug/orders/:orderNumber/sync',
+    ({ params, body }) => StorefrontService.syncOrder(params.slug, params.orderNumber, body),
+    {
+      params: orderParams,
+      body: syncOrderBody,
+      detail: { tags: ['Storefront'], summary: 'Re-verify payment status with the provider' }
     }
   )

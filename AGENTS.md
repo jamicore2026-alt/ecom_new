@@ -1,7 +1,7 @@
 # AGENTS.md — Project Memory
 
-> Audit date: 2026-08-22 · HEAD: `e1630b6` + security/bug-fix batch (uncommitted)
-> Verified state after fix batch: tests 38/38 pass · typecheck pass · svelte-check 0 errors (web has ~70 pre-existing a11y warnings)
+> Audit date: 2026-08-22 · HEAD: `e1630b6` + security/bug-fix batch + payments batch (uncommitted)
+> Verified state after payments batch: tests 48/48 pass (incl. payments.test.ts) · typecheck pass · svelte-check 0 errors (web has ~70 pre-existing a11y warnings)
 
 ## What this is
 
@@ -20,7 +20,7 @@ Both SvelteKit apps proxy `/api → http://localhost:3005` in dev (`vite.config.
 ```bash
 bun run dev                # all apps
 bun run dev:api|dev:web|dev:storefront
-bun run test               # bun test (api only — 3 files: smoke, storefront, checkout)
+bun run test               # bun test (api only — 4 files: smoke, storefront, checkout, payments)
 bun run typecheck          # tsc --noEmit (api only)
 bun run check              # svelte-check (web + storefront)
 bun run db:migrate && bun run db:seed   # seed idempotent
@@ -33,8 +33,8 @@ CI (`.github/workflows/ci.yml`): bun 1.3.14 + node 22, postgres:16 service → i
 
 ## API architecture (apps/api)
 
-- Bootstrap chain in `src/app.ts`: onError → cors(origin /.*) → swagger(/docs) → 10 modules.
-- Module convention: `modules/<feature>/{index.ts (controller/routes), service.ts (business logic class, returns status(4xx)), model.ts (TypeBox schemas)}`. Modules: auth, overview, products(+categories/variants/bulk), orders(+returns/refunds), inventory, customers, discounts, analytics, settings, storefront(public).
+- Bootstrap chain in `src/app.ts`: onError → cors(origin /.*) → swagger(/docs) → 11 modules.
+- Module convention: `modules/<feature>/{index.ts (controller/routes), service.ts (business logic class, returns status(4xx)), model.ts (TypeBox schemas)}`. Modules: auth, overview, products(+categories/variants/bulk), orders(+returns/refunds), inventory, customers, discounts, analytics, settings, storefront(public), webhooks(public).
 - Plugins: `errors.ts` (global error → `{success:false,error:{code,message}}`), `auth.ts`. NOTE: README mentions `plugins/db.ts` but it doesn't exist — services import `{ db }` directly from `database/client.ts`.
 - Response envelope: `{ success, data }` / `{ success, error }`; paginated adds `meta {page,limit,total,totalPages}` (`shared/pagination.ts`).
 
@@ -46,12 +46,24 @@ CI (`.github/workflows/ci.yml`): bun 1.3.14 + node 22, postgres:16 service → i
 - CORS (`app.ts`): `CORS_ORIGINS` env (comma-separated) or defaults to localhost:5478/5479 only. In turbo globalEnv.
 
 ### DB (src/database/schema.ts)
-19 tables, all merchant-scoped except merchants/settings/token_blacklist: merchants, users, categories(self-FK tree), products, product_variants(jsonb option_values), inventory_logs(before/after), customers, orders(order_number unique per merchant), order_items, returns, refunds, coupons(unique per merchant code), promotions, store/payment/shipping/tax settings (1 row per merchant, PK=merchant_id), visits(daily per channel), token_blacklist.
+19+3=22 tables, all merchant-scoped except merchants/settings/token_blacklist: merchants, users, categories(self-FK tree), products, product_variants(jsonb option_values), inventory_logs(before/after), customers, orders(order_number unique per merchant; +payment_method/payment_provider/expires_at), order_items, returns, refunds(+provider_ref), coupons(unique per merchant code), promotions, store/payment/shipping/tax settings (1 row per merchant, PK=merchant_id), visits(daily per channel), token_blacklist, payment_provider_configs(PK merchant_id+provider, encrypted credentials text), payment_transactions(provider_ref indexed), webhook_events(unique provider+event_id). Migrations 0000–0003.
 Conventions: ids varchar(30) cuid2; money = numeric(12,2) mode:'number'; soft-delete = products.status 'archived' (DELETE /products/:id archives); updatedAt via `$onUpdate`.
 Migrations committed in `drizzle/` (0000–0002). Analytics computed live via SQL aggregation (no denormalized tables).
 
 ### Storefront public API (no auth)
-`/api/store/:slug/*`: GET store, categories(tree+counts), products(filters/sort price_asc|price_desc|newest), products/:productSlug(+variants+related), search; POST checkout/preview (validates stock/variants/coupon, computes subtotal/shipping/tax/total), POST checkout (creates order, decrements inventory + logs, upserts customer); GET orders/:orderNumber (public confirmation).
+`/api/store/:slug/*`: GET store, categories(tree+counts), products(filters/sort price_asc|price_desc|newest), products/:productSlug(+variants+related), search; POST checkout/preview (validates stock/variants/coupon, computes subtotal/shipping/tax/total), POST checkout (creates order, decrements inventory + logs, upserts customer), POST checkout/pay (provider flow), POST orders/:orderNumber/sync; GET orders/:orderNumber (public confirmation).
+
+### Payments (multi-provider, BYOK)
+- Adapters in `src/payments/`: `types.ts` (`PaymentProviderAdapter` interface), `registry.ts` (`getProvider`/`listProviders`), `myfatoorah.ts`, `tamara.ts`. New provider = implement adapter + register.
+- Phase 1 providers: **MyFatoorah** (cards/KNET/Mada/Apple Pay; live host per country api-sa/api-ae/api-qa/api-eg; test = apitest) + **Tamara** (BNPL; webhook = HS256 JWT `tamara_token` signed with merchant notification token, verified timing-safe via `verifyTamaraJwt`) + legacy COD/manual methods from payment settings.
+- Per-merchant config rows in `payment_provider_configs` (PK merchant_id+provider); credentials stored AES-256-GCM encrypted (`shared/crypto.ts` encryptJson/decryptJson, key = sha256(ENCRYPTION_KEY)). Secrets are write-only — GET returns only `configured` flag; PUT ignores masked `••••xxxx` values (keeps stored).
+- Flow: `/checkout/pay` creates order pending/**unpaid** with stock held + `expires_at=+30min` → adapter hosted session → redirect. Return page `/[slug]/checkout/return` calls `/sync` (server-side re-verify, never trust redirect payload). Webhooks `POST /api/webhooks/:provider/:slug` idempotent via `webhook_events` (unique provider+eventId). Only unpaid→paid transitions; clears expiresAt + updates customer totalSpent.
+- Sweeper: `StorefrontService.sweepExpiredOrders()` on 5-min `setInterval` (.unref()) — stale unpaid past expiry → cancelled/failed + inventory restock (reason 'cancel').
+- Refunds method='original' on provider orders hit gateway first (MakeRefund / simplified-refund), ref saved to `refunds.provider_ref`; failure throws REFUND_FAILED.
+- Money helper now numeric(12,**3**) for KWD/BHD/OMR/JOD (`shared/currency.ts` roundForCurrency/currencyDecimals).
+- Legacy manual `'card'` method intentionally still places orders as paid-on-place (test compat). Provider methods on plain /checkout → 400 PAYMENT_REQUIRES_REDIRECT; unavailable methods → PAYMENT_METHOD_UNAVAILABLE.
+- Env additions: ENCRYPTION_KEY (required for provider config), PUBLIC_API_URL (webhook base), PUBLIC_STOREFRONT_URL (return base) — all in turbo globalEnv.
+- Web dashboard Settings→Payments renders provider cards (mode select, country, masked credential inputs, Save + Test connection). Storefront checkout shows online providers above COD/manual; sessionStorage flag `ecom:pending:${slug}` releases cart after confirmed paid.
 
 ## Web dashboard (apps/web)
 Routes under `(app)/`: dashboard, analytics(tabs+range), products(list+[id] variants, CreateEditProduct modal, CategoriesManager), inventory(all/low/out/history), orders(list+[id] returns/refunds), customers(list+[id]), discounts(coupons/promotions tabs), settings(store/payments/shipping/taxes/staff). Plus `/login`, `/` redirector.
@@ -59,7 +71,7 @@ State: `session.svelte.ts` (Svelte 5 runes singleton; bootstrap() hydrates from 
 `hooks.server.ts`: server-side guard — protected prefixes (dashboard/analytics/products/inventory/orders/customers/discounts/settings) require `md.refresh` cookie else 302 /login; /login redirects to /dashboard when session present. Presence check only (not JWT verification) — real auth still enforced by API.
 
 ## Storefront (apps/storefront)
-Routes under `[slug]/`: home(featured 8), products(list w/ filter form), products/[product](variant picker PDP), categories/[category], search(?q=), cart(client-side), checkout(contact/address/coupon → preview → place order), orders/[orderNumber](confirmation).
+Routes under `[slug]/`: home(featured 8), products(list w/ filter form), products/[product](variant picker PDP), categories/[category], search(?q=), cart(client-side), checkout(contact/address/coupon → preview → place order; online providers → /checkout/pay → gateway redirect, sessionStorage `ecom:pending:${slug}`), checkout/return(sync + redirect to confirmation, retry on pending), orders/[orderNumber](confirmation; pending-payment banner with "Check now" re-sync).
 Cart: `cart.svelte.ts` class singleton, localStorage key `ecom:cart:${slug}`, lines snapshot product data at add-time, merge by variantId, qty cap 99. api.ts uses injected fetchFn (SSR-safe), typed ApiError, plus `loadError(err, notFoundMessage)` helper — all page.server loads wrap API calls; ApiError 404 → SvelteKit error(404), else error(status)/rethrow. Home degrades gracefully to empty featured list. PDP resets variant/qty/notice via `$effect` keyed on `data.product.id`; selectedVariant falls back to variants[0] when stale.
 
 ## Known issues / remaining tech debt (after fix batch 2026-08-22)

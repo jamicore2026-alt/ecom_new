@@ -18,7 +18,11 @@ export interface StoreSettings {
 export interface StoreInfo {
 	merchant: StoreMerchant
 	settings: StoreSettings
-	payments: { methods: Array<{ id: string; label: string; enabled: boolean }>; currency: string }
+	payments: {
+		methods: Array<{ id: string; label: string; enabled: boolean }>
+		currency: string
+		providers?: Array<{ id: string; label: string }>
+	}
 	shipping: { zones: Array<{ name: string; countries: string[]; rate: number; freeAbove?: number }>; freeShippingThreshold: number }
 	taxes: { autoCalculate: boolean; rates: Array<{ region: string; rate: number }> }
 }
@@ -173,6 +177,23 @@ export interface CheckoutOrder {
 	currency: string
 	email: string
 	createdAt: string
+}
+
+export interface ProviderCheckoutSession {
+	id: string
+	orderNumber: string
+	requiresRedirect: true
+	provider: string
+	redirectUrl: string
+	total: number
+	currency: string
+}
+
+export interface PaymentSyncResult {
+	orderNumber: string
+	paymentStatus: string
+	status: string
+	updated: boolean
 }
 
 export interface OrderLineItem {

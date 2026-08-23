@@ -7,8 +7,10 @@ import type {
 	CheckoutSummary,
 	OrderDetail,
 	Page,
+	PaymentSyncResult,
 	ProductDetail,
 	ProductSummary,
+	ProviderCheckoutSession,
 	StoreInfo
 } from './types'
 
@@ -87,6 +89,23 @@ export const storefrontApi = {
 
 	checkout: (fetchFn: typeof fetch, slug: string, body: CheckoutInput) =>
 		request<CheckoutOrder>(fetchFn, `/${slug}/checkout`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		}),
+
+	checkoutPay: (fetchFn: typeof fetch, slug: string, body: CheckoutInput) =>
+		request<ProviderCheckoutSession>(fetchFn, `/${slug}/checkout/pay`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		}),
+
+	syncOrder: (
+		fetchFn: typeof fetch,
+		slug: string,
+		orderNumber: string,
+		body: { paymentId?: string } = {}
+	) =>
+		request<PaymentSyncResult>(fetchFn, `/${slug}/orders/${encodeURIComponent(orderNumber)}/sync`, {
 			method: 'POST',
 			body: JSON.stringify(body)
 		}),

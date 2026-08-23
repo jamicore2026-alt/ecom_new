@@ -189,6 +189,8 @@ All tables (except `merchants`) carry a `merchant_id` foreign key; every query i
 | `fulfillment_status` | varchar | `unfulfilled` / `fulfilled` |
 | `subtotal` / `shipping_total` / `discount_total` / `tax_total` / `total` | numeric | |
 | `currency` | varchar | |
+| `payment_method` / `payment_provider` | varchar | e.g. `cod`, `card`, or provider id (`myfatoorah`, `tamara`) |
+| `expires_at` | timestamp | 30-min stock hold for unpaid provider orders; swept to `cancelled/failed` when passed |
 | `shipping_address` / `billing_address` | jsonb | |
 | `notes` | text | |
 | `created_at` / `updated_at` | timestamp | |
@@ -200,7 +202,16 @@ All tables (except `merchants`) carry a `merchant_id` foreign key; every query i
 `id, merchant_id, order_id, order_item_id FK, quantity, amount, reason, status (pending/approved/rejected/restocked), created_at`
 
 ### refunds
-`id, merchant_id, order_id, return_id FK, amount, method (original/credit/store_credit), status (pending/completed), created_at`
+`id, merchant_id, order_id, return_id FK, amount, method (original/credit/store_credit), provider_ref (gateway refund reference), status (pending/completed), created_at`
+
+### payment_provider_configs
+`merchant_id + provider (composite PK), enabled, mode (test/live), country, credentials (AES-256-GCM encrypted JSON — write-only)`
+
+### payment_transactions
+`id, merchant_id, order_id FK, provider, provider_ref, status (pending/authorized/paid/failed/refunded), amount, currency, raw jsonb`
+
+### webhook_events
+`id, provider, event_id (unique per pair), payload jsonb, processed_at — idempotency for callbacks`
 
 ### coupons
 `id, merchant_id, code (unique per merchant), type (percentage/fixed/free_shipping), value, min_subtotal, usage_limit, used_count, starts_at, ends_at, status (active/disabled)`
@@ -341,6 +352,9 @@ All endpoints accept `from`, `to` (default: last 30 days) and optional `interval
 |---|---|---|---|
 | GET / PUT | `/settings/store` | admin | Store identity, address, currency, timezone |
 | GET / PUT | `/settings/payments` | admin | Payment methods, currency |
+| GET | `/settings/payments/providers` | admin | Payment provider list (defs + per-merchant config; secrets never returned) |
+| PUT | `/settings/payments/providers/:provider` | admin | Enable/disable, mode (test/live), country, credentials (masked values keep stored secrets) |
+| POST | `/settings/payments/providers/:provider/test` | admin | Ping provider with stored credentials |
 | GET / PUT | `/settings/shipping` | admin | Shipping zones/rates, free-shipping threshold |
 | GET / PUT | `/settings/taxes` | admin | Auto-calc toggle, tax rates |
 | GET | `/settings/staff` | admin | List staff |
@@ -460,8 +474,28 @@ Public, unauthenticated endpoints under `/api/store/:slug/*`:
 | GET | `/api/store/:slug/products/:productSlug` | Product detail + variants + related products |
 | GET | `/api/store/:slug/search` | Product search (alias of products with `search`) |
 | POST | `/api/store/:slug/checkout/preview` | Validate cart (stock/variants/coupon) and compute subtotal, shipping, tax, total |
-| POST | `/api/store/:slug/checkout` | Place an order (creates order + items, decrements inventory, logs, upserts customer) |
+| POST | `/api/store/:slug/checkout` | Place an order (creates order + items, decrements inventory, logs, upserts customer). COD/manual only — provider methods return `PAYMENT_REQUIRES_REDIRECT` |
+| POST | `/api/store/:slug/checkout/pay` | Create an unpaid order (30-min hold) + provider payment session; returns `redirectUrl` |
+| POST | `/api/store/:slug/orders/:orderNumber/sync` | Re-verify payment status with the provider (return-page polling) |
 | GET | `/api/store/:slug/orders/:orderNumber` | Public order confirmation (items, address, totals, status) |
+
+### Payment webhooks
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/webhooks/:provider/:slug` | Provider callbacks. Idempotent per `(provider, event_id)` via the `webhook_events` table. Tamara webhooks are authenticated by an HS256 JWT (`tamara_token`, signed with the merchant's notification token); MyFatoorah results are always re-verified server-side with `GetPaymentStatus`. Only flips orders from `unpaid → paid`; clears the expiry hold and updates customer spend. |
+
+#### How a provider checkout works
+
+1. Merchant enables a provider in **Settings → Payments** (BYOK: API keys are AES-256-GCM encrypted at rest with `ENCRYPTION_KEY`).
+2. Storefront exposes enabled providers on `GET /store` as `payments.providers[]`.
+3. Customer picks a provider → storefront calls `/checkout/pay` → order is created `pending/unpaid` with stock held and `expires_at = now + 30 min` → adapter creates a hosted session → browser redirects to `redirectUrl`.
+4. Gateway redirects back to `/{slug}/checkout/return?order=…&paymentId=…`; the return page calls `/sync`, which re-verifies server-side and redirects to the confirmation page.
+5. The gateway also fires a webhook → verified + idempotency-checked → same state transition.
+6. If payment never completes, a sweeper (every 5 min) cancels stale unpaid orders past `expires_at`, restores inventory (reason `cancel`) and marks them `failed`.
+7. Refunds with method `original` on provider orders hit the gateway first (`MakeRefund` / simplified-refund); the gateway reference is stored on `refunds.provider_ref`.
+
+Adding a new provider = implement the `PaymentProviderAdapter` interface (`src/payments/types.ts`), register it in `src/payments/registry.ts`. MyFatoorah (cards/KNET/Apple Pay, GCC) and Tamara (BNPL) ship out of the box.
 
 The storefront app runs on port `5479` and proxies `/api` to the API on `:3005` (the web dashboard runs on `5478`). Home `/` redirects to `/{PUBLIC_DEFAULT_STORE}` (default `acme-store`).
 
@@ -493,6 +527,7 @@ Set `PUBLIC_DEFAULT_STORE` in `apps/storefront/.env` (or the repo `.env` copied 
 
 - [ ] Storefront auth / customer accounts + order history
 - [ ] Storefront search & filter polish, product reviews
-- [ ] Real payment gateway integration (Stripe)
+- [x] Multi-provider payments — MyFatoorah + Tamara (BYOK, hosted checkout, webhooks, 30-min stock hold, gateway refunds)
+- [ ] More providers (Stripe for non-GCC, PayPal), partial captures, saved cards
 - [ ] Wishlists / saved carts / email notifications
 - [ ] Swagger polish, Eden export, smoke tests

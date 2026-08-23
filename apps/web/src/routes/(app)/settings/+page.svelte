@@ -8,7 +8,7 @@
 	import Badge from '$lib/components/Badge.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import { titleCase } from '$lib/format'
-	import type { Address, PaymentSettings, Permission, ShippingSettings, StaffMember, StoreSettings, TaxSettings } from '$lib/types'
+	import type { Address, PaymentProviderView, PaymentSettings, Permission, ShippingSettings, StaffMember, StoreSettings, TaxSettings } from '$lib/types'
 
 	type Section = 'store' | 'payments' | 'shipping' | 'taxes' | 'staff'
 	let section = $state<Section>('store')
@@ -26,6 +26,10 @@
 	let payments = $state<PaymentSettings | null>(null)
 	let pCurrency = $state('')
 	let methods = $state<Array<{ id: string; label: string; enabled: boolean }>>([])
+	let providers = $state<PaymentProviderView[]>([])
+	let providerCreds = $state<Record<string, Record<string, string>>>({})
+	let savingProviderId = $state('')
+	let testingProviderId = $state('')
 
 	// shipping
 	let shipping = $state<ShippingSettings | null>(null)
@@ -68,12 +72,22 @@
 				sTimezone = res.data.timezone
 				sAnnouncement = res.data.announcement
 				addr = { ...res.data.address }
-			} else if (section === 'payments') {
-				const res = await api.get<{ success: boolean; data: PaymentSettings }>('/api/settings/payments')
-				payments = res.data
-				pCurrency = res.data.currency
-				methods = res.data.methods.map((m) => ({ ...m }))
-			} else if (section === 'shipping') {
+		} else if (section === 'payments') {
+			const [payRes, providerRes] = await Promise.all([
+				api.get<{ success: boolean; data: PaymentSettings }>('/api/settings/payments'),
+				api.get<{ success: boolean; data: PaymentProviderView[] }>('/api/settings/payments/providers')
+			])
+			payments = payRes.data
+			pCurrency = payRes.data.currency
+			methods = payRes.data.methods.map((m) => ({ ...m }))
+			providers = providerRes.data
+			const creds: Record<string, Record<string, string>> = {}
+			for (const p of providers) {
+				creds[p.id] = {}
+				for (const f of p.credentialFields) creds[p.id][f.key] = ''
+			}
+			providerCreds = creds
+		} else if (section === 'shipping') {
 				const res = await api.get<{ success: boolean; data: ShippingSettings }>('/api/settings/shipping')
 				shipping = res.data
 				freeShippingThreshold = String(res.data.freeShippingThreshold)
@@ -130,6 +144,58 @@
 			toast.error((e as Error).message)
 		} finally {
 			saving = false
+		}
+	}
+
+	function providerPayload(p: PaymentProviderView, extra: Record<string, unknown> = {}) {
+		const credentials: Record<string, string> = {}
+		for (const f of p.credentialFields) {
+			const v = providerCreds[p.id]?.[f.key]?.trim()
+			if (v) credentials[f.key] = v
+		}
+		return {
+			enabled: p.enabled,
+			mode: p.mode,
+			country: p.country ?? undefined,
+			...(Object.keys(credentials).length ? { credentials } : {}),
+			...extra
+		}
+	}
+
+	async function saveProvider(p: PaymentProviderView) {
+		savingProviderId = p.id
+		try {
+			const res = await api.put<{ success: boolean; data: { providerId: string; enabled: boolean } }>(
+				`/api/settings/payments/providers/${p.id}`,
+				providerPayload(p)
+			)
+			const idx = providers.findIndex((x) => x.id === p.id)
+			if (idx >= 0) providers[idx] = { ...providers[idx], ...res.data ? { enabled: res.data.enabled } : {} }
+			const fresh = await api.get<{ success: boolean; data: PaymentProviderView[] }>('/api/settings/payments/providers')
+			providers = fresh.data
+			for (const np of providers) for (const f of np.credentialFields) (providerCreds[np.id] ??= {})[f.key] = ''
+			toast.success(`${p.label} saved`)
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			savingProviderId = ''
+		}
+	}
+
+	async function toggleProvider(p: PaymentProviderView) {
+		p.enabled = !p.enabled
+		await saveProvider(p)
+	}
+
+	async function testProvider(p: PaymentProviderView) {
+		testingProviderId = p.id
+		try {
+			await api.post<{ success: boolean }>(`/api/settings/payments/providers/${p.id}/test`, {})
+			toast.success(`${p.label} connection OK`)
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			testingProviderId = ''
 		}
 	}
 
@@ -302,6 +368,83 @@
 				</form>
 			</Card>
 		{:else if section === 'payments' && payments}
+			{#each providers as p (p.id)}
+				<Card>
+					<div class="flex flex-wrap items-start justify-between gap-3">
+						<div class="min-w-0">
+							<div class="flex items-center gap-2">
+								<h3 class="text-sm font-semibold text-gray-900">{p.label}</h3>
+								<Badge label={p.mode} />
+								<span class="text-[11px] font-medium {p.configured ? 'text-green-600' : 'text-gray-400'}">
+									{p.configured ? '● credentials saved' : '○ not configured'}
+								</span>
+							</div>
+							<p class="mt-1 max-w-xl text-xs text-gray-500">{p.description}</p>
+							{#if p.currencies.length}
+								<p class="mt-1 text-[11px] text-gray-400">Currencies: {p.currencies.join(', ')}</p>
+							{/if}
+						</div>
+						<label class="flex shrink-0 cursor-pointer items-center gap-2">
+							<input type="checkbox" class="h-4 w-4 rounded border-gray-300" checked={p.enabled} onchange={() => toggleProvider(p)} />
+							<span class="text-xs font-medium text-gray-600">{p.enabled ? 'Enabled' : 'Disabled'}</span>
+						</label>
+					</div>
+
+					<div class="mt-4 grid gap-3 sm:grid-cols-2">
+						<div>
+							<label class="mb-1 block text-xs font-medium text-gray-700" for={`${p.id}-mode`}>Mode</label>
+							<select
+								id={`${p.id}-mode`}
+								class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+								bind:value={p.mode}
+							>
+								<option value="test">Test / Sandbox</option>
+								<option value="live">Live</option>
+							</select>
+						</div>
+						{#if p.countries}
+							<div>
+								<label class="mb-1 block text-xs font-medium text-gray-700" for={`${p.id}-country`}>Account country</label>
+								<select
+									id={`${p.id}-country`}
+									class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+									bind:value={p.country}
+								>
+									{#each p.countries as c (c)}
+										<option value={c}>{c}</option>
+									{/each}
+								</select>
+							</div>
+						{/if}
+					</div>
+
+					<div class="mt-3 grid gap-3 sm:grid-cols-2">
+						{#each p.credentialFields as f (f.key)}
+							<div>
+								<label class="mb-1 block text-xs font-medium text-gray-700" for={`${p.id}-${f.key}`}>
+									{f.label}{f.required ? ' *' : ''}
+								</label>
+								<input
+									id={`${p.id}-${f.key}`}
+									type={f.secret ? 'password' : 'text'}
+									class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+									bind:value={providerCreds[p.id][f.key]}
+									placeholder={p.configured && f.secret ? '•••••••• (saved — leave blank to keep)' : ''}
+									autocomplete="off"
+								/>
+							</div>
+						{/each}
+					</div>
+
+					<div class="mt-4 flex items-center justify-end gap-2">
+						<Button size="sm" variant="secondary" loading={testingProviderId === p.id} onclick={() => testProvider(p)}>
+							Test connection
+						</Button>
+						<Button size="sm" loading={savingProviderId === p.id} onclick={() => saveProvider(p)}>Save</Button>
+					</div>
+				</Card>
+			{/each}
+
 			<Card title="Payment methods">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); savePayments() }}>
 					<div>

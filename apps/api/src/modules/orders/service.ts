@@ -5,10 +5,14 @@ import {
   inventoryLogs,
   orderItems,
   orders,
+  paymentProviderConfigs,
+  paymentTransactions,
   productVariants,
   refunds,
   returnsTable
 } from '../../database/schema'
+import { getProvider } from '../../payments/registry'
+import { decryptJson } from '../../shared/crypto'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
@@ -378,6 +382,60 @@ export class OrdersService {
       )
     }
 
+    // Gateway refund first (method 'original' + a captured provider transaction) —
+    // the local refund row is only written when the provider accepts it.
+    let gatewayRef: string | null = null
+    if ((input.method ?? 'original') === 'original' && order.paymentProvider) {
+      const [txn] = await db
+        .select()
+        .from(paymentTransactions)
+        .where(
+          and(
+            eq(paymentTransactions.orderId, order.id),
+            eq(paymentTransactions.provider, order.paymentProvider)
+          )
+        )
+        .orderBy(desc(paymentTransactions.createdAt))
+        .limit(1)
+
+      const adapter =
+        txn?.providerRef && ['paid', 'authorized'].includes(txn.status)
+          ? getProvider(order.paymentProvider)
+          : null
+
+      if (adapter && txn) {
+        const [configRow] = await db
+          .select()
+          .from(paymentProviderConfigs)
+          .where(
+            and(
+              eq(paymentProviderConfigs.merchantId, merchantId),
+              eq(paymentProviderConfigs.provider, order.paymentProvider)
+            )
+          )
+        if (!configRow) {
+          throw badRequest(
+            'REFUND_FAILED',
+            `Provider "${order.paymentProvider}" is no longer configured`
+          )
+        }
+        const config = {
+          providerId: order.paymentProvider,
+          enabled: configRow.enabled,
+          mode: (configRow.mode === 'live' ? 'live' : 'test') as 'test' | 'live',
+          country: configRow.country ?? null,
+          credentials: decryptJson<Record<string, string>>(configRow.credentials)
+        }
+        const result = await adapter.refund(config, {
+          providerRef: txn.providerRef!,
+          amount: input.amount,
+          currency: order.currency,
+          comment: `Refund for ${order.orderNumber}`
+        })
+        gatewayRef = result.ref
+      }
+    }
+
     const refund = await db.transaction(async (tx) => {
       const [row] = await tx
         .insert(refunds)
@@ -387,6 +445,7 @@ export class OrdersService {
           returnId: input.returnId ?? null,
           amount: input.amount,
           method: input.method ?? 'original',
+          providerRef: gatewayRef,
           status: 'completed'
         })
         .returning()

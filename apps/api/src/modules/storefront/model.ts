@@ -56,3 +56,7 @@ export const orderParams = t.Object({
   slug: t.String(),
   orderNumber: t.String()
 })
+
+export const syncOrderBody = t.Object({
+  paymentId: t.Optional(t.String())
+})

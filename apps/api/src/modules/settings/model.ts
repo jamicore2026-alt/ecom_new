@@ -33,6 +33,15 @@ export const paymentBody = t.Object({
   currency: t.Optional(t.String({ minLength: 3, maxLength: 10 }))
 })
 
+export const providerParams = t.Object({ provider: t.String() })
+
+export const providerBody = t.Object({
+  enabled: t.Optional(t.Boolean()),
+  mode: t.Optional(t.Union([t.Literal('test'), t.Literal('live')])),
+  country: t.Optional(t.Nullable(t.String({ minLength: 2, maxLength: 5 }))),
+  credentials: t.Optional(t.Record(t.String(), t.Nullable(t.String())))
+})
+
 export const shippingBody = t.Object({
   zones: t.Optional(
     t.Array(

@@ -12,6 +12,7 @@ import { discountsModule } from './modules/discounts'
 import { analyticsModule } from './modules/analytics'
 import { settingsModule } from './modules/settings'
 import { storefrontModule } from './modules/storefront'
+import { webhooksModule } from './modules/webhooks'
 
 const corsOrigins = (process.env.CORS_ORIGINS ?? '')
   .split(',')
@@ -49,8 +50,9 @@ export const app = new Elysia()
           { name: 'Customers', description: 'Customer directory and order history' },
           { name: 'Discounts', description: 'Coupons and promotions' },
           { name: 'Analytics', description: 'Sales, products, customers and conversion analytics' },
-          { name: 'Settings', description: 'Store, payments, shipping, taxes and staff' },
-          { name: 'Storefront', description: 'Public storefront endpoints (no auth required)' }
+        { name: 'Settings', description: 'Store, payments, shipping, taxes and staff' },
+        { name: 'Storefront', description: 'Public storefront endpoints (no auth required)' },
+        { name: 'Webhooks', description: 'Payment provider webhooks (signed/verified server-side)' }
         ]
       }
     })
@@ -65,5 +67,6 @@ export const app = new Elysia()
   .use(analyticsModule)
   .use(settingsModule)
   .use(storefrontModule)
+  .use(webhooksModule)
 
 export type App = typeof app
