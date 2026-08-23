@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../../database/client'
 import {
   merchants,
+  notificationSettings,
   paymentProviderConfigs,
   paymentSettings,
   shippingSettings,
@@ -307,6 +308,44 @@ export class SettingsService {
       rates: input.rates ?? current.data.rates
     })
     return this.getTaxes(merchantId)
+  }
+
+  /* ----------------------------- notifications ----------------------------- */
+
+  static async getNotifications(merchantId: string) {
+    const [row] = await db
+      .select()
+      .from(notificationSettings)
+      .where(eq(notificationSettings.merchantId, merchantId))
+    return ok(
+      row ?? {
+        merchantId,
+        enabled: true,
+        fromName: null,
+        fromEmail: null,
+        templates: {}
+      }
+    )
+  }
+
+  static async updateNotifications(
+    merchantId: string,
+    input: {
+      enabled?: boolean
+      fromName?: string | null
+      fromEmail?: string | null
+      templates?: Record<string, boolean>
+    }
+  ) {
+    const current = await this.getNotifications(merchantId)
+
+    await upsert(notificationSettings, merchantId, {
+      enabled: input.enabled ?? current.data.enabled,
+      fromName: input.fromName !== undefined ? input.fromName : current.data.fromName,
+      fromEmail: input.fromEmail !== undefined ? input.fromEmail : current.data.fromEmail,
+      templates: input.templates ?? current.data.templates
+    })
+    return this.getNotifications(merchantId)
   }
 
   /* --------------------------------- staff -------------------------------- */

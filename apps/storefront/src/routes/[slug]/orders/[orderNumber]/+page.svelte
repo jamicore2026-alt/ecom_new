@@ -50,6 +50,7 @@
 
 <svelte:head>
 	<title>Order {order.orderNumber} · {store.settings.name}</title>
+	<meta name="robots" content="noindex" />
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-4 py-12">

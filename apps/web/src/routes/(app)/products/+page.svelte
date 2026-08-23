@@ -198,6 +198,7 @@
 									<input type="checkbox" checked={selected.length === items.length} onchange={toggleAll} />
 								</th>
 							{/if}
+							<th class="w-12 px-3 py-3"></th>
 							<th class="px-3 py-3">Name</th>
 							<th class="px-3 py-3">SKU</th>
 							<th class="px-3 py-3">Price</th>
@@ -216,10 +217,19 @@
 									</td>
 								{/if}
 								<td class="px-3 py-3">
-									<a href="/products/{p.id}" class="font-medium text-indigo-600 hover:text-indigo-800">{p.name}</a>
-									{#if p.category}
-										<span class="ml-1 text-xs text-gray-400">· {p.category.name}</span>
-									{/if}
+									<div class="flex items-center gap-3">
+										<div class="h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50">
+											{#if p.primaryImage}
+												<img src={p.primaryImage} alt="" class="h-full w-full object-cover" />
+											{/if}
+										</div>
+										<div>
+											<a href="/products/{p.id}" class="font-medium text-indigo-600 hover:text-indigo-800">{p.name}</a>
+											{#if p.category}
+												<span class="ml-1 text-xs text-gray-400">· {p.category.name}</span>
+											{/if}
+										</div>
+									</div>
 								</td>
 								<td class="px-3 py-3 text-gray-600">{p.sku ?? '—'}</td>
 								<td class="px-3 py-3 font-medium">{currency(p.price)}</td>

@@ -11,6 +11,11 @@
 		Object.entries(options).map(([k, v]) => `${k}: ${v}`).join(' · ')
 </script>
 
+<svelte:head>
+	<title>Your cart · {store.settings.name}</title>
+	<meta name="robots" content="noindex" />
+</svelte:head>
+
 <div class="mx-auto max-w-5xl px-4 py-10">
 	<h1 class="text-3xl font-bold text-gray-900">Your cart</h1>
 

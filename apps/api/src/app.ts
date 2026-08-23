@@ -13,6 +13,7 @@ import { analyticsModule } from './modules/analytics'
 import { settingsModule } from './modules/settings'
 import { storefrontModule } from './modules/storefront'
 import { webhooksModule } from './modules/webhooks'
+import { uploadsModule } from './modules/uploads'
 
 const corsOrigins = (process.env.CORS_ORIGINS ?? '')
   .split(',')
@@ -52,7 +53,8 @@ export const app = new Elysia()
           { name: 'Analytics', description: 'Sales, products, customers and conversion analytics' },
         { name: 'Settings', description: 'Store, payments, shipping, taxes and staff' },
         { name: 'Storefront', description: 'Public storefront endpoints (no auth required)' },
-        { name: 'Webhooks', description: 'Payment provider webhooks (signed/verified server-side)' }
+        { name: 'Webhooks', description: 'Payment provider webhooks (signed/verified server-side)' },
+        { name: 'Uploads', description: 'Product image uploads and file serving' }
         ]
       }
     })
@@ -68,5 +70,6 @@ export const app = new Elysia()
   .use(settingsModule)
   .use(storefrontModule)
   .use(webhooksModule)
+  .use(uploadsModule)
 
 export type App = typeof app

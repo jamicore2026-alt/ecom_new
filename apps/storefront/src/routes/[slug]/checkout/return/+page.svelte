@@ -13,6 +13,7 @@
 
 <svelte:head>
 	<title>Payment status · {orderNumber}</title>
+	<meta name="robots" content="noindex" />
 </svelte:head>
 
 <div class="mx-auto max-w-2xl px-4 py-16">

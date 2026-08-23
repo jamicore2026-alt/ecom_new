@@ -3,12 +3,17 @@
 	import { ApiError, storefrontApi } from '$lib/api'
 	import { cart } from '$lib/cart.svelte'
 	import { money, placeholderImage } from '$lib/format'
+	import { track } from '$lib/analytics'
 	import type { CheckoutSummary } from '$lib/types'
 	import type { PageProps } from './$types'
 
 	let { data }: PageProps = $props()
 	const store = $derived(data.store)
 	const slug = $derived(data.slug)
+
+	$effect(() => {
+		track(slug, 'checkout_start')
+	})
 
 	const paymentMethods = $derived(
 		store.payments.methods.filter((m) => m.enabled)
@@ -184,6 +189,7 @@
 
 <svelte:head>
 	<title>Checkout · {store.settings.name}</title>
+	<meta name="robots" content="noindex" />
 </svelte:head>
 
 <div class="mx-auto max-w-6xl px-4 py-10">

@@ -2,6 +2,8 @@
 	import ProductCard from '$lib/components/ProductCard.svelte'
 	import { cart } from '$lib/cart.svelte'
 	import { money, inStock, placeholderImage } from '$lib/format'
+	import { track } from '$lib/analytics'
+	import { absoluteImageUrl, metaDescription, siteUrl } from '$lib/seo'
 	import { untrack } from 'svelte'
 	import type { ProductVariant } from '$lib/types'
 	import type { PageProps } from './$types'
@@ -9,6 +11,12 @@
 	let { data }: PageProps = $props()
 	const store = $derived(data.store)
 	const product = $derived(data.product)
+
+	const canonicalUrl = $derived(
+		`${siteUrl(data.origin)}/${data.slug}/products/${product.slug}`
+	)
+	const ogImage = $derived(absoluteImageUrl(product.images?.[0] ?? product.image, data.origin))
+	const description = $derived(metaDescription(product.description, `Buy ${product.name} at ${store.settings.name}.`))
 
 	const optionNames = $derived(
 		product.variants.length > 1
@@ -22,12 +30,15 @@
 	let selectedVariantId = $state<string | null>(defaultVariantId())
 	let quantity = $state(1)
 	let notice = $state('')
+	let activeImage = $state(0)
 
 	$effect(() => {
 		void data.product.id
 		selectedVariantId = defaultVariantId()
 		quantity = 1
 		notice = ''
+		activeImage = 0
+		track(data.slug, 'view')
 	})
 
 	const selectedVariant = $derived(
@@ -39,7 +50,44 @@
 		inStock(selectedVariant?.inventory ?? product.stock, product.trackInventory)
 	)
 	const stock = $derived(selectedVariant?.inventory ?? product.stock)
-	const image = $derived(selectedVariant?.image ?? product.image)
+	const gallery = $derived(
+		product.images?.length ? product.images : product.image ? [product.image] : []
+	)
+	const mainImage = $derived(
+		selectedVariant?.image ?? gallery[activeImage] ?? gallery[0] ?? null
+	)
+
+	const jsonLd = $derived.by(() => {
+		const schema: Record<string, unknown> = {
+			'@context': 'https://schema.org',
+			'@type': 'Product',
+			name: product.name,
+			description,
+			url: canonicalUrl
+		}
+		if (ogImage) schema.image = [ogImage]
+		if (product.sku) schema.sku = product.sku
+		schema.offers = {
+			'@type': 'Offer',
+			url: canonicalUrl,
+			priceCurrency: store.settings.currency,
+			price: (selectedVariant?.price ?? product.price).toFixed(2),
+			itemCondition: 'https://schema.org/NewCondition',
+			availability:
+				available ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock'
+		}
+		// Escape `<` so user-supplied fields can't break out of the script tag.
+		return JSON.stringify(schema).replace(/</g, '\\u003c')
+	})
+
+	// When a variant carries its own photo, focus it in the gallery
+	$effect(() => {
+		const variantImage = selectedVariant?.image
+		if (variantImage) {
+			const index = gallery.indexOf(variantImage)
+			if (index !== -1) activeImage = index
+		}
+	})
 
 	const chooseOption = (name: string, value: string) => {
 		const match = product.variants.find(
@@ -71,6 +119,25 @@
 		variant.optionValues?.[name] ?? ''
 </script>
 
+<svelte:head>
+	<title>{product.name} — {store.settings.name}</title>
+	<meta name="description" content={description} />
+	<link rel="canonical" href={canonicalUrl} />
+	<meta property="og:type" content="product" />
+	<meta property="og:site_name" content={store.settings.name} />
+	<meta property="og:title" content={product.name} />
+	<meta property="og:description" content={description} />
+	<meta property="og:url" content={canonicalUrl} />
+	{#if ogImage}
+		<meta property="og:image" content={ogImage} />
+	{/if}
+	{#if available}
+		<meta property="product:price:amount" content={price.toFixed(2)} />
+		<meta property="product:price:currency" content={store.settings.currency} />
+	{/if}
+	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+</svelte:head>
+
 <div class="mx-auto max-w-7xl px-4 py-10">
 	<nav class="text-sm text-gray-500">
 		<a href={`/${data.slug}`} class="hover:text-gray-900">Home</a>
@@ -87,9 +154,26 @@
 	</nav>
 
 	<div class="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-2">
+	<div class="space-y-3">
 		<div class="aspect-square overflow-hidden rounded-2xl border border-gray-200 bg-gray-100">
-			<img src={image ?? placeholderImage()} alt={product.name} class="h-full w-full object-cover" />
+			<img src={mainImage ?? placeholderImage()} alt={product.name} class="h-full w-full object-cover" />
 		</div>
+		{#if gallery.length > 1}
+			<div class="flex flex-wrap gap-2">
+				{#each gallery as img, i (img + i)}
+					<button
+						type="button"
+						class="h-16 w-16 overflow-hidden rounded-lg border-2 transition
+							{mainImage === img ? 'border-indigo-600' : 'border-gray-200 hover:border-gray-300'}"
+						onclick={() => (activeImage = i)}
+						aria-label={`View image ${i + 1}`}
+					>
+						<img src={img} alt="" class="h-full w-full object-cover" />
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</div>
 
 		<div class="flex flex-col gap-5">
 			<h1 class="text-3xl font-bold text-gray-900">{product.name}</h1>

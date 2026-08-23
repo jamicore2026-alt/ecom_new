@@ -66,11 +66,20 @@ export type ProductListParams = {
 }
 
 export const storefrontApi = {
+	stores: (fetchFn: typeof fetch) =>
+		request<Array<{ slug: string; name: string }>>(fetchFn, ``),
+
 	info: (fetchFn: typeof fetch, slug: string) =>
 		request<StoreInfo>(fetchFn, `/${slug}/store`),
 
 	categories: (fetchFn: typeof fetch, slug: string) =>
 		request<CategoryTree>(fetchFn, `/${slug}/categories`),
+
+	sitemap: (fetchFn: typeof fetch, slug: string) =>
+		request<{ categories: Array<{ slug: string }>; products: Array<{ slug: string }> }>(
+			fetchFn,
+			`/${slug}/sitemap`
+		),
 
 	products: (fetchFn: typeof fetch, slug: string, params: ProductListParams = {}) =>
 		request<Page<ProductSummary>>(fetchFn, `/${slug}/products${qs(params)}`),

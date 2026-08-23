@@ -6,6 +6,11 @@
 	const store = $derived(data.store)
 </script>
 
+<svelte:head>
+	<title>Search — {store.settings.name}</title>
+	<meta name="robots" content="noindex" />
+</svelte:head>
+
 <div class="mx-auto max-w-7xl px-4 py-10">
 	<h1 class="text-3xl font-bold text-gray-900">
 		{#if data.query}

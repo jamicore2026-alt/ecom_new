@@ -110,6 +110,15 @@ export interface Product {
 	updatedAt: string
 }
 
+export interface ProductImage {
+	id: string
+	productId: string
+	url: string
+	altText: string | null
+	sortOrder: number
+	createdAt: string
+}
+
 export interface ProductVariant {
 	id: string
 	productId: string
@@ -139,12 +148,16 @@ export interface ProductListItem extends Product {
 	stock: number
 	variantCount: number
 	category: Category | null
+	images?: ProductImage[]
+	primaryImage?: string | null
 }
 
 export interface ProductDetail extends Product {
 	variants: ProductVariant[]
 	category: Category | null
 	stock: number
+	images?: ProductImage[]
+	primaryImage?: string | null
 }
 
 export interface Customer {
@@ -364,6 +377,14 @@ export interface TaxSettings {
 	autoCalculate: boolean
 	rates: Array<{ region: string; rate: number }>
 	updatedAt: string
+}
+
+export interface NotificationSettings {
+	merchantId: string
+	enabled: boolean
+	fromName: string | null
+	fromEmail: string | null
+	templates: Record<string, boolean>
 }
 
 export interface StaffMember {

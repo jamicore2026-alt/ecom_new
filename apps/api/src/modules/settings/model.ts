@@ -68,6 +68,13 @@ export const taxBody = t.Object({
   )
 })
 
+export const notificationsBody = t.Object({
+  enabled: t.Optional(t.Boolean()),
+  fromName: t.Optional(t.Union([t.String({ maxLength: 255 }), t.Null()])),
+  fromEmail: t.Optional(t.Union([t.String({ maxLength: 255 }), t.Null()])),
+  templates: t.Optional(t.Record(t.String(), t.Boolean()))
+})
+
 export const staffCreateBody = t.Object({
   name: t.String({ minLength: 1 }),
   email: t.String({ format: 'email' }),

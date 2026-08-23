@@ -46,6 +46,14 @@ class Cart {
 		if (idx >= 0) this.items[idx].quantity = Math.min(99, this.items[idx].quantity + line.quantity)
 		else this.items = [...this.items, line]
 		this.save()
+		if (browser && this.loadedSlug) {
+			fetch(`/api/store/${this.loadedSlug}/events`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ type: 'cart_add' }),
+				keepalive: true
+			}).catch(() => {})
+		}
 	}
 
 	setQuantity(variantId: string, quantity: number) {

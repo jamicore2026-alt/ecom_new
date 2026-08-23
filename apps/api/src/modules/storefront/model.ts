@@ -60,3 +60,8 @@ export const orderParams = t.Object({
 export const syncOrderBody = t.Object({
   paymentId: t.Optional(t.String())
 })
+
+export const trackEventBody = t.Object({
+  type: t.Union([t.Literal('view'), t.Literal('cart_add'), t.Literal('checkout_start')]),
+  channel: t.Optional(t.String({ maxLength: 20 }))
+})

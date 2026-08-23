@@ -1,10 +1,28 @@
 <script lang="ts">
 	import ProductCard from '$lib/components/ProductCard.svelte'
+	import { metaDescription, siteUrl } from '$lib/seo'
 	import type { PageProps } from './$types'
 
 	let { data }: PageProps = $props()
 	const store = $derived(data.store)
+	const description = $derived(
+		metaDescription(
+			store.settings.announcement,
+			`Shop ${store.settings.name} — quality products at great prices, delivered to your door.`
+		)
+	)
 </script>
+
+<svelte:head>
+	<title>{store.settings.name}</title>
+	<meta name="description" content={description} />
+	<link rel="canonical" href={`${siteUrl(data.origin)}/${data.slug}`} />
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content={store.settings.name} />
+	<meta property="og:title" content={store.settings.name} />
+	<meta property="og:description" content={description} />
+	<meta property="og:url" content={`${siteUrl(data.origin)}/${data.slug}`} />
+</svelte:head>
 
 <section class="bg-gradient-to-br from-indigo-600 to-purple-700 text-white">
 	<div class="mx-auto max-w-7xl px-4 py-20 text-center">

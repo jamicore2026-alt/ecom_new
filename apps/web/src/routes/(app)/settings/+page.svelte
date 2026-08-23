@@ -8,9 +8,9 @@
 	import Badge from '$lib/components/Badge.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import { titleCase } from '$lib/format'
-	import type { Address, PaymentProviderView, PaymentSettings, Permission, ShippingSettings, StaffMember, StoreSettings, TaxSettings } from '$lib/types'
+	import type { Address, NotificationSettings, PaymentProviderView, PaymentSettings, Permission, ShippingSettings, StaffMember, StoreSettings, TaxSettings } from '$lib/types'
 
-	type Section = 'store' | 'payments' | 'shipping' | 'taxes' | 'staff'
+	type Section = 'store' | 'payments' | 'shipping' | 'taxes' | 'notifications' | 'staff'
 	let section = $state<Section>('store')
 	let saving = $state(false)
 
@@ -40,6 +40,17 @@
 	let taxes = $state<TaxSettings | null>(null)
 	let autoCalculate = $state(true)
 	let rates = $state<Array<{ region: string; rate: string }>>([])
+
+	// notifications
+	let notifications = $state<NotificationSettings | null>(null)
+	let nEnabled = $state(true)
+	let nFromName = $state('')
+	let nFromEmail = $state('')
+	const EMAIL_TEMPLATES: Array<{ id: string; label: string }> = [
+		{ id: 'order_placed', label: 'Order placed' },
+		{ id: 'order_paid', label: 'Payment received' },
+		{ id: 'refund_processed', label: 'Refund processed' }
+	]
 
 	// staff
 	let staff = $state<StaffMember[]>([])
@@ -97,6 +108,12 @@
 				taxes = res.data
 				autoCalculate = res.data.autoCalculate
 				rates = res.data.rates.map((r) => ({ region: r.region, rate: String(r.rate) }))
+			} else if (section === 'notifications') {
+				const res = await api.get<{ success: boolean; data: NotificationSettings }>('/api/settings/notifications')
+				notifications = res.data
+				nEnabled = res.data.enabled
+				nFromName = res.data.fromName ?? ''
+				nFromEmail = res.data.fromEmail ?? ''
 			} else {
 				const res = await api.get<{ success: boolean; data: StaffMember[] }>('/api/settings/staff')
 				staff = res.data
@@ -233,6 +250,34 @@
 		}
 	}
 
+	async function saveNotifications() {
+		saving = true
+		try {
+			const res = await api.put<{ success: boolean; data: NotificationSettings }>(
+				'/api/settings/notifications',
+				{
+					enabled: nEnabled,
+					fromName: nFromName || null,
+					fromEmail: nFromEmail || null
+				}
+			)
+			notifications = res.data
+			toast.success('Notification settings saved')
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			saving = false
+		}
+	}
+
+	function toggleTemplate(id: string, value: boolean) {
+		if (!notifications) return
+		notifications.templates = { ...notifications.templates, [id]: value }
+		api.put<{ success: boolean }>('/api/settings/notifications', { templates: notifications.templates }).catch(
+			(e: unknown) => toast.error((e as Error).message)
+		)
+	}
+
 	function openNewStaff() {
 		editingStaff = null
 		staffName = ''
@@ -304,6 +349,7 @@
 		{ id: 'payments', label: 'Payments' },
 		{ id: 'shipping', label: 'Shipping' },
 		{ id: 'taxes', label: 'Taxes' },
+		{ id: 'notifications', label: 'Notifications' },
 		{ id: 'staff', label: 'Staff' }
 	]
 </script>
@@ -530,6 +576,45 @@
 						<Button type="submit" loading={saving}>Save</Button>
 					</div>
 				</form>
+			</Card>
+		{:else if section === 'notifications' && notifications}
+			<Card title="Email notifications">
+				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveNotifications() }}>
+					<div class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
+						<span class="text-sm text-gray-700">Send transactional emails</span>
+						<input type="checkbox" class="h-4 w-4 rounded border-gray-300" bind:checked={nEnabled} />
+					</div>
+					<div class="grid gap-4 sm:grid-cols-2">
+						<div>
+							<label for="notif-from-name" class="mb-1 block text-sm font-medium text-gray-700">Sender name</label>
+							<input id="notif-from-name" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Defaults to store name" bind:value={nFromName} />
+						</div>
+						<div>
+							<label for="notif-from-email" class="mb-1 block text-sm font-medium text-gray-700">Reply-to / sender address</label>
+							<input id="notif-from-email" type="email" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="noreply@yourstore.com" bind:value={nFromEmail} />
+						</div>
+					</div>
+				</form>
+
+				<div class="mt-5 space-y-2">
+					<p class="text-sm font-medium text-gray-700">Templates</p>
+					{#each EMAIL_TEMPLATES as tpl (tpl.id)}
+						<div class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-2.5">
+							<span class="text-sm text-gray-700">{tpl.label}</span>
+							<input
+								type="checkbox"
+								class="h-4 w-4 rounded border-gray-300"
+								checked={notifications.templates?.[tpl.id] !== false}
+								onchange={(e) => toggleTemplate(tpl.id, (e.currentTarget as HTMLInputElement).checked)}
+							/>
+						</div>
+					{/each}
+				</div>
+
+				<div class="mt-5 flex items-center justify-between gap-3">
+					<p class="text-xs text-gray-400">Delivery runs via Resend when RESEND_API_KEY is configured; otherwise sends are logged only.</p>
+					<Button loading={saving} onclick={saveNotifications}>Save</Button>
+				</div>
 			</Card>
 		{:else if section === 'staff'}
 			<Card padded={false}>

@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, sql } from 'drizzle-orm'
 import { db } from '../../database/client'
-import { categories, inventoryLogs, products, productVariants } from '../../database/schema'
+import { categories, inventoryLogs, productImages, products, productVariants } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
@@ -45,6 +45,41 @@ export class ProductsService {
     return new Map(rows.map((c) => [c.id, c]))
   }
 
+  /** Replace the full image set of a product. Array order defines sortOrder when omitted. */
+  private static async syncImages(
+    executor: any,
+    productId: string,
+    inputs: Array<{ url: string; altText?: string; sortOrder?: number }>
+  ) {
+    await executor.delete(productImages).where(eq(productImages.productId, productId))
+    if (!inputs.length) return []
+    return executor
+      .insert(productImages)
+      .values(
+        inputs.map((img, index) => ({
+          productId,
+          url: img.url,
+          altText: img.altText ?? null,
+          sortOrder: img.sortOrder ?? index
+        }))
+      )
+      .returning()
+  }
+
+  private static async imagesFor(ids: string[]) {
+    if (!ids.length) return new Map<string, typeof productImages.$inferSelect[]>()
+    const rows = await db
+      .select()
+      .from(productImages)
+      .where(inArray(productImages.productId, ids))
+      .orderBy(asc(productImages.sortOrder), asc(productImages.createdAt))
+    const map = new Map<string, typeof productImages.$inferSelect[]>()
+    for (const row of rows) {
+      map.set(row.productId, [...(map.get(row.productId) ?? []), row])
+    }
+    return map
+  }
+
   private static async enrich(rows: typeof products.$inferSelect[]) {
     if (!rows.length) return []
     const ids = rows.map((r) => r.id)
@@ -61,11 +96,14 @@ export class ProductsService {
     const catMap = await this.categoryMap(
       [...new Set(rows.map((r) => r.categoryId).filter((v): v is string => !!v))]
     )
+    const imageMap = await this.imagesFor(ids)
     return rows.map((p) => ({
       ...p,
       stock: Number(aggMap.get(p.id)?.stock ?? 0),
       variantCount: Number(aggMap.get(p.id)?.variantCount ?? 0),
-      category: p.categoryId ? (catMap.get(p.categoryId) ?? null) : null
+      category: p.categoryId ? (catMap.get(p.categoryId) ?? null) : null,
+      images: imageMap.get(p.id) ?? [],
+      primaryImage: imageMap.get(p.id)?.[0]?.url ?? null
     }))
   }
 
@@ -123,6 +161,12 @@ export class ProductsService {
       .from(productVariants)
       .where(eq(productVariants.productId, id))
 
+    const images = await db
+      .select()
+      .from(productImages)
+      .where(eq(productImages.productId, id))
+      .orderBy(asc(productImages.sortOrder), asc(productImages.createdAt))
+
     const [category] = product.categoryId
       ? await db.select().from(categories).where(eq(categories.id, product.categoryId))
       : []
@@ -132,7 +176,9 @@ export class ProductsService {
       ...product,
       variants,
       category: category ?? null,
-      stock
+      stock,
+      images,
+      primaryImage: images[0]?.url ?? null
     })
   }
 
@@ -159,6 +205,7 @@ export class ProductsService {
         inventory?: number
         image?: string
       }>
+      images?: Array<{ url: string; altText?: string; sortOrder?: number }>
     }
   ) {
     if (input.variants?.some((v) => (v.inventory ?? 0) < 0)) {
@@ -197,11 +244,21 @@ export class ProductsService {
         ? input.variants
         : [{ sku: input.sku, price: input.price }]
       const variants = await this.insertVariants(tx, product.id, variantInputs, input.price)
-      return { product, variants }
+      const images = input.images?.length
+        ? await this.syncImages(tx, product.id, input.images)
+        : []
+      return { product, variants, images }
     })
 
     const stock = result.variants.reduce((s: number, v: { inventory: number }) => s + v.inventory, 0)
-    return ok({ ...result.product, variants: result.variants, category: null, stock })
+    return ok({
+      ...result.product,
+      variants: result.variants,
+      category: null,
+      stock,
+      images: result.images,
+      primaryImage: result.images[0]?.url ?? null
+    })
   }
 
   private static async insertVariants(
@@ -270,26 +327,55 @@ export class ProductsService {
     }
     if (slug) values.slug = slug
 
-    if (Object.keys(values).length === 0) {
+    if (Object.keys(values).length === 0 && input.images === undefined) {
       const variants = await db
         .select()
         .from(productVariants)
         .where(eq(productVariants.productId, id))
-      return ok({ ...product, variants, category: null })
+      const images = await db
+        .select()
+        .from(productImages)
+        .where(eq(productImages.productId, id))
+        .orderBy(asc(productImages.sortOrder), asc(productImages.createdAt))
+      return ok({ ...product, variants, category: null, images })
     }
 
-    const [updated] = await db
-      .update(products)
-      .set(values)
-      .where(and(eq(products.id, id), eq(products.merchantId, merchantId)))
-      .returning()
+    const [updated] = await db.transaction(async (tx) => {
+      let row = product
+      if (Object.keys(values).length > 0) {
+        const [u] = await tx
+          .update(products)
+          .set(values)
+          .where(and(eq(products.id, id), eq(products.merchantId, merchantId)))
+          .returning()
+        row = u
+      }
+      const images =
+        input.images !== undefined
+          ? await this.syncImages(
+              tx,
+              id,
+              input.images as Array<{ url: string; altText?: string; sortOrder?: number }>
+            )
+          : await tx
+              .select()
+              .from(productImages)
+              .where(eq(productImages.productId, id))
+              .orderBy(asc(productImages.sortOrder), asc(productImages.createdAt))
+      return [{ ...row, images }]
+    })
 
     const variants = await db
       .select()
       .from(productVariants)
       .where(eq(productVariants.productId, id))
 
-    return ok({ ...updated, variants, category: null })
+    return ok({
+      ...updated,
+      variants,
+      category: null,
+      primaryImage: updated.images[0]?.url ?? null
+    })
   }
 
   static async archive(merchantId: string, id: string) {

@@ -11,13 +11,16 @@ import {
   paymentProviderConfigs,
   paymentSettings,
   paymentTransactions,
+  productImages,
   products,
   productVariants,
   shippingSettings,
   storeSettings,
-  taxSettings
+  taxSettings,
+  visits
 } from '../../database/schema'
 import { DiscountsService } from '../discounts/service'
+import { EmailsService } from '../emails/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { roundForCurrency } from '../../shared/currency'
 import { getProvider, listProviders } from '../../payments/registry'
@@ -194,6 +197,66 @@ export class StorefrontService {
     return ok(await this.resolveStore(slug))
   }
 
+  static async listStores() {
+    const rows = await db
+      .select({ slug: merchants.slug, name: merchants.name })
+      .from(merchants)
+      .where(eq(merchants.status, 'active'))
+      .orderBy(asc(merchants.slug))
+    return ok(rows)
+  }
+
+  /* --------------------------------- sitemap ------------------------------- */
+
+  static async sitemap(slug: string) {
+    const store = await this.resolveStore(slug)
+    const productRows = await db
+      .select({ slug: products.slug })
+      .from(products)
+      .where(and(eq(products.merchantId, store.merchant.id), eq(products.status, 'active')))
+      .orderBy(asc(products.slug))
+    const categoryRows = await db
+      .select({ slug: categories.slug })
+      .from(categories)
+      .where(eq(categories.merchantId, store.merchant.id))
+      .orderBy(asc(categories.slug))
+    return ok({ categories: categoryRows, products: productRows })
+  }
+
+  /* ------------------------------ funnel events ---------------------------- */
+
+  static async trackEvent(
+    slug: string,
+    body: { type: 'view' | 'cart_add' | 'checkout_start'; channel?: string }
+  ) {
+    const store = await this.resolveStore(slug)
+    const channel = (body.channel ?? 'direct') as string
+
+    const now = new Date()
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+    await db
+      .insert(visits)
+      .values({
+        merchantId: store.merchant.id,
+        date,
+        channel,
+        views: body.type === 'view' ? 1 : 0,
+        cartAdds: body.type === 'cart_add' ? 1 : 0,
+        checkouts: body.type === 'checkout_start' ? 1 : 0
+      })
+      .onConflictDoUpdate({
+        target: [visits.merchantId, visits.date, visits.channel],
+        set: {
+          views: sql`${visits.views} + ${body.type === 'view' ? 1 : 0}`,
+          cartAdds: sql`${visits.cartAdds} + ${body.type === 'cart_add' ? 1 : 0}`,
+          checkouts: sql`${visits.checkouts} + ${body.type === 'checkout_start' ? 1 : 0}`
+        }
+      })
+
+    return ok({ tracked: true })
+  }
+
   /* -------------------------------- categories ----------------------------- */
 
   static async categories(slug: string) {
@@ -281,6 +344,16 @@ export class StorefrontService {
       variantsByProduct.set(v.productId, [...(variantsByProduct.get(v.productId) ?? []), v])
     }
 
+    const imageRows = await db
+      .select()
+      .from(productImages)
+      .where(inArray(productImages.productId, ids))
+      .orderBy(asc(productImages.sortOrder), asc(productImages.createdAt))
+    const galleryByProduct = new Map<string, string[]>()
+    for (const img of imageRows) {
+      galleryByProduct.set(img.productId, [...(galleryByProduct.get(img.productId) ?? []), img.url])
+    }
+
     const catIds = [
       ...new Set(rows.map((r) => r.categoryId).filter((v): v is string => !!v))
     ]
@@ -296,8 +369,9 @@ export class StorefrontService {
     return rows.map((p) => {
       const productVariants_ = variantsByProduct.get(p.id) ?? []
       const category = p.categoryId ? (catMap.get(p.categoryId) ?? null) : null
+      const gallery = galleryByProduct.get(p.id) ?? []
       const image =
-        productVariants_.find((v) => v.image)?.image ?? category?.image ?? null
+        productVariants_.find((v) => v.image)?.image ?? gallery[0] ?? category?.image ?? null
       return {
         id: p.id,
         merchantId,
@@ -403,7 +477,14 @@ export class StorefrontService {
       : []
 
     const stock = variants.reduce((sum, v) => sum + v.inventory, 0)
-    const image = variants.find((v) => v.image)?.image ?? category?.image ?? null
+    const galleryRows = await db
+      .select()
+      .from(productImages)
+      .where(eq(productImages.productId, product.id))
+      .orderBy(asc(productImages.sortOrder), asc(productImages.createdAt))
+    const gallery = galleryRows.map((g) => g.url)
+    const image =
+      variants.find((v) => v.image)?.image ?? gallery[0] ?? category?.image ?? null
 
     let relatedRows: typeof products.$inferSelect[] = []
     if (product.categoryId) {
@@ -434,6 +515,7 @@ export class StorefrontService {
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
       image,
+      images: gallery,
       stock,
       variants: variants.map((v) => ({
         id: v.id,
@@ -770,6 +852,8 @@ export class StorefrontService {
       coupon
     }, { paymentStatus })
 
+    void EmailsService.orderPlaced(result)
+
     return ok({
       id: result.id,
       orderNumber: result.orderNumber,
@@ -826,6 +910,8 @@ export class StorefrontService {
       provider: providerId,
       expiresAt: new Date(Date.now() + 30 * 60 * 1000)
     })
+
+    void EmailsService.orderPlaced(order)
 
     const urls = this.orderUrls(slug, providerId, order.orderNumber)
     let session
@@ -922,6 +1008,7 @@ export class StorefrontService {
           }
         }
         orderUpdated = true
+        void EmailsService.orderPaid(merchantId, order.id)
       }
     }
 

@@ -7,10 +7,18 @@ import {
   checkoutPreviewBody,
   checkoutBody,
   orderParams,
-  syncOrderBody
+  syncOrderBody,
+  trackEventBody
 } from './model'
 
 export const storefrontModule = new Elysia({ prefix: '/api/store' })
+  .get(
+    '/',
+    () => StorefrontService.listStores(),
+    {
+      detail: { tags: ['Storefront'], summary: 'Public store list' }
+    }
+  )
   .get(
     '/:slug/store',
     ({ params }) => StorefrontService.store(params.slug),
@@ -26,6 +34,25 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
     {
       params: storeParams,
       detail: { tags: ['Storefront'], summary: 'Public category tree' }
+    }
+  )
+
+  .get(
+    '/:slug/sitemap',
+    ({ params }) => StorefrontService.sitemap(params.slug),
+    {
+      params: storeParams,
+      detail: { tags: ['Storefront'], summary: 'Public sitemap URLs' }
+    }
+  )
+
+  .post(
+    '/:slug/events',
+    ({ params, body }) => StorefrontService.trackEvent(params.slug, body),
+    {
+      params: storeParams,
+      body: trackEventBody,
+      detail: { tags: ['Storefront'], summary: 'Track a storefront funnel event' }
     }
   )
 

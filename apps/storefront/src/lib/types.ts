@@ -82,6 +82,7 @@ export interface ProductDetail {
 	trackInventory: boolean
 	lowStockThreshold: number
 	image: string | null
+	images?: string[]
 	stock: number
 	variants: ProductVariant[]
 	category: CategoryRef | null

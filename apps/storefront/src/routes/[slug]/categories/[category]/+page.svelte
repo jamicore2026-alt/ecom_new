@@ -1,11 +1,21 @@
 <script lang="ts">
 	import ProductListing from '$lib/components/ProductListing.svelte'
+	import { siteUrl } from '$lib/seo'
 	import type { PageProps } from './$types'
 
 	let { data }: PageProps = $props()
 	const store = $derived(data.store)
 	const category = $derived(data.categories.find((c) => c.slug === data.category))
+	const title = $derived(category ? category.name : 'Category')
 </script>
+
+<svelte:head>
+	<title>{title} — {store.settings.name}</title>
+	<meta name="description" content={`Shop ${title} products at ${store.settings.name}.`} />
+	<link rel="canonical" href={`${siteUrl(data.origin)}/${data.slug}/categories/${data.category}`} />
+	<meta property="og:type" content="website" />
+	<meta property="og:title" content={title} />
+</svelte:head>
 
 <div class="mx-auto max-w-7xl px-4 py-10">
 	<nav class="text-sm text-gray-500">

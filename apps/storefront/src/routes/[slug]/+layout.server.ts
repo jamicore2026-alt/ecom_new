@@ -3,7 +3,7 @@ import { storefrontApi, loadError } from '$lib/api'
 import type { Category } from '$lib/types'
 import type { LayoutServerLoad } from './$types'
 
-export const load: LayoutServerLoad = async ({ params, fetch }) => {
+export const load: LayoutServerLoad = async ({ params, fetch, url }) => {
 	const { slug } = params
 	let store
 	try {
@@ -20,5 +20,5 @@ export const load: LayoutServerLoad = async ({ params, fetch }) => {
 		// categories are optional for rendering
 	}
 
-	return { slug, store, categories }
+	return { slug, store, categories, origin: url.origin }
 }

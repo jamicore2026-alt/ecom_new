@@ -61,7 +61,7 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
 	const access = getAccessToken()
 	const headers = new Headers(options.headers)
 	if (access) headers.set('authorization', `Bearer ${access}`)
-	if (options.body && !headers.has('content-type')) {
+	if (options.body && !(options.body instanceof FormData) && !headers.has('content-type')) {
 		headers.set('content-type', 'application/json')
 	}
 
@@ -117,7 +117,13 @@ export const api = {
 		request<T>(path, { method: 'PUT', body: JSON.stringify(body ?? {}) }),
 	patch: <T>(path: string, body?: unknown) =>
 		request<T>(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) }),
-	delete: <T>(path: string) => request<T>(path, { method: 'DELETE' })
+	delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+	upload: <T>(path: string, form: FormData) => {
+		const headers = new Headers()
+		const access = getAccessToken()
+		if (access) headers.set('authorization', `Bearer ${access}`)
+		return request<T>(path, { method: 'POST', body: form, headers })
+	}
 }
 
 export async function login(input: { email: string; password: string; merchantSlug?: string }): Promise<AuthResponse> {

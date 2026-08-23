@@ -13,3 +13,6 @@ build/
 # Local database (if any)
 *.db
 *.sqlite
+
+# Local file uploads (product images)
+apps/api/uploads/

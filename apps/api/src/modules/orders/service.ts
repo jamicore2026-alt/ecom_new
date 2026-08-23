@@ -13,6 +13,7 @@ import {
 } from '../../database/schema'
 import { getProvider } from '../../payments/registry'
 import { decryptJson } from '../../shared/crypto'
+import { EmailsService } from '../emails/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
@@ -461,6 +462,8 @@ export class OrdersService {
         .where(eq(orders.id, order.id))
       return row
     })
+
+    void EmailsService.refundProcessed(merchantId, order.id, input.amount)
 
     return ok(refund)
   }

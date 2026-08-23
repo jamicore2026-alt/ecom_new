@@ -2,6 +2,7 @@ import { Elysia } from 'elysia'
 import { authPlugin, isAdmin } from '../../plugins/auth'
 import { SettingsService } from './service'
 import {
+  notificationsBody,
   paymentBody,
   providerBody,
   providerParams,
@@ -56,6 +57,14 @@ export const settingsModule = new Elysia({ prefix: '/api' })
       .put('/taxes', async ({ body, auth }) => SettingsService.updateTaxes(auth.merchant.id, body), {
         body: taxBody
       })
+      .get('/notifications', async ({ auth }) =>
+        SettingsService.getNotifications(auth.merchant.id)
+      )
+      .put(
+        '/notifications',
+        async ({ body, auth }) => SettingsService.updateNotifications(auth.merchant.id, body),
+        { body: notificationsBody }
+      )
       .get('/staff', async ({ auth }) => SettingsService.listStaff(auth.merchant.id))
       .post('/staff', async ({ body, auth }) => SettingsService.createStaff(auth.merchant.id, body), {
         body: staffCreateBody

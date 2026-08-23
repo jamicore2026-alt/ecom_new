@@ -1,0 +1,30 @@
+import { storefrontApi } from '$lib/api'
+import { siteUrl } from '$lib/seo'
+import type { RequestHandler } from './$types'
+
+export const prerender = false
+
+export const GET: RequestHandler = async ({ fetch, url, setHeaders }) => {
+	const base = siteUrl(url.origin)
+	let stores: Array<{ slug: string; name: string }> = []
+	try {
+		stores = await storefrontApi.stores(fetch)
+	} catch {
+		stores = []
+	}
+
+	const entries = stores
+		.map(
+			(s) =>
+				`\t<sitemap>\n\t\t<loc>${base}/${s.slug}/sitemap.xml</loc>\n\t</sitemap>`
+		)
+		.join('\n')
+
+	const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries}\n</sitemapindex>\n`
+
+	setHeaders({
+		'content-type': 'application/xml',
+		'cache-control': 'public, max-age=600'
+	})
+	return new Response(xml)
+}

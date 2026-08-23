@@ -1,7 +1,7 @@
 # AGENTS.md — Project Memory
 
-> Audit date: 2026-08-22 · HEAD: `e1630b6` + security/bug-fix batch + payments batch (uncommitted)
-> Verified state after payments batch: tests 48/48 pass (incl. payments.test.ts) · typecheck pass · svelte-check 0 errors (web has ~70 pre-existing a11y warnings)
+> Audit date: 2026-08-22 · HEAD: `e1630b6` + security/bug-fix batch + payments batch + Phase-1 growth batch (uncommitted)
+> Verified state after Phase-1 batch (images, emails, SEO, events): tests 63/63 pass (incl. uploads/emails/events) · typecheck pass · svelte-check 0 errors (web has 71 pre-existing a11y warnings)
 
 ## What this is
 
@@ -46,12 +46,26 @@ CI (`.github/workflows/ci.yml`): bun 1.3.14 + node 22, postgres:16 service → i
 - CORS (`app.ts`): `CORS_ORIGINS` env (comma-separated) or defaults to localhost:5478/5479 only. In turbo globalEnv.
 
 ### DB (src/database/schema.ts)
-19+3=22 tables, all merchant-scoped except merchants/settings/token_blacklist: merchants, users, categories(self-FK tree), products, product_variants(jsonb option_values), inventory_logs(before/after), customers, orders(order_number unique per merchant; +payment_method/payment_provider/expires_at), order_items, returns, refunds(+provider_ref), coupons(unique per merchant code), promotions, store/payment/shipping/tax settings (1 row per merchant, PK=merchant_id), visits(daily per channel), token_blacklist, payment_provider_configs(PK merchant_id+provider, encrypted credentials text), payment_transactions(provider_ref indexed), webhook_events(unique provider+event_id). Migrations 0000–0003.
+19+4=23 tables, all merchant-scoped except merchants/settings/token_blacklist: merchants, users, categories(self-FK tree), products, product_images(sortOrder, isPrimary via products.primaryImageId), product_variants(jsonb option_values), inventory_logs(before/after), customers, orders(order_number unique per merchant; +payment_method/payment_provider/expires_at), order_items, returns, refunds(+provider_ref), coupons(unique per merchant code), promotions, store/payment/shipping/tax/notification settings (1 row per merchant, PK=merchant_id), email_logs(orderId FK cascade, template order_placed|order_paid|refund_processed, status queued|sent|failed), visits(daily per channel), token_blacklist, payment_provider_configs(PK merchant_id+provider, encrypted credentials text), payment_transactions(provider_ref indexed), webhook_events(unique provider+event_id). Migrations 0000–0004.
 Conventions: ids varchar(30) cuid2; money = numeric(12,2) mode:'number'; soft-delete = products.status 'archived' (DELETE /products/:id archives); updatedAt via `$onUpdate`.
 Migrations committed in `drizzle/` (0000–0002). Analytics computed live via SQL aggregation (no denormalized tables).
 
 ### Storefront public API (no auth)
-`/api/store/:slug/*`: GET store, categories(tree+counts), products(filters/sort price_asc|price_desc|newest), products/:productSlug(+variants+related), search; POST checkout/preview (validates stock/variants/coupon, computes subtotal/shipping/tax/total), POST checkout (creates order, decrements inventory + logs, upserts customer), POST checkout/pay (provider flow), POST orders/:orderNumber/sync; GET orders/:orderNumber (public confirmation).
+`/api/store/:slug/*`: GET store, categories(tree+counts), products(filters/sort price_asc|price_desc|newest), products/:productSlug(+variants+related), search; POST checkout/preview (validates stock/variants/coupon, computes subtotal/shipping/tax/total), POST checkout (creates order, decrements inventory + logs, upserts customer), POST checkout/pay (provider flow), POST orders/:orderNumber/sync; GET orders/:orderNumber (public confirmation). Also GET `/api/store` (active store list) + `/api/store/:slug/sitemap` (category+product slugs for SEO).
+
+### Product images + uploads
+- `modules/uploads`: POST `/api/uploads` (`t.Files`, jpg/png/webp/gif ≤5MB, `requirePermission('products:write')`) → saves under `apps/api/uploads/<cuid2>.<ext>`; public static GET `/uploads/*` (declared BEFORE authPlugin — Elysia scoped derives only apply to routes registered after `.use()`). Storage adapter in `shared/storage.ts`.
+- `product_images` rows (sortOrder asc, createdAt tiebreak); products carry `images[]` + `primaryImage`; product update = full-set replace. Web ImageManager component handles upload/reorder/primary/delete; dev proxy `/uploads` in both SvelteKit vite configs.
+
+### Transactional emails
+- `shared/mailer.ts`: ResendMailer (fetch-based, RESEND_API_KEY) with NoopMailer fallback that just marks logs sent/providerRef 'noop'; `setMailer(null)` is the test seam.
+- `modules/emails/service.ts`: fire-and-forget (never blocks checkout); writes email_logs queued→sent|failed; skips silently when merchant notifications disabled or template opted out. Triggers: orderPlaced (plain checkout + provider checkout), orderPaid (unpaid→paid transition), refundProcessed (createRefund). Sender identity = notificationSettings.fromName/fromEmail → store name / MAIL_FROM_FALLBACK → 'onboarding@resend.dev'.
+- Settings: notification_settings row via GET/PUT `/api/settings/notifications` (enabled, fromName, fromEmail, templates{order_placed,order_paid,refund_processed}). Web Settings→Notifications tab.
+
+### SEO + funnel events (storefront)
+- Routes: `/sitemap.xml` (index over active stores), `/[slug]/sitemap.xml` (home/products/categories/products URLs), `/robots.txt` (disallows cart/checkout/orders). Base URL = PUBLIC_STOREFRONT_URL ?? request origin; image URLs absolutized against PUBLIC_API_URL (`$lib/seo.ts`).
+- Meta: title/description/canonical/OG on home, products list, PDP (+JSON-LD Product schema w/ Offer, `<` escaped to `\u003c`), category; noindex on search/cart/checkout/orders/return. NOTE: `{expr}` inside template `<script>` tags renders literally — must use `{@html \`<script ...>${json}</script>\`}`.
+- Funnel events: POST `/api/store/:slug/events` {type view|cart_add|checkout_start, channel?} upserts daily visits rows (merchantId+date+channel unique). `$lib/analytics.ts track()` fires from PDP view effect, cart.add(), checkout mount.
 
 ### Payments (multi-provider, BYOK)
 - Adapters in `src/payments/`: `types.ts` (`PaymentProviderAdapter` interface), `registry.ts` (`getProvider`/`listProviders`), `myfatoorah.ts`, `tamara.ts`. New provider = implement adapter + register.
@@ -71,7 +85,7 @@ State: `session.svelte.ts` (Svelte 5 runes singleton; bootstrap() hydrates from 
 `hooks.server.ts`: server-side guard — protected prefixes (dashboard/analytics/products/inventory/orders/customers/discounts/settings) require `md.refresh` cookie else 302 /login; /login redirects to /dashboard when session present. Presence check only (not JWT verification) — real auth still enforced by API.
 
 ## Storefront (apps/storefront)
-Routes under `[slug]/`: home(featured 8), products(list w/ filter form), products/[product](variant picker PDP), categories/[category], search(?q=), cart(client-side), checkout(contact/address/coupon → preview → place order; online providers → /checkout/pay → gateway redirect, sessionStorage `ecom:pending:${slug}`), checkout/return(sync + redirect to confirmation, retry on pending), orders/[orderNumber](confirmation; pending-payment banner with "Check now" re-sync).
+Routes under `[slug]/`: home(featured 8, meta/OG), products(list w/ filter form), products/[product](variant picker PDP, gallery + JSON-LD Product), categories/[category], search(?q=), cart(client-side), checkout(contact/address/coupon → preview → place order; online providers → /checkout/pay → gateway redirect, sessionStorage `ecom:pending:${slug}`), checkout/return(sync + redirect to confirmation, retry on pending), orders/[orderNumber](confirmation; pending-payment banner with "Check now" re-sync). Plus root `/sitemap.xml`, `/[slug]/sitemap.xml`, `/robots.txt`.
 Cart: `cart.svelte.ts` class singleton, localStorage key `ecom:cart:${slug}`, lines snapshot product data at add-time, merge by variantId, qty cap 99. api.ts uses injected fetchFn (SSR-safe), typed ApiError, plus `loadError(err, notFoundMessage)` helper — all page.server loads wrap API calls; ApiError 404 → SvelteKit error(404), else error(status)/rethrow. Home degrades gracefully to empty featured list. PDP resets variant/qty/notice via `$effect` keyed on `data.product.id`; selectedVariant falls back to variants[0] when stale.
 
 ## Known issues / remaining tech debt (after fix batch 2026-08-22)
@@ -94,7 +108,7 @@ Cart: `cart.svelte.ts` class singleton, localStorage key `ecom:cart:${slug}`, li
 - adapter-auto unpinned in both SvelteKit apps; prod API origin config still dev-proxy-only
 - hooks.server.ts guard is cookie-presence based, not JWT-verified (fine as UX guard; API enforces real auth)
 - Logout endpoint returns 400 when POSTed with content-type json but empty body (clients send `{}`)
-- Roadmap-next items: storefront auth/customer accounts, Stripe, wishlists, reviews
+- Roadmap Phase 2 (next): storefront customer accounts (email+password), reviews, wishlists, FTS search, CSV export/import; Phase 3: fulfillment tracking, abandoned-cart queue (pg-boss), outbound merchant webhooks, multi-warehouse, i18n ar+RTL (prioritized per user)
 
 ## Gotchas
 - Elysia: method chaining required for type inference; explicit `.use()` for plugins that add context types
@@ -103,3 +117,5 @@ Cart: `cart.svelte.ts` class singleton, localStorage key `ecom:cart:${slug}`, li
 - Docker on this machine needs `sudo docker`
 - Bun installed at `~/.bun/bin` (add to PATH if missing)
 - pkill -f self-matches the bash command string — kill by exact PID from `ps -eo pid,args | grep ... | grep -v grep` instead
+- Tests that place storefront orders must restore inventory + delete upserted customers in afterAll, or they poison checkout/smoke tests (stock thresholds + exact customer counts)
+- Svelte: `{expr}` inside template `<script>` tags renders literally — JSON-LD needs `{@html \`<script>${json}</script>\`}` with `<` escaped to `\u003c`

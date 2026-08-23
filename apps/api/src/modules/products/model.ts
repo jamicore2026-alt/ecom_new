@@ -12,6 +12,12 @@ export const variantInput = t.Object({
   image: t.Optional(t.String())
 })
 
+export const productImageInput = t.Object({
+  url: t.String({ minLength: 1, maxLength: 1024 }),
+  altText: t.Optional(t.String({ maxLength: 255 })),
+  sortOrder: t.Optional(t.Integer({ minimum: 0 }))
+})
+
 export const createProductBody = t.Object({
   name: t.String({ minLength: 1, maxLength: 255 }),
   sku: t.Optional(t.String()),
@@ -25,7 +31,8 @@ export const createProductBody = t.Object({
   trackInventory: t.Optional(t.Boolean()),
   lowStockThreshold: t.Optional(t.Integer({ minimum: 0 })),
   status: t.Optional(productStatusSchema),
-  variants: t.Optional(t.Array(variantInput))
+  variants: t.Optional(t.Array(variantInput)),
+  images: t.Optional(t.Array(productImageInput))
 })
 
 export const updateProductBody = t.Partial(t.Omit(createProductBody, ['variants']))

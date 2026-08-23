@@ -3,10 +3,11 @@
 	import { toast } from '$lib/toast.svelte'
 	import Button from '$lib/components/Button.svelte'
 	import Modal from '$lib/components/Modal.svelte'
-	import type { Category, Product } from '$lib/types'
+	import ImageManager from '$lib/components/ImageManager.svelte'
+	import type { Category, Product, ProductImage } from '$lib/types'
 
 	let { product, categories, onClose, onSaved } = $props<{
-		product: Product | null
+		product: (Product & { images?: ProductImage[] }) | null
 		categories: Category[]
 		onClose: () => void
 		onSaved: () => void
@@ -26,6 +27,7 @@
 	let trackInventory = $state(product?.trackInventory ?? true)
 	let lowStockThreshold = $state(String(product?.lowStockThreshold ?? 5))
 	let status = $state(product?.status ?? 'active')
+	let images = $state<ProductImage[]>([...(product?.images ?? [])])
 
 	async function submit() {
 		saving = true
@@ -42,7 +44,12 @@
 				categoryId: category || undefined,
 				trackInventory,
 				lowStockThreshold: Number(lowStockThreshold || 0),
-				status
+				status,
+				images: images.map((img, i) => ({
+					url: img.url,
+					altText: img.altText || undefined,
+					sortOrder: i
+				}))
 			}
 			if (product) {
 				await api.put<{ success: boolean }>(`/api/products/${product.id}`, body)
@@ -121,6 +128,11 @@
 					class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
 					bind:value={description}
 				></textarea>
+			</div>
+
+			<div class="sm:col-span-2">
+				<p class="mb-1 text-sm font-medium text-gray-700">Images</p>
+				<ImageManager bind:images />
 			</div>
 
 			<div class="sm:col-span-2 flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">

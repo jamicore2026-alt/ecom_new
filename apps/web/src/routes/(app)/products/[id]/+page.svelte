@@ -6,13 +6,16 @@
 	import Card from '$lib/components/Card.svelte'
 	import Badge from '$lib/components/Badge.svelte'
 	import Modal from '$lib/components/Modal.svelte'
+	import ImageManager from '$lib/components/ImageManager.svelte'
 	import { currency, dateTimeFull, number } from '$lib/format'
-	import type { ProductDetail, ProductVariant } from '$lib/types'
+	import type { ProductDetail, ProductImage, ProductVariant } from '$lib/types'
 	import { page } from '$app/state'
 
 	let product = $state<ProductDetail | null>(null)
 	let loading = $state(true)
+	let savingImages = $state(false)
 	let id = $derived(page.params.id)
+	let images = $state<ProductImage[]>([])
 
 	let editVariant = $state<ProductVariant | null>(null)
 	let variantModal = $state(false)
@@ -34,10 +37,31 @@
 		try {
 			const res = await api.get<{ success: boolean; data: ProductDetail }>(`/api/products/${id}`)
 			product = res.data
+			images = [...(res.data.images ?? [])]
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
 			loading = false
+		}
+	}
+
+	async function saveImages() {
+		if (!product) return
+		savingImages = true
+		try {
+			await api.put<{ success: boolean }>(`/api/products/${product.id}`, {
+				images: images.map((img, i) => ({
+					url: img.url,
+					altText: img.altText || undefined,
+					sortOrder: i
+				}))
+			})
+			toast.success('Images updated')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			savingImages = false
 		}
 	}
 
@@ -154,6 +178,15 @@
 				{#if product.description}
 					<Card title="Description">
 						<p class="whitespace-pre-line text-sm text-gray-600">{product.description}</p>
+					</Card>
+				{/if}
+
+				{#if canWrite()}
+					<Card title="Images">
+						<div class="space-y-3">
+							<ImageManager bind:images />
+							<Button variant="secondary" loading={savingImages} onclick={saveImages}>Save images</Button>
+						</div>
 					</Card>
 				{/if}
 			</div>

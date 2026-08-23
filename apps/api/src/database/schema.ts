@@ -123,6 +123,21 @@ export const productVariants = pgTable(
   (t) => [index('product_variants_product_idx').on(t.productId)]
 )
 
+export const productImages = pgTable(
+  'product_images',
+  {
+    id: id('id').primaryKey(),
+    productId: varchar('product_id', { length: 30 })
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    url: varchar('url', { length: 1024 }).notNull(),
+    altText: varchar('alt_text', { length: 255 }),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [index('product_images_product_idx').on(t.productId)]
+)
+
 export const inventoryLogs = pgTable(
   'inventory_logs',
   {
@@ -430,6 +445,46 @@ export const visits = pgTable(
   (t) => [uniqueIndex('visits_merchant_date_channel_idx').on(t.merchantId, t.date, t.channel)]
 )
 
+/* ------------------------------- notifications ----------------------------- */
+
+export const notificationSettings = pgTable('notification_settings', {
+  merchantId: varchar('merchant_id', { length: 30 })
+    .primaryKey()
+    .references(() => merchants.id, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').notNull().default(true),
+  fromName: varchar('from_name', { length: 255 }),
+  fromEmail: varchar('from_email', { length: 255 }),
+  /** Per-template opt-outs; missing key = enabled */
+  templates: jsonb('templates').$type<Record<string, boolean>>().notNull().default({}),
+  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+})
+
+export const EMAIL_TEMPLATE_IDS = ['order_placed', 'order_paid', 'refund_processed'] as const
+export type EmailTemplateId = (typeof EMAIL_TEMPLATE_IDS)[number]
+
+export const emailLogs = pgTable(
+  'email_logs',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    orderId: varchar('order_id', { length: 30 }).references(() => orders.id, {
+      onDelete: 'set null'
+    }),
+    toEmail: varchar('to_email', { length: 255 }).notNull(),
+    template: varchar('template', { length: 50 }).$type<EmailTemplateId>().notNull(),
+    subject: varchar('subject', { length: 255 }).notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('queued'),
+    providerRef: varchar('provider_ref', { length: 255 }),
+    error: text('error'),
+    sentAt: timestamp('sent_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    index('email_logs_merchant_idx').on(t.merchantId, t.createdAt),
+    index('email_logs_order_idx').on(t.orderId)
+  ]
+)
+
 /* ---------------------------------- tokens --------------------------------- */
 
 export const tokenBlacklist = pgTable(
@@ -451,10 +506,11 @@ export const tokenBlacklist = pgTable(
 export const table = {
   merchants,
   users,
-  categories,
-  products,
-  productVariants,
-  inventoryLogs,
+    categories,
+    products,
+    productVariants,
+    productImages,
+    inventoryLogs,
   customers,
   orders,
   orderItems,
@@ -469,6 +525,8 @@ export const table = {
   webhookEvents,
   shippingSettings,
   taxSettings,
+  notificationSettings,
+  emailLogs,
   visits,
   tokenBlacklist
 } as const
@@ -484,6 +542,8 @@ export type Product = typeof products.$inferSelect
 export type NewProduct = typeof products.$inferInsert
 export type ProductVariant = typeof productVariants.$inferSelect
 export type NewProductVariant = typeof productVariants.$inferInsert
+export type ProductImage = typeof productImages.$inferSelect
+export type NewProductImage = typeof productImages.$inferInsert
 export type InventoryLog = typeof inventoryLogs.$inferSelect
 export type Customer = typeof customers.$inferSelect
 export type NewCustomer = typeof customers.$inferInsert
@@ -506,6 +566,8 @@ export type PaymentTransaction = typeof paymentTransactions.$inferSelect
 export type WebhookEventRecord = typeof webhookEvents.$inferSelect
 export type ShippingSettings = typeof shippingSettings.$inferSelect
 export type TaxSettings = typeof taxSettings.$inferSelect
+export type NotificationSettings = typeof notificationSettings.$inferSelect
+export type EmailLog = typeof emailLogs.$inferSelect
 export type Visit = typeof visits.$inferSelect
 export type TokenBlacklist = typeof tokenBlacklist.$inferSelect
 export type NewTokenBlacklist = typeof tokenBlacklist.$inferInsert
