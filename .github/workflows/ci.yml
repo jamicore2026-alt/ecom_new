@@ -56,3 +56,7 @@ jobs:
 
       - name: Build
         run: bun run build
+
+      - name: Deploy to Coolify
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_URL }}"
