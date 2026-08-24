@@ -3,6 +3,7 @@
 > Audit date: 2026-08-24 · HEAD: `b6f239a` (Phase 1 committed) + Phase-2 + full security/audit-hardening batch (all uncommitted)
 > Verified state after audit batch: tests 98/98 pass (12 files; +2 guest-claim tests) · typecheck pass · svelte-check 0 errors (71 pre-existing a11y warnings)
 > NOTE: migration `0010_audit-hardening` added `customers.token_version`, `orders.coupon_code`, `orders.attribution_channel` — run `bun run db:migrate`. Seed now counts only collected revenue toward customer totalSpent.
+> NOTE: migration `0011_variant_clock_timestamp` switches `product_variants.created_at` default to `clock_timestamp()` — batch-inserted variants previously shared one `now()` stamp, so `ORDER BY created_at` ties were nondeterministic across databases (broke the CSV round-trip test in CI only).
 > NOTE: staff passwords now require ≥10 chars (bcrypt 12); shopper register on a guest email requires a recent order number as proof (`CLAIM_ORDER_REQUIRED` / `CLAIM_ORDER_MISMATCH`). Rate limiting is active per-IP in dev/prod but skipped when NODE_ENV=test.
 
 ## Audit-hardening batch (2026-08-24) — what changed and why

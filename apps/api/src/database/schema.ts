@@ -126,7 +126,13 @@ export const productVariants = pgTable(
     compareAtPrice: money('compare_at_price'),
     inventory: integer('inventory').notNull().default(0),
     image: varchar('image', { length: 1024 }),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    // clock_timestamp() (volatile) is evaluated per row — batch-inserted
+    // variants get distinct, insertion-ordered timestamps. now() would stamp
+    // every row in a statement identically, making ORDER BY created_at ties
+    // nondeterministic across databases.
+    createdAt: timestamp('created_at')
+      .default(sql`clock_timestamp()`)
+      .notNull()
   },
   (t) => [index('product_variants_product_idx').on(t.productId)]
 )
