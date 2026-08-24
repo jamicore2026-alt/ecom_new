@@ -70,6 +70,10 @@ export const app = new Elysia({
     })
       : new Elysia({ name: 'swagger-disabled' })
   )
+  // Liveness probes (Coolify/k8s/load balancers). Deliberately DB-free and
+  // rate-limit-exempt so a busy API can never fail its own healthcheck.
+  .get('/health', () => ({ status: 'ok' }))
+  .get('/', () => ({ status: 'ok', service: 'merchant-dashboard-api' }))
   .use(authModule)
   .use(overviewModule)
   .use(productsModule)
