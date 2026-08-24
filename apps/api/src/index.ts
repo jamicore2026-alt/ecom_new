@@ -1,4 +1,5 @@
 import { app } from './app'
+import { pruneBlacklist } from './plugins/auth'
 import { StorefrontService } from './modules/storefront/service'
 
 const port = Number(process.env.PORT ?? 3005)
@@ -9,8 +10,14 @@ const sweepExpiredOrders = () =>
     console.error('[payments] expiry sweep failed:', err)
   )
 
+const pruneRevokedTokens = () =>
+  pruneBlacklist().catch((err) => console.error('[auth] blacklist prune failed:', err))
+
 app.listen(port, () => {
   console.log(`🦊 Merchant Dashboard API running at http://localhost:${port}`)
-  console.log(`📚 Swagger docs at http://localhost:${port}/docs`)
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`📚 Swagger docs at http://localhost:${port}/docs`)
+  }
   setInterval(sweepExpiredOrders, EXPIRY_SWEEP_INTERVAL_MS).unref()
+  setInterval(pruneRevokedTokens, EXPIRY_SWEEP_INTERVAL_MS).unref()
 })

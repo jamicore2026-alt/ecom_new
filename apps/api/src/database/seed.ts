@@ -474,7 +474,11 @@ async function main() {
       }
     }
 
-    if (status !== 'cancelled') {
+    // Mirror production semantics: only collected revenue counts toward
+    // customer totals (pending+unpaid orders are excluded, like the API does).
+    const countsTowardSpend =
+      status !== 'cancelled' && !(status === 'pending' && paymentStatus === 'unpaid')
+    if (countsTowardSpend) {
       const stats = customerStats.get(customer.id)!
       stats.spent = Number((stats.spent + total).toFixed(2))
       stats.count += 1

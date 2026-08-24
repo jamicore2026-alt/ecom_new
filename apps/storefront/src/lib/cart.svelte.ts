@@ -23,7 +23,9 @@ class Cart {
 		if (!browser) return
 		try {
 			const raw = localStorage.getItem(key(slug))
-			this.items = raw ? (JSON.parse(raw) as CartLine[]) : []
+			// Corrupt/tampered storage must never crash the whole storefront.
+			const parsed = raw ? JSON.parse(raw) : null
+			this.items = Array.isArray(parsed) ? (parsed as CartLine[]) : []
 		} catch {
 			this.items = []
 		}

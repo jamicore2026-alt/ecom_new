@@ -13,12 +13,15 @@ import {
   wishlistItems
 } from '../../database/schema'
 import { ok } from '../../shared/response'
-import { conflict, notFound, unauthorized } from '../../shared/errors'
+import { badRequest, conflict, notFound, unauthorized } from '../../shared/errors'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 
 const number = (v: unknown) => Number(v)
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase()
+
+/** Same cost as staff logins — keeps unknown-email responses indistinguishable. */
+export const DUMMY_SHOPPER_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEeO7ZBpQ0F1ZqP1rOoO8u5fKk9Wl0eQeXy'
 
 export interface ShopperContext {
   customer: typeof customers.$inferSelect
@@ -53,11 +56,17 @@ export class CustomerAuthService {
 
   static async register(
     slug: string,
-    body: { email: string; password: string; firstName?: string; lastName?: string }
+    body: {
+      email: string
+      password: string
+      firstName?: string
+      lastName?: string
+      orderNumber?: string
+    }
   ) {
     const store = await this.resolveStore(slug)
     const email = normalizeEmail(body.email)
-    const passwordHash = await hash(body.password, 10)
+    const passwordHash = await hash(body.password, 12)
 
     const [existing] = await db
       .select()
@@ -70,14 +79,43 @@ export class CustomerAuthService {
 
     let customer: typeof customers.$inferSelect
     if (existing) {
-      // Guest customer upgrading to an account — attach credentials.
+      // Claiming a guest account requires proof the requester controls the
+      // mailbox — they must cite an order number from that guest history.
+      if (!body.orderNumber?.trim()) {
+        throw badRequest(
+          'CLAIM_ORDER_REQUIRED',
+          'This email has guest orders — provide a recent order number to set a password'
+        )
+      }
+      const [proof] = await db
+        .select({ id: orders.id })
+        .from(orders)
+        .where(
+          and(
+            eq(orders.merchantId, store.merchant.id),
+            eq(orders.customerId, existing.id),
+            // Stored with a leading '#'; accept input either way.
+            eq(
+              orders.orderNumber,
+              (() => {
+                const n = body.orderNumber!.trim().toUpperCase()
+                return n.startsWith('#') ? n : `#${n}`
+              })()
+            )
+          )
+        )
+      if (!proof) {
+        throw badRequest('CLAIM_ORDER_MISMATCH', 'Order number does not match this account')
+      }
+
       ;[customer] = await db
         .update(customers)
         .set({
           passwordHash,
           firstName: body.firstName ?? existing.firstName,
           lastName: body.lastName ?? existing.lastName,
-          phone: existing.phone
+          phone: existing.phone,
+          tokenVersion: existing.tokenVersion + 1
         })
         .where(eq(customers.id, existing.id))
         .returning()
@@ -94,7 +132,14 @@ export class CustomerAuthService {
         .returning()
     }
 
-    return ok({ tokenPayload: { sub: customer.id, mid: store.merchant.id }, customer: publicCustomer(customer) })
+    return ok({
+      tokenPayload: {
+        sub: customer.id,
+        mid: store.merchant.id,
+        tv: customer.tokenVersion
+      },
+      customer: publicCustomer(customer)
+    })
   }
 
   static async login(slug: string, body: { email: string; password: string }) {
@@ -106,11 +151,48 @@ export class CustomerAuthService {
       .from(customers)
       .where(and(eq(customers.merchantId, store.merchant.id), eq(customers.email, email)))
 
-    if (!customer?.passwordHash) throw unauthorized('Invalid email or password')
+    if (!customer?.passwordHash) {
+      // Burn comparable time so account existence isn't measurable via latency.
+      await compare(body.password, DUMMY_SHOPPER_HASH)
+      throw unauthorized('Invalid email or password')
+    }
     const valid = await compare(body.password, customer.passwordHash)
     if (!valid) throw unauthorized('Invalid email or password')
 
-    return ok({ tokenPayload: { sub: customer.id, mid: store.merchant.id }, customer: publicCustomer(customer) })
+    return ok({
+      tokenPayload: {
+        sub: customer.id,
+        mid: store.merchant.id,
+        tv: customer.tokenVersion
+      },
+      customer: publicCustomer(customer)
+    })
+  }
+
+  /** Rotate credentials and invalidate every issued shopper token. */
+  static async changePassword(slug: string, shopper: ShopperContext, body: { currentPassword: string; newPassword: string }) {
+    const { customer } = await this.requireShopper(slug, shopper)
+
+    const valid = await compare(body.currentPassword, customer.passwordHash as string)
+    if (!valid) throw unauthorized('Current password is incorrect')
+
+    const [updated] = await db
+      .update(customers)
+      .set({
+        passwordHash: await hash(body.newPassword, 12),
+        tokenVersion: customer.tokenVersion + 1
+      })
+      .where(eq(customers.id, customer.id))
+      .returning()
+
+    return ok({
+      tokenPayload: {
+        sub: updated.id,
+        mid: updated.merchantId,
+        tv: updated.tokenVersion
+      },
+      customer: publicCustomer(updated)
+    })
   }
 
   static async profile(slug: string, shopper: ShopperContext) {

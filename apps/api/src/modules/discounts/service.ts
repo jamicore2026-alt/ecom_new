@@ -2,12 +2,20 @@ import { and, count, desc, eq, ilike, inArray } from 'drizzle-orm'
 import { db } from '../../database/client'
 import { coupons, promotions } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
+import { roundForCurrency } from '../../shared/currency'
 import { ok } from '../../shared/response'
 import { badRequest, conflict, notFound } from '../../shared/errors'
 
 type PromotionScope = 'all' | 'products' | 'category'
 
 const toDate = (v?: string | Date | null) => (v ? new Date(v) : null)
+
+/** Percentage coupons must stay within (0, 100] — anything else is a config error. */
+const assertCouponValue = (type: string, value: number) => {
+  if (type === 'percentage' && (value <= 0 || value > 100)) {
+    throw badRequest('BAD_REQUEST', 'Percentage coupon value must be between 1 and 100')
+  }
+}
 
 export class DiscountsService {
   /* -------------------------------- coupons -------------------------------- */
@@ -60,6 +68,8 @@ export class DiscountsService {
       .where(and(eq(coupons.merchantId, merchantId), eq(coupons.code, code)))
     if (existing) throw conflict('DUPLICATE', 'A coupon with this code already exists')
 
+    assertCouponValue(input.type, input.value)
+
     const [created] = await db
       .insert(coupons)
       .values({
@@ -96,6 +106,14 @@ export class DiscountsService {
       .from(coupons)
       .where(and(eq(coupons.id, id), eq(coupons.merchantId, merchantId)))
     if (!coupon) throw notFound('NOT_FOUND', 'Coupon not found')
+
+    if (input.type !== undefined && input.value !== undefined) {
+      assertCouponValue(input.type, input.value)
+    } else if (input.type !== undefined && input.type === 'percentage') {
+      assertCouponValue(input.type, coupon.value)
+    } else if (input.value !== undefined && coupon.type === 'percentage') {
+      assertCouponValue(coupon.type, input.value)
+    }
 
     const values: Record<string, unknown> = {}
     for (const key of ['type', 'value', 'minSubtotal', 'usageLimit', 'status'] as const) {
@@ -239,7 +257,7 @@ export class DiscountsService {
 
   /* -------------------------------- validate -------------------------------- */
 
-  static async validateCoupon(merchantId: string, code: string, subtotal: number) {
+  static async validateCoupon(merchantId: string, code: string, subtotal: number, currency = 'USD') {
     const [coupon] = await db
       .select()
       .from(coupons)
@@ -263,12 +281,14 @@ export class DiscountsService {
     if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
       throw badRequest('USAGE_LIMIT', 'Coupon usage limit reached')
     }
-    const discount =
+    // Both types clamp to the subtotal — a discount can never exceed (or invert) the cart.
+    const raw =
       coupon.type === 'percentage'
         ? subtotal * (coupon.value / 100)
         : coupon.type === 'fixed'
-          ? Math.min(coupon.value, subtotal)
+          ? coupon.value
           : 0
-    return ok({ coupon, discount: Number(discount.toFixed(2)), freeShipping: coupon.type === 'free_shipping' })
+    const discount = Math.min(roundForCurrency(raw, currency), roundForCurrency(subtotal, currency))
+    return ok({ coupon, discount, freeShipping: coupon.type === 'free_shipping' })
   }
 }

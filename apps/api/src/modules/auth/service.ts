@@ -1,10 +1,16 @@
 import { and, eq } from 'drizzle-orm'
-import { compare } from 'bcryptjs'
+import { compare, hashSync } from 'bcryptjs'
 import { db } from '../../database/client'
 import { merchants, users, storeSettings } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { unauthorized, forbidden, badRequest } from '../../shared/errors'
 import type { Merchant, User } from '../../database/schema'
+
+/** Burn a bcrypt round for unknown emails so timing doesn't leak account existence. */
+const DUMMY_HASH = hashSync('timing-equalizer', 10)
+const alwaysCompare = async (password: string) => {
+  await compare(password, DUMMY_HASH)
+}
 
 const publicUser = (user: User) => ({
   id: user.id,
@@ -31,7 +37,10 @@ export class AuthService {
         .select()
         .from(merchants)
         .where(eq(merchants.slug, input.merchantSlug))
-      if (!merchant) throw unauthorized('Invalid email or password')
+      if (!merchant) {
+        await alwaysCompare(input.password)
+        throw unauthorized('Invalid email or password')
+      }
 
       const [user] = await db
         .select()
@@ -41,17 +50,34 @@ export class AuthService {
     }
 
     const matches = await db.select().from(users).where(eq(users.email, email))
-    if (matches.length === 0) throw unauthorized('Invalid email or password')
-    if (matches.length > 1) {
-      // Same email exists across stores — the user must disambiguate
-      throw badRequest('AMBIGUOUS_LOGIN', 'Please specify your store (merchantSlug) to sign in')
+    if (matches.length === 0) {
+      await alwaysCompare(input.password)
+      throw unauthorized('Invalid email or password')
     }
 
-    const [merchant] = await db
-      .select()
-      .from(merchants)
-      .where(eq(merchants.id, matches[0].merchantId))
-    return this.validateLogin(matches[0], input.password, merchant)
+    // Compare against every store sharing this email; only a password that
+    // actually matches several accounts triggers disambiguation (no existence oracle).
+    const comparisons = await Promise.all(
+      matches.map(async (user) => ((await compare(input.password, user.passwordHash)) ? user : null))
+    )
+    const candidates = comparisons.filter((u): u is User => u !== null)
+
+    if (candidates.length > 1) {
+      // Same email + same password across stores — the user must disambiguate
+      throw badRequest(
+        'AMBIGUOUS_LOGIN',
+        'Please specify your store (merchantSlug) to sign in'
+      )
+    }
+    if (candidates.length === 1) {
+      const [merchant] = await db
+        .select()
+        .from(merchants)
+        .where(eq(merchants.id, candidates[0].merchantId))
+      return this.validateLogin(candidates[0], input.password, merchant)
+    }
+
+    throw unauthorized('Invalid email or password')
   }
 
   private static async validateLogin(

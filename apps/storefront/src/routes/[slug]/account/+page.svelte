@@ -17,8 +17,14 @@
 	let password = $state('')
 	let firstName = $state('')
 	let lastName = $state('')
+	let claimOrderNumber = $state('')
 	let authError = $state('')
 	let submitting = $state(false)
+
+	let currentPassword = $state('')
+	let newPassword = $state('')
+	let pwMessage = $state<{ kind: 'ok' | 'err'; text: string } | null>(null)
+	let pwSubmitting = $state(false)
 
 	let orders = $state<ShopperOrderSummary[]>([])
 	let ordersError = $state('')
@@ -66,7 +72,8 @@
 					email: email.trim(),
 					password,
 					firstName: firstName.trim() || undefined,
-					lastName: lastName.trim() || undefined
+					lastName: lastName.trim() || undefined,
+					orderNumber: claimOrderNumber.trim() || undefined
 				})
 			}
 			password = ''
@@ -75,6 +82,33 @@
 			authError = e instanceof ApiError ? e.message : 'Something went wrong. Please try again.'
 		} finally {
 			submitting = false
+		}
+	}
+
+	async function changePassword(event: SubmitEvent) {
+		event.preventDefault()
+		pwMessage = null
+		if (newPassword.length < 8) {
+			pwMessage = { kind: 'err', text: 'New password must be at least 8 characters' }
+			return
+		}
+		pwSubmitting = true
+		try {
+			await account.changePassword(fetch, { currentPassword, newPassword })
+			pwMessage = { kind: 'ok', text: 'Password updated — other sessions were signed out.' }
+			currentPassword = ''
+			newPassword = ''
+		} catch (e) {
+			if (account.isAuthError(e)) {
+				account.logout()
+				return
+			}
+			pwMessage = {
+				kind: 'err',
+				text: e instanceof ApiError ? e.message : 'Could not update your password'
+			}
+		} finally {
+			pwSubmitting = false
 		}
 	}
 
@@ -168,6 +202,50 @@
 				</ul>
 			{/if}
 		</section>
+
+		<section class="mt-8 max-w-md rounded-2xl border border-gray-200 bg-white p-6">
+			<h2 class="text-lg font-semibold text-gray-900">Password</h2>
+			<form class="mt-4 space-y-3" onsubmit={changePassword}>
+				<div>
+					<label class="text-sm font-medium text-gray-700" for="currentPassword">Current password</label>
+					<input
+						id="currentPassword"
+						type="password"
+						bind:value={currentPassword}
+						autocomplete="current-password"
+						required
+						class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+					/>
+				</div>
+				<div>
+					<label class="text-sm font-medium text-gray-700" for="newPassword">New password</label>
+					<input
+						id="newPassword"
+						type="password"
+						bind:value={newPassword}
+						placeholder="At least 8 characters"
+						autocomplete="new-password"
+						required
+						class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+					/>
+				</div>
+				{#if pwMessage}
+					<p
+						class="rounded-lg px-4 py-3 text-sm font-medium
+							{pwMessage.kind === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}"
+					>
+						{pwMessage.text}
+					</p>
+				{/if}
+				<button
+					type="submit"
+					disabled={pwSubmitting}
+					class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+				>
+					{pwSubmitting ? 'Saving…' : 'Update password'}
+				</button>
+			</form>
+		</section>
 	{:else}
 		<div class="mx-auto max-w-md rounded-2xl border border-gray-200 bg-white p-6 sm:p-8">
 			<div class="flex rounded-lg bg-gray-100 p-1 text-sm font-medium">
@@ -240,6 +318,21 @@
 						class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 					/>
 				</div>
+
+				{#if mode === 'register'}
+					<div>
+						<label class="text-sm font-medium text-gray-700" for="claimOrderNumber">
+							Recent order number <span class="font-normal text-gray-400">(only if you checked out as a guest)</span>
+						</label>
+						<input
+							id="claimOrderNumber"
+							type="text"
+							bind:value={claimOrderNumber}
+							placeholder="e.g. #WABC123XYZ"
+							class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						/>
+					</div>
+				{/if}
 
 				{#if authError}
 					<p class="rounded-lg bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{authError}</p>

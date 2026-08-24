@@ -18,7 +18,8 @@ const toInt = (v: string | number | undefined, fallback: number, min: number, ma
 }
 
 export const parsePagination = (query: { page?: string | number; limit?: string | number }): Pagination => {
-  const page = toInt(query.page, 1, 1, 1_000_000)
+  // Deep-offset pages beyond this are a DoS vector (offset scans) with no real UI.
+  const page = toInt(query.page, 1, 1, 1000)
   const limit = toInt(query.limit, 20, 1, 100)
   return { page, limit, offset: (page - 1) * limit }
 }

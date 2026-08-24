@@ -1,8 +1,36 @@
 # AGENTS.md — Project Memory
 
-> Audit date: 2026-08-24 · HEAD: `b6f239a` (Phase 1 committed) + Phase-2 complete: customer accounts + reviews + wishlists + FTS search + CSV export/import (all uncommitted)
-> Verified state after CSV batch: tests 96/96 pass (12 files, new csv.test.ts) · typecheck pass · svelte-check 0 errors (web has 71 pre-existing a11y warnings)
-> NOTE: seed now clamps order qty to stock and ×4s variant inventory — re-run `bun run db:seed` to restore; tests find products with stock ≥ 20
+> Audit date: 2026-08-24 · HEAD: `b6f239a` (Phase 1 committed) + Phase-2 + full security/audit-hardening batch (all uncommitted)
+> Verified state after audit batch: tests 98/98 pass (12 files; +2 guest-claim tests) · typecheck pass · svelte-check 0 errors (71 pre-existing a11y warnings)
+> NOTE: migration `0010_audit-hardening` added `customers.token_version`, `orders.coupon_code`, `orders.attribution_channel` — run `bun run db:migrate`. Seed now counts only collected revenue toward customer totalSpent.
+> NOTE: staff passwords now require ≥10 chars (bcrypt 12); shopper register on a guest email requires a recent order number as proof (`CLAIM_ORDER_REQUIRED` / `CLAIM_ORDER_MISMATCH`). Rate limiting is active per-IP in dev/prod but skipped when NODE_ENV=test.
+
+## Audit-hardening batch (2026-08-24) — what changed and why
+
+**Security**
+- JWT secrets validated at boot in production (`resolveSecret` fails fast on missing/dev defaults).
+- Refresh rotation is atomic: `claimRefreshToken` inserts blacklist row with ON CONFLICT DO NOTHING — replayed refresh tokens lose the race safely. Blacklist pruning moved off the request path into a background interval in `index.ts`.
+- Staff login anti-enumeration via DUMMY_HASH compare for unknown emails; AMBIGUOUS_LOGIN only fires when the password actually matches multiple accounts.
+- H1 fixed: all customer reads use `publicCustomerColumns` (password_hash never leaves the DB): customers list/get/orders, order detail, analytics topSpenders.
+- Shopper sessions: tokens carry `tv` = `customers.tokenVersion`; password change bumps it (kills old tokens) and returns a fresh token. TTL via env `SHOPPER_TOKEN_TTL` (default 7 days, was hardcoded 30d). Guest-claim requires order-number proof.
+- Tamara webhooks REQUIRE a valid signed tamara_token whenever notificationToken is configured (timing-safe verify); `/sync` resolves the latest payment_transactions row server-side and passes providerRef to adapters.
+- Uploads sniff magic bytes (jpg/png/webp/gif) before saving; public file route sends `x-content-type-options: nosniff` + sanitized content-disposition.
+- CSV escape neutralizes formula injection (leading `=+-@` gets `'` prefix); ILIKE search escapes `%_\`; pagination page cap 1000; body limit 8MB; swagger disabled outside dev.
+- Rate limiter (`shared/rate-limit.ts`): login/register 10/min, checkout 30/min, events 60/min, webhooks 240/min, in-memory sliding window keyed ip+path. Skipped under NODE_ENV=test.
+
+**Money/inventory correctness**
+- `applyPaymentResult` fully transactional: underpay guard (amount < txn −0.005 stays pending), currency mismatch guard, conditional unpaid→paid flip with RETURNING, relative SQL increments for customer totals, visits.paid upsert by channel. Manual "mark paid" goes through shared `applyManualMarkPaid` (`shared/order-payments.ts`) with the same invariants.
+- Payment-status transitions enforced (`PAYMENT_TRANSITIONS`: unpaid→[paid,failed], paid→partially_refunded→refunded); fulfillment blocked on cancelled/refunded orders.
+- Sweeper/cancel share `cancelPendingOrder`: transactional conditional claim, FOR UPDATE restock, coupon quota restore, reason 'cancel'. Cancel subtracts approved-return quantities (no double restock). Inventory adjust wraps read-modify-write in a tx with FOR UPDATE.
+- Coupons: percentage value must be 1–100 at create/update; discount clamped to subtotal and rounded via roundForCurrency; usage-limit increment is conditional inside the order tx (race-safe), restore uses greatest(usedCount−1, 0).
+- Provider callbacks: MyFatoorah returns paid amount+currency, 401→PROVIDER_AUTH_FAILED; both adapters use 15s AbortSignal timeouts; failed provider session cancels the pending order immediately; webhook apply-failure deletes its dedupe row so provider retries aren't swallowed.
+
+**Consistency**
+- Order numbers gain CSPRNG suffix (#W…+8 random chars) — public payload dropped billingAddress (shippingAddress+notes remain public by design).
+- Preview accepts shippingAddress.country so quoted shipping/tax match the final order; storefront re-previews on country change and refuses non-https gateway redirects.
+- Overview/analytics day buckets are UTC (`at time zone 'UTC'`); overview currency comes from the merchant row (was hardcoded USD); lowPerformers respects the selected range + revenue statuses; parseRange swaps inverted ranges; bulk price multiply rounds to 3dp.
+- Funnel events channel allowlist (direct|organic|social|paid|email|referral, else 'direct'); storefront track() derives channel from utm_medium/referrer.
+- Checkout model hardened: email format validation, items maxItems 50, address field maxLengths, notes ≤2000.
 
 ## What this is
 

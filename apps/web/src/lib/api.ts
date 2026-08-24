@@ -148,9 +148,12 @@ export async function login(input: { email: string; password: string; merchantSl
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(input)
 	})
-	const body = (await res.json()) as AuthResponse | ApiErrorBody
-	if (!res.ok || !('data' in body)) {
-		throw new ApiError('data' in body ? (body as never) : (body as ApiErrorBody).error, res.status)
+	const body = (await res.json().catch(() => null)) as AuthResponse | ApiErrorBody | null
+	if (!res.ok || !body || !('data' in body)) {
+		throw new ApiError(
+			body && 'error' in body ? body.error : { code: 'REQUEST_FAILED', message: 'Login failed' },
+			res.status
+		)
 	}
 	setAccessToken(body.data.accessToken)
 	return body

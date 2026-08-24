@@ -676,7 +676,7 @@
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-gray-700">{editingStaff ? 'New password (leave blank to keep)' : 'Password *'}</label>
-				<input type="password" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={staffPassword} minlength={editingStaff ? undefined : 6} required={!editingStaff} />
+				<input type="password" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={staffPassword} minlength={editingStaff ? undefined : 10} required={!editingStaff} />
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-gray-700">Role</label>

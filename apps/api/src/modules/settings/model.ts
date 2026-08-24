@@ -78,7 +78,7 @@ export const notificationsBody = t.Object({
 export const staffCreateBody = t.Object({
   name: t.String({ minLength: 1 }),
   email: t.String({ format: 'email' }),
-  password: t.String({ minLength: 6 }),
+  password: t.String({ minLength: 10 }),
   role: t.Enum({ admin: 'admin', staff: 'staff' }),
   permissions: t.Optional(t.Array(t.String()))
 })
@@ -86,7 +86,7 @@ export const staffCreateBody = t.Object({
 export const staffUpdateBody = t.Object({
   name: t.Optional(t.String({ minLength: 1 })),
   email: t.Optional(t.String({ format: 'email' })),
-  password: t.Optional(t.String({ minLength: 6 })),
+  password: t.Optional(t.String({ minLength: 10 })),
   role: t.Optional(t.Enum({ owner: 'owner', admin: 'admin', staff: 'staff' })),
   permissions: t.Optional(t.Array(t.String())),
   status: t.Optional(t.Enum({ active: 'active', disabled: 'disabled' }))

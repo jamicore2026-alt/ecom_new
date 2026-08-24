@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gte, inArray, lt, lte, ne, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import { db } from '../../database/client'
 import {
@@ -24,6 +24,7 @@ import {
 import { DiscountsService } from '../discounts/service'
 import { EmailsService } from '../emails/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
+import { markOrderPaidEffects } from '../../shared/order-payments'
 import { roundForCurrency } from '../../shared/currency'
 import { productSearchCondition, productSearchRank } from '../../shared/product-search'
 import { getProvider, listProviders } from '../../payments/registry'
@@ -50,6 +51,8 @@ export interface CheckoutInput extends CheckoutPreviewInput {
 export interface CheckoutPreviewInput {
   items: CheckoutItemInput[]
   couponCode?: string
+  /** Optional country so previewed totals match the final order's shipping/tax. */
+  shippingAddress?: { country?: string }
 }
 
 interface StorePayload {
@@ -233,7 +236,9 @@ export class StorefrontService {
     body: { type: 'view' | 'cart_add' | 'checkout_start'; channel?: string }
   ) {
     const store = await this.resolveStore(slug)
-    const channel = (body.channel ?? 'direct') as string
+    // Allowlist channels — arbitrary client strings would mint unbounded visits rows.
+    const FUNNEL_CHANNELS = new Set(['direct', 'organic', 'social', 'paid', 'email', 'referral'])
+    const channel = body.channel && FUNNEL_CHANNELS.has(body.channel) ? body.channel : 'direct'
 
     const now = new Date()
     const date = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -716,7 +721,8 @@ export class StorefrontService {
       const { data } = await DiscountsService.validateCoupon(
         store.merchant.id,
         body.couponCode,
-        subtotal
+        subtotal,
+        currency
       )
       coupon = {
         code: body.couponCode.trim().toUpperCase(),
@@ -739,7 +745,7 @@ export class StorefrontService {
 
   static async preview(slug: string, body: CheckoutPreviewInput) {
     const { store, items, subtotal, discountTotal, shipping, taxTotal, total, coupon } =
-      await this.buildSummary(slug, body)
+      await this.buildSummary(slug, body, body.shippingAddress?.country)
     return ok({
       items,
       subtotal,
@@ -805,7 +811,9 @@ export class StorefrontService {
     opts: { paymentStatus: 'unpaid' | 'paid'; provider?: string; expiresAt?: Date | null }
   ) {
     const currency = store.merchant.currency
-    const orderNumber = `#W${Date.now().toString(36).toUpperCase()}`
+    // Timestamp component keeps numbers roughly sortable; the random suffix makes
+    // them unguessable (public confirmation endpoint) and collision-free.
+    const orderNumber = `#W${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`
 
     return db.transaction(async (tx) => {
       const email = body.email.trim().toLowerCase()
@@ -819,25 +827,40 @@ export class StorefrontService {
         await tx
           .update(customers)
           .set({
-            ordersCount: existing.ordersCount + 1,
+            ordersCount: sql`${customers.ordersCount} + 1`,
             lastOrderAt: new Date()
           })
           .where(eq(customers.id, existing.id))
       } else {
         const name = (body.shippingAddress.name as string | undefined) ?? ''
-        const [created] = await tx
-          .insert(customers)
-          .values({
-            merchantId: store.merchant.id,
-            email,
-            firstName: name.split(' ')[0] ?? null,
-            lastName: name.split(' ').slice(1).join(' ') || null,
-            phone: (body.shippingAddress.phone as string | undefined) ?? null,
-            ordersCount: 1,
-            lastOrderAt: new Date()
-          })
-          .returning()
-        customerId = created.id
+        try {
+          const [created] = await tx
+            .insert(customers)
+            .values({
+              merchantId: store.merchant.id,
+              email,
+              firstName: name.split(' ')[0] ?? null,
+              lastName: name.split(' ').slice(1).join(' ') || null,
+              phone: (body.shippingAddress.phone as string | undefined) ?? null,
+              ordersCount: 1,
+              lastOrderAt: new Date()
+            })
+            .returning()
+          customerId = created.id
+        } catch (err) {
+          // Concurrent first checkout with the same email — reuse the winner's row.
+          if ((err as { code?: string }).code !== '23505') throw err
+          const [raced] = await tx
+            .select()
+            .from(customers)
+            .where(and(eq(customers.merchantId, store.merchant.id), eq(customers.email, email)))
+          if (!raced) throw err
+          customerId = raced.id
+          await tx
+            .update(customers)
+            .set({ ordersCount: sql`${customers.ordersCount} + 1`, lastOrderAt: new Date() })
+            .where(eq(customers.id, raced.id))
+        }
       }
 
       const [order] = await tx
@@ -860,6 +883,8 @@ export class StorefrontService {
           notes: body.notes ?? null,
           paymentMethod: body.paymentMethod,
           paymentProvider: opts.provider ?? null,
+          couponCode: summary.coupon?.code ?? null,
+          attributionChannel: 'direct',
           expiresAt: opts.expiresAt ?? null
         })
         .returning()
@@ -903,15 +928,24 @@ export class StorefrontService {
       }
 
       if (summary.coupon) {
-        await tx
+        // Conditional increment — a concurrent checkout can't push usedCount past usageLimit.
+        const claimed = await tx
           .update(coupons)
           .set({ usedCount: sql`${coupons.usedCount} + 1` })
           .where(
             and(
               eq(coupons.merchantId, store.merchant.id),
-              eq(coupons.code, summary.coupon.code)
+              eq(coupons.code, summary.coupon.code),
+              or(
+                isNull(coupons.usageLimit),
+                lt(coupons.usedCount, coupons.usageLimit)
+              )
             )
           )
+          .returning({ id: coupons.id })
+        if (claimed.length === 0) {
+          throw badRequest('COUPON_USAGE_LIMIT', 'Coupon usage limit reached')
+        }
       }
 
       return order
@@ -1019,14 +1053,26 @@ export class StorefrontService {
           email: body.email.trim().toLowerCase(),
           phone: (body.shippingAddress.phone as string | undefined) ?? undefined
         },
-        items: summary.items.map((i) => ({ name: i.name, quantity: i.quantity, unitPrice: i.price })),
+        items: summary.items.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          unitPrice: i.price,
+          total: i.total
+        })),
+        shippingAmount: summary.shipping.rate,
+        taxAmount: summary.taxTotal,
         shippingAddress: body.shippingAddress,
         ...urls
       })
     } catch (err) {
-      // Leave the order to expire via the sweep so held stock is released.
+      // Session failed → cancel immediately and release the held stock instead of
+      // waiting for the expiry sweep (the customer never reached the gateway).
       console.error(`[payments] ${providerId} createSession failed for ${order.orderNumber}:`, err)
-      throw err
+      await this.cancelPendingOrder(order)
+      throw badRequest(
+        'PROVIDER_SESSION_FAILED',
+        `Could not start a ${providerId} payment session — please try another payment method`
+      )
     }
 
     await db.insert(paymentTransactions).values({
@@ -1051,7 +1097,11 @@ export class StorefrontService {
     })
   }
 
-  /** Applies a verified gateway result to the stored transaction and its order. */
+  /**
+   * Applies a verified gateway result to the stored transaction and its order.
+   * Runs in one transaction with a conditional unpaid→paid flip so concurrent
+   * webhook + sync calls can never double-apply (totalSpent, emails, visits).
+   */
   static async applyPaymentResult(
     merchantId: string,
     providerId: string,
@@ -1069,43 +1119,110 @@ export class StorefrontService {
       )
     if (!txn) throw notFound('TRANSACTION_NOT_FOUND', 'No matching payment transaction')
 
-    const txnStatus =
-      result.status === 'paid' ? 'paid' : result.status === 'failed' ? 'failed' : 'pending'
-    await db
-      .update(paymentTransactions)
-      .set({ status: txnStatus, raw: result.raw ?? txn.raw, updatedAt: new Date() })
-      .where(eq(paymentTransactions.id, txn.id))
-
-    let orderUpdated = false
-    if (result.status === 'paid') {
-      const [order] = await db.select().from(orders).where(eq(orders.id, txn.orderId))
-      // Only flip unpaid → paid; refunds/cancellations stay untouched.
-      if (order && order.paymentStatus === 'unpaid') {
-        await db
-          .update(orders)
-          .set({ paymentStatus: 'paid', expiresAt: null, updatedAt: new Date() })
-          .where(eq(orders.id, order.id))
-        if (order.customerId) {
-          const [customer] = await db
-            .select()
-            .from(customers)
-            .where(eq(customers.id, order.customerId))
-          if (customer) {
-            await db
-              .update(customers)
-              .set({
-                totalSpent: number(customer.totalSpent) + number(order.total),
-                lastOrderAt: order.createdAt
-              })
-              .where(eq(customers.id, order.customerId))
-          }
-        }
-        orderUpdated = true
-        void EmailsService.orderPaid(merchantId, order.id)
+    // Underpayment / currency mismatch guard — the captured amount must cover
+    // the order total before we mark anything paid.
+    let status = result.status
+    if (status === 'paid') {
+      const expected = number(txn.amount)
+      if (
+        result.amount !== undefined &&
+        result.amount + 0.005 < expected
+      ) {
+        console.error(
+          `[payments] underpaid ${result.providerRef}: captured ${result.amount} < expected ${expected} — leaving order unpaid`
+        )
+        status = 'pending'
+      } else if (result.currency && txn.currency && result.currency !== txn.currency) {
+        console.error(
+          `[payments] currency mismatch for ${result.providerRef}: ${result.currency} != ${txn.currency} — leaving order unpaid`
+        )
+        status = 'pending'
       }
     }
 
+    const txnStatus = status === 'paid' ? 'paid' : status === 'failed' ? 'failed' : 'pending'
+
+    let orderUpdated = false
+    let paidOrderId: string | null = null
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(paymentTransactions)
+        .set({ status: txnStatus, raw: result.raw ?? txn.raw, updatedAt: new Date() })
+        .where(eq(paymentTransactions.id, txn.id))
+
+      if (status !== 'paid') return
+
+      // Conditional flip — only the first caller wins; refunds/cancellations untouched.
+      const flipped = await tx
+        .update(orders)
+        .set({ paymentStatus: 'paid', expiresAt: null, updatedAt: new Date() })
+        .where(and(eq(orders.id, txn.orderId), eq(orders.paymentStatus, 'unpaid')))
+        .returning()
+      if (flipped.length === 0) return
+
+      orderUpdated = true
+      paidOrderId = flipped[0].id
+      await markOrderPaidEffects(tx, merchantId, flipped[0])
+    })
+
+    if (paidOrderId) void EmailsService.orderPaid(merchantId, paidOrderId)
+
     return { orderUpdated, orderId: txn.orderId }
+  }
+
+  /** Cancel a pending unpaid provider order inside a tx: restock + restore coupon quota.
+   *  Returns false when another path (webhook, sweep, sync) already resolved the order. */
+  private static async cancelPendingOrder(order: typeof orders.$inferSelect): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const [claimed] = await tx
+        .update(orders)
+        .set({ status: 'cancelled', paymentStatus: 'failed', expiresAt: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(orders.id, order.id),
+            eq(orders.status, 'pending'),
+            eq(orders.paymentStatus, 'unpaid')
+          )
+        )
+        .returning({ id: orders.id })
+      // Someone else (sweep / webhook / another request) already resolved it.
+      if (!claimed) return false
+
+      const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, order.id))
+      for (const item of items) {
+        if (!item.variantId) continue
+        const [variant] = await tx
+          .select()
+          .from(productVariants)
+          .where(eq(productVariants.id, item.variantId))
+          .for('update')
+        if (!variant) continue
+        const afterValue = variant.inventory + item.quantity
+        await tx
+          .update(productVariants)
+          .set({ inventory: afterValue })
+          .where(eq(productVariants.id, variant.id))
+        await tx.insert(inventoryLogs).values({
+          merchantId: order.merchantId,
+          variantId: variant.id,
+          change: item.quantity,
+          beforeValue: variant.inventory,
+          afterValue,
+          reason: 'cancel',
+          reference: order.orderNumber
+        })
+      }
+
+      if (order.couponCode) {
+        await tx
+          .update(coupons)
+          .set({ usedCount: sql`greatest(${coupons.usedCount} - 1, 0)` })
+          .where(and(eq(coupons.merchantId, order.merchantId), eq(coupons.code, order.couponCode)))
+      }
+
+      return true
+    })
   }
 
   /** Server-side re-verification used by the storefront return page. */
@@ -1142,10 +1259,25 @@ export class StorefrontService {
       credentials: decryptJson<Record<string, string>>(configRow.credentials)
     }
 
+    // Resolve the stored provider reference server-side so "Check now" works for
+    // every provider (Tamara needs its own order id, MyFatoorah the paymentId).
+    const [txn] = await db
+      .select()
+      .from(paymentTransactions)
+      .where(
+        and(
+          eq(paymentTransactions.orderId, order.id),
+          eq(paymentTransactions.provider, order.paymentProvider)
+        )
+      )
+      .orderBy(desc(paymentTransactions.createdAt))
+      .limit(1)
+
     const result = await adapter.verifyCallback(config, {
       query: payload?.paymentId ? { paymentId: payload.paymentId } : {},
       body: payload?.paymentId ? { paymentId: payload.paymentId } : null,
-      headers: {}
+      headers: {},
+      providerRef: txn?.providerRef ?? undefined
     })
 
     const applied = await this.applyPaymentResult(store.merchant.id, order.paymentProvider, result)
@@ -1172,43 +1304,16 @@ export class StorefrontService {
       )
       .limit(200)
 
+    let cancelled = 0
     for (const order of stale) {
       try {
-        await db.transaction(async (tx) => {
-          const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, order.id))
-          for (const item of items) {
-            if (!item.variantId) continue
-            const [variant] = await tx
-              .select()
-              .from(productVariants)
-              .where(eq(productVariants.id, item.variantId))
-              .for('update')
-            if (!variant) continue
-            const afterValue = variant.inventory + item.quantity
-            await tx
-              .update(productVariants)
-              .set({ inventory: afterValue })
-              .where(eq(productVariants.id, variant.id))
-            await tx.insert(inventoryLogs).values({
-              merchantId: order.merchantId,
-              variantId: variant.id,
-              change: item.quantity,
-              beforeValue: variant.inventory,
-              afterValue,
-              reason: 'cancel',
-              reference: order.orderNumber
-            })
-          }
-          await tx
-            .update(orders)
-            .set({ status: 'cancelled', paymentStatus: 'failed', updatedAt: new Date() })
-            .where(eq(orders.id, order.id))
-        })
+        const done = await this.cancelPendingOrder(order)
+        if (done) cancelled++
       } catch (err) {
         console.error(`[payments] failed to expire order ${order.orderNumber}:`, err)
       }
     }
-    return stale.length
+    return cancelled
   }
 
   static async order(slug: string, orderNumber: string) {
@@ -1231,8 +1336,9 @@ export class StorefrontService {
       taxTotal: number(order.taxTotal),
       total: number(order.total),
       currency: order.currency,
+      // Public endpoint — billing details stay internal; the confirmation page
+      // only renders shipping info. Order numbers are CSPRNG-suffixed.
       shippingAddress: order.shippingAddress,
-      billingAddress: order.billingAddress,
       notes: order.notes,
       createdAt: order.createdAt,
       items: items.map((i) => ({

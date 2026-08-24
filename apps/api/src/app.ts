@@ -2,6 +2,7 @@ import { Elysia } from 'elysia'
 import { cors } from '@elysiajs/cors'
 import { swagger } from '@elysiajs/swagger'
 import { errorHandler } from './plugins/errors'
+import { rateLimiter } from './shared/rate-limit'
 import { authModule } from './modules/auth'
 import { overviewModule } from './modules/overview'
 import { productsModule } from './modules/products'
@@ -24,8 +25,12 @@ const corsOrigins = (process.env.CORS_ORIGINS ?? '')
 
 const devOrigins = [/^http:\/\/(localhost|127\.0\.0\.1):(5478|5479)$/]
 
-export const app = new Elysia()
+export const app = new Elysia({
+  // Cap request bodies (uploads are separately limited to 5MB by the upload model).
+  serve: { maxRequestBodySize: 8 * 1024 * 1024 }
+})
   .onError(errorHandler)
+  .use(rateLimiter)
   .use(
     cors({
       origin: corsOrigins.length > 0 ? corsOrigins : devOrigins,
@@ -35,9 +40,11 @@ export const app = new Elysia()
     })
   )
   .use(
-    swagger({
-      path: '/docs',
-      documentation: {
+    // Never expose route documentation to anonymous visitors in production.
+    process.env.NODE_ENV !== 'production'
+      ? swagger({
+          path: '/docs',
+          documentation: {
         info: {
           title: 'Merchant Dashboard API',
           version: '1.0.0',
@@ -61,6 +68,7 @@ export const app = new Elysia()
         ]
       }
     })
+      : new Elysia({ name: 'swagger-disabled' })
   )
   .use(authModule)
   .use(overviewModule)

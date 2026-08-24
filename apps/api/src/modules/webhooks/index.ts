@@ -66,12 +66,17 @@ export const webhooksModule = new Elysia({ prefix: '/api', name: 'webhooks' }).p
 
     try {
       await StorefrontService.applyPaymentResult(merchant.id, params.provider, result)
-    } finally {
-      await db
-        .update(webhookEvents)
-        .set({ processedAt: new Date() })
-        .where(eq(webhookEvents.id, inserted[0].id))
+    } catch (err) {
+      // Release the claim so the provider's retry can be applied — a failed
+      // application must not be swallowed by dedupe forever.
+      await db.delete(webhookEvents).where(eq(webhookEvents.id, inserted[0].id))
+      throw err
     }
+
+    await db
+      .update(webhookEvents)
+      .set({ processedAt: new Date() })
+      .where(eq(webhookEvents.id, inserted[0].id))
 
     return ok({ received: true })
   }

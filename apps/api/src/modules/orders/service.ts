@@ -8,11 +8,13 @@ import {
   paymentProviderConfigs,
   paymentTransactions,
   productVariants,
+  publicCustomerColumns,
   refunds,
   returnsTable
 } from '../../database/schema'
 import { getProvider } from '../../payments/registry'
 import { decryptJson } from '../../shared/crypto'
+import { applyManualMarkPaid } from '../../shared/order-payments'
 import { EmailsService } from '../emails/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
@@ -27,6 +29,22 @@ const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   delivered: ['refunded'],
   cancelled: [],
   refunded: []
+}
+
+/** Legal paymentStatus changes for the manual status endpoint. Refunds go through
+ *  the refunds flow; `paid` must only ever come from `unpaid`. */
+const PAYMENT_TRANSITIONS: Record<string, string[]> = {
+  unpaid: ['paid', 'failed'],
+  pending: ['paid', 'failed'], // legacy rows
+  paid: ['partially_refunded', 'refunded'],
+  partially_refunded: ['refunded'],
+  failed: [],
+  refunded: []
+}
+
+const FULFILLMENT_TRANSITIONS: Record<string, string[]> = {
+  unfulfilled: ['fulfilled'],
+  fulfilled: []
 }
 
 interface OrderQuery {
@@ -130,7 +148,10 @@ export class OrdersService {
       .where(eq(orderItems.orderId, id))
 
     const [customer] = order.customerId
-      ? await db.select().from(customers).where(eq(customers.id, order.customerId))
+      ? await db
+          .select(publicCustomerColumns)
+          .from(customers)
+          .where(eq(customers.id, order.customerId))
       : []
 
     const returns = await db
@@ -171,10 +192,50 @@ export class OrdersService {
 
     const values: Partial<Order> = {}
     if (input.status) values.status = input.status as OrderStatus
-    if (input.paymentStatus) values.paymentStatus = input.paymentStatus
-    if (input.fulfillmentStatus) values.fulfillmentStatus = input.fulfillmentStatus
+
+    // Manual payment transitions are constrained — refunds stay in the refund
+    // flow, and a refunded/cancelled order can never be flipped back to paid.
+    let markPaid = false
+    if (input.paymentStatus && input.paymentStatus !== order.paymentStatus) {
+      const allowedPayment = PAYMENT_TRANSITIONS[order.paymentStatus] ?? []
+      if (!allowedPayment.includes(input.paymentStatus)) {
+        throw badRequest(
+          'INVALID_TRANSITION',
+          `Cannot move payment from ${order.paymentStatus} to ${input.paymentStatus}`
+        )
+      }
+      values.paymentStatus = input.paymentStatus
+      if (input.paymentStatus === 'paid') markPaid = true
+    }
+
+    if (input.fulfillmentStatus && input.fulfillmentStatus !== order.fulfillmentStatus) {
+      if (['cancelled', 'refunded'].includes(order.status)) {
+        throw badRequest(
+          'INVALID_TRANSITION',
+          `Cannot change fulfillment on a ${order.status} order`
+        )
+      }
+      const allowedFulfillment = FULFILLMENT_TRANSITIONS[order.fulfillmentStatus] ?? []
+      if (!allowedFulfillment.includes(input.fulfillmentStatus)) {
+        throw badRequest(
+          'INVALID_TRANSITION',
+          `Cannot move fulfillment from ${order.fulfillmentStatus} to ${input.fulfillmentStatus}`
+        )
+      }
+      values.fulfillmentStatus = input.fulfillmentStatus
+    }
 
     if (Object.keys(values).length === 0) return ok(order)
+
+    if (markPaid) {
+      // Route the unpaid→paid flip through the shared helper so customer totals,
+      // funnel metrics and emails behave exactly like gateway payments.
+      const applied = await applyManualMarkPaid(
+        order,
+        values.status ? { status: values.status } : {}
+      )
+      return ok(applied)
+    }
 
     const [updated] = await db
       .update(orders)
@@ -200,13 +261,30 @@ export class OrdersService {
       .from(orderItems)
       .where(eq(orderItems.orderId, id))
 
+    // Approved returns already restocked their units — don't double-restock them.
+    const approvedRows = await db
+      .select({
+        orderItemId: returnsTable.orderItemId,
+        returned: sql<number>`coalesce(sum(${returnsTable.quantity}), 0)`
+      })
+      .from(returnsTable)
+      .where(and(eq(returnsTable.orderId, id), eq(returnsTable.status, 'approved')))
+      .groupBy(returnsTable.orderItemId)
+    const approvedByItem = new Map(
+      approvedRows.map((r) => [r.orderItemId, Number(r.returned)])
+    )
+
     const result = await db.transaction(async (tx) => {
       await this.restockTx(
         tx,
         merchantId,
         items
           .filter((i) => i.variantId)
-          .map((i) => ({ variantId: i.variantId as string, quantity: i.quantity })),
+          .map((i) => ({
+            variantId: i.variantId as string,
+            quantity: Math.max(0, i.quantity - (approvedByItem.get(i.id) ?? 0))
+          }))
+          .filter((i) => i.quantity > 0),
         'cancel'
       )
 
@@ -498,7 +576,13 @@ export class OrdersService {
     reason: string
   ) {
     for (const { variantId, quantity } of items) {
-      const [v] = await tx.select().from(productVariants).where(eq(productVariants.id, variantId))
+      // Locked + relative increment — an absolute SET from a stale read loses
+      // concurrent sales (the checkout decrement uses the same lock).
+      const [v] = await tx
+        .select()
+        .from(productVariants)
+        .where(eq(productVariants.id, variantId))
+        .for('update')
       if (!v) continue
       const afterValue = v.inventory + quantity
       await tx

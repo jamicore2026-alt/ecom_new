@@ -439,7 +439,7 @@ export class ProductsService {
         }
         await db
           .update(products)
-          .set({ price: sql`round((${products.price} * ${multiplier})::numeric, 2)` })
+          .set({ price: sql`round((${products.price} * ${multiplier})::numeric, 3)` })
           .where(where)
         break
       }

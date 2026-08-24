@@ -6,6 +6,7 @@ import {
   orderItems,
   orders,
   products,
+  publicCustomerColumns,
   refunds,
   visits
 } from '../../database/schema'
@@ -15,12 +16,14 @@ import { revenueStatuses } from '../../shared/types'
 const round2 = (n: number) => Number(n.toFixed(2))
 
 const parseRange = (from?: string, to?: string, days = 30) => {
-  const end = to ? new Date(to) : new Date()
-  if (isNaN(end.getTime())) end.setTime(Date.now())
+  let end = to ? new Date(to) : new Date()
+  if (isNaN(end.getTime())) end = new Date()
   end.setHours(23, 59, 59, 999)
-  const start = from ? new Date(from) : new Date(end.getTime() - (days - 1) * 86400000)
-  if (isNaN(start.getTime())) start.setTime(end.getTime() - (days - 1) * 86400000)
+  let start = from ? new Date(from) : new Date(end.getTime() - (days - 1) * 86400000)
+  if (isNaN(start.getTime())) start = new Date(end.getTime() - (days - 1) * 86400000)
   start.setHours(0, 0, 0, 0)
+  // An inverted range would silently return empty data — normalize instead.
+  if (start > end) [start, end] = [end, start]
   return { start, end }
 }
 
@@ -48,7 +51,7 @@ export class AnalyticsService {
         lte(orders.createdAt, e)
       )
 
-    const truncExpr = sql.raw(`date_trunc('${interval}', "orders"."created_at")`)
+    const truncExpr = sql.raw(`date_trunc('${interval}', "orders"."created_at") at time zone 'UTC'`)
     const run = async (s: Date, e: Date) => {
       const buckets = await db
         .select({
@@ -152,6 +155,8 @@ export class AnalyticsService {
       .groupBy(categories.id)
       .orderBy(sql`coalesce(sum(${orderItems.total}), 0) desc`)
 
+    // Only orders inside the requested window count — otherwise "low performers"
+    // is dominated by products that simply haven't sold in the range.
     const lowPerformers = await db
       .select({
         productId: products.id,
@@ -161,7 +166,26 @@ export class AnalyticsService {
         quantity: sql<number>`coalesce(sum(${orderItems.quantity}), 0)`
       })
       .from(products)
-      .leftJoin(orderItems, eq(orderItems.productId, products.id))
+      .leftJoin(
+        orderItems,
+        and(
+          eq(orderItems.productId, products.id),
+          inArray(
+            orderItems.orderId,
+            db
+              .select({ id: orders.id })
+              .from(orders)
+              .where(
+                and(
+                  eq(orders.merchantId, merchantId),
+                  gte(orders.createdAt, start),
+                  lte(orders.createdAt, end),
+                  inArray(orders.status, revenueStatuses)
+                )
+              )
+          )
+        )
+      )
       .where(eq(products.merchantId, merchantId))
       .groupBy(products.id)
       .orderBy(sql`coalesce(sum(${orderItems.total}), 0) asc`)
@@ -219,7 +243,7 @@ export class AnalyticsService {
     const monthlyTrunc = sql.raw(`date_trunc('month', "customers"."created_at")`)
     const monthly = await db
       .select({
-        month: sql<string>`to_char(${monthlyTrunc}, 'YYYY-MM')`,
+        month: sql<string>`to_char(${monthlyTrunc} at time zone 'UTC', 'YYYY-MM')`,
         count: count()
       })
       .from(customers)
@@ -230,7 +254,7 @@ export class AnalyticsService {
       .orderBy(monthlyTrunc)
 
     const topSpenders = await db
-      .select()
+      .select(publicCustomerColumns)
       .from(customers)
       .where(eq(customers.merchantId, merchantId))
       .orderBy(sql`${customers.totalSpent} desc`)

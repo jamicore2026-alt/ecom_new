@@ -3,9 +3,9 @@ import { t } from 'elysia'
 export const couponBody = t.Object({
   code: t.String({ minLength: 2, maxLength: 100 }),
   type: t.Enum({ percentage: 'percentage', fixed: 'fixed', free_shipping: 'free_shipping' }),
-  value: t.Number({ minimum: 0 }),
+  value: t.Number({ minimum: 0, maximum: 1000000 }),
   minSubtotal: t.Optional(t.Number({ minimum: 0 })),
-  usageLimit: t.Optional(t.Integer({ minimum: 0 })),
+  usageLimit: t.Optional(t.Integer({ minimum: 1 })),
   startsAt: t.Optional(t.String()),
   endsAt: t.Optional(t.String()),
   status: t.Optional(t.Enum({ active: 'active', disabled: 'disabled' }))

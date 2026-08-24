@@ -201,6 +201,8 @@ export interface CheckoutInput {
 export interface CheckoutPreviewInput {
 	items: CartItemInput[]
 	couponCode?: string
+	/** Country so previewed shipping/tax match the final order. */
+	shippingAddress?: { country?: string }
 }
 
 export interface CheckoutOrder {

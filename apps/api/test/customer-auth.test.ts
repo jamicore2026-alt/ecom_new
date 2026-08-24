@@ -64,10 +64,35 @@ describe('Storefront customer accounts', () => {
     expect(orderNumber).toMatch(/^#W/)
   })
 
-  it('registers an account for the guest email (credentials attached)', async () => {
+  it('rejects credential attachment to a guest without order-number proof', async () => {
     const res = await call(
       '/api/store/acme-store/auth/register',
       json({ email: EMAIL, password: 'sup3rsecret', firstName: 'Shop', lastName: 'Er' })
+    )
+    expect(res.status).toBe(400)
+    expect(res.body.error.code).toBe('CLAIM_ORDER_REQUIRED')
+  })
+
+  it('rejects credential attachment with a wrong order number', async () => {
+    const res = await call(
+      '/api/store/acme-store/auth/register',
+      json({ email: EMAIL, password: 'sup3rsecret', orderNumber: '#WNOPE' })
+    )
+    expect(res.status).toBe(400)
+    expect(res.body.error.code).toBe('CLAIM_ORDER_MISMATCH')
+  })
+
+  it('registers an account for the guest email (credentials attached)', async () => {
+    const res = await call(
+      '/api/store/acme-store/auth/register',
+      json({
+        email: EMAIL,
+        password: 'sup3rsecret',
+        firstName: 'Shop',
+        lastName: 'Er',
+        // Proof of mailbox ownership — cites the guest order just placed.
+        orderNumber
+      })
     )
     expect(res.status).toBe(200)
     expect(res.body.success).toBe(true)

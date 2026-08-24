@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, ilike, or, sql } from 'drizzle-orm'
 import { db } from '../../database/client'
-import { customers, orders, refunds } from '../../database/schema'
+import { customers, orders, refunds, publicCustomerColumns } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
@@ -40,7 +40,7 @@ export class CustomersService {
     const dir = q.sortOrder === 'asc' ? asc : desc
 
     const rows = await db
-      .select()
+      .select(publicCustomerColumns)
       .from(customers)
       .where(where)
       .orderBy(dir(sortCol))
@@ -52,7 +52,7 @@ export class CustomersService {
 
   static async get(merchantId: string, id: string) {
     const [customer] = await db
-      .select()
+      .select(publicCustomerColumns)
       .from(customers)
       .where(and(eq(customers.id, id), eq(customers.merchantId, merchantId)))
     if (!customer) throw notFound('NOT_FOUND', 'Customer not found')
@@ -79,7 +79,7 @@ export class CustomersService {
     const { page, limit, offset } = parsePagination(q)
 
     const [customer] = await db
-      .select()
+      .select(publicCustomerColumns)
       .from(customers)
       .where(and(eq(customers.id, customerId), eq(customers.merchantId, merchantId)))
     if (!customer) throw notFound('NOT_FOUND', 'Customer not found')

@@ -180,10 +180,30 @@ export const customers = pgTable(
     totalSpent: money('total_spent').notNull().default(0),
     ordersCount: integer('orders_count').notNull().default(0),
     lastOrderAt: timestamp('last_order_at'),
+    /** Bumped on password change — invalidates previously issued shopper JWTs. */
+    tokenVersion: integer('token_version').notNull().default(0),
     createdAt: timestamp('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('customers_merchant_email_idx').on(t.merchantId, t.email)]
 )
+
+/**
+ * Staff-safe customer projection — never select the raw table for API responses;
+ * passwordHash must not leave the database.
+ */
+export const publicCustomerColumns = {
+  id: customers.id,
+  merchantId: customers.merchantId,
+  email: customers.email,
+  firstName: customers.firstName,
+  lastName: customers.lastName,
+  phone: customers.phone,
+  tags: customers.tags,
+  totalSpent: customers.totalSpent,
+  ordersCount: customers.ordersCount,
+  lastOrderAt: customers.lastOrderAt,
+  createdAt: customers.createdAt
+}
 
 /* --------------------------------- orders --------------------------------- */
 
@@ -212,6 +232,10 @@ export const orders = pgTable(
     notes: text('notes'),
     paymentMethod: varchar('payment_method', { length: 50 }),
     paymentProvider: varchar('payment_provider', { length: 30 }),
+    /** Coupon applied at purchase time — lets cancellations restore the usage quota. */
+    couponCode: varchar('coupon_code', { length: 100 }),
+    /** Marketing attribution captured at checkout (funnel `paid` metric). */
+    attributionChannel: varchar('attribution_channel', { length: 20 }),
     expiresAt: timestamp('expires_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())

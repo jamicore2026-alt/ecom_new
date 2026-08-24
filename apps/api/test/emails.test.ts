@@ -32,6 +32,7 @@ const json = (body: unknown) => ({
 })
 
 /** Fire-and-forget delivery needs a moment to land in the log table. */
+/** Delivery is fire-and-forget: poll until the log reaches a terminal state. */
 async function waitForLog(orderId: string, template: EmailTemplateId, timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -39,7 +40,7 @@ async function waitForLog(orderId: string, template: EmailTemplateId, timeoutMs 
       .select()
       .from(emailLogs)
       .where(and(eq(emailLogs.orderId, orderId), eq(emailLogs.template, template)))
-    if (row) return row
+    if (row && row.status !== 'queued') return row
     await new Promise((r) => setTimeout(r, 50))
   }
   return null

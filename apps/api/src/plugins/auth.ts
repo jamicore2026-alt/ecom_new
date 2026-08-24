@@ -7,8 +7,20 @@ import { unauthorized, forbidden } from '../shared/errors'
 import type { UserRole, Permission } from '../shared/types'
 import type { Merchant, User } from '../database/schema'
 
-export const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret-change-me'
-export const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret-change-me'
+const DEV_ACCESS_SECRET = 'dev-access-secret-change-me'
+const DEV_REFRESH_SECRET = 'dev-refresh-secret-change-me'
+
+/** Fail fast in production when JWT secrets are missing or still the public dev defaults. */
+const resolveSecret = (name: string, fallback: string) => {
+  const value = process.env[name] ?? fallback
+  if (process.env.NODE_ENV === 'production' && (!process.env[name] || value === fallback)) {
+    throw new Error(`${name} must be set to a strong secret in production`)
+  }
+  return value
+}
+
+export const ACCESS_SECRET = resolveSecret('JWT_ACCESS_SECRET', DEV_ACCESS_SECRET)
+export const REFRESH_SECRET = resolveSecret('JWT_REFRESH_SECRET', DEV_REFRESH_SECRET)
 
 export const accessJwt = jwt({ name: 'accessJwt', secret: ACCESS_SECRET })
 export const refreshJwt = jwt({ name: 'refreshJwt', secret: REFRESH_SECRET })
@@ -60,17 +72,46 @@ export const revokeToken = async (token: string, expiresAt: Date, userId?: strin
   })
 }
 
-/** Returns true if the token jti has been revoked. Prunes expired rows opportunistically. */
+/**
+ * Atomically claim a refresh token: inserts its jti hash into the blacklist and
+ * returns false when the row already exists (i.e. the token was replayed).
+ * This closes the check-then-revoke race in rotation and doubles as reuse detection.
+ */
+export const claimRefreshToken = async (
+  token: string,
+  expiresAt: Date,
+  userId?: string
+): Promise<boolean> => {
+  const payload = decodeTokenPayload(token)
+  const jti = String(payload.jti ?? '')
+  if (!jti) return true
+  const inserted = await db
+    .insert(tokenBlacklist)
+    .values({ userId: String(payload.sub ?? userId ?? ''), jti: hashToken(jti), expiresAt })
+    .onConflictDoNothing({ target: tokenBlacklist.jti })
+    .returning({ id: tokenBlacklist.id })
+  return inserted.length > 0
+}
+
+/** Returns true if the token jti has been revoked. */
 export const isRevoked = async (token: string): Promise<boolean> => {
   const payload = decodeTokenPayload(token)
   const jti = String(payload.jti ?? '')
   if (!jti) return false
-  await db.delete(tokenBlacklist).where(lt(tokenBlacklist.expiresAt, new Date()))
   const [row] = await db
     .select({ id: tokenBlacklist.id })
     .from(tokenBlacklist)
     .where(eq(tokenBlacklist.jti, hashToken(jti)))
   return !!row
+}
+
+/** Delete expired blacklist rows. Called from the background sweeper, not per request. */
+export const pruneBlacklist = async (): Promise<number> => {
+  const deleted = await db
+    .delete(tokenBlacklist)
+    .where(lt(tokenBlacklist.expiresAt, new Date()))
+    .returning({ id: tokenBlacklist.id })
+  return deleted.length
 }
 
 export const authPlugin = new Elysia({ name: 'auth' })

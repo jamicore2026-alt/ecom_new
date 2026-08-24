@@ -2,6 +2,7 @@ import { and, count, eq, gte, gt, inArray, lte, sql } from 'drizzle-orm'
 import { db } from '../../database/client'
 import {
   customers,
+  merchants,
   orderItems,
   orders,
   products,
@@ -10,19 +11,23 @@ import {
 import { ok } from '../../shared/response'
 import { revenueStatuses } from '../../shared/types'
 
-const dayKey = (d: Date) => {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
+// UTC-consistent day buckets — the visits funnel (analytics) and provider
+// webhooks all operate in UTC, so local-server day keys would misalign charts.
+const dayKey = (d: Date) => d.toISOString().slice(0, 10)
 
-const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
-const startOfToday = () => startOfDay(new Date())
+const startOfUtcDay = (d: Date) =>
+  new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+const startOfToday = () => startOfUtcDay(new Date())
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400000)
 
 export class OverviewService {
   static async dashboard(merchantId: string) {
+    const [merchant] = await db
+      .select({ currency: merchants.currency })
+      .from(merchants)
+      .where(eq(merchants.id, merchantId))
+    const currency = merchant?.currency ?? 'USD'
+
     const today = startOfToday()
     const start30 = daysAgo(29)
     const [todayKey] = [dayKey(today)]
@@ -84,7 +89,7 @@ export class OverviewService {
 
     const chartRows = await db
       .select({
-        day: sql<string>`to_char(${orders.createdAt}, 'YYYY-MM-DD')`,
+        day: sql<string>`to_char(${orders.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`,
         revenue: sql<number>`coalesce(sum(${orders.total}), 0)`,
         ordersCount: sql<number>`count(*)`
       })
@@ -96,7 +101,7 @@ export class OverviewService {
           gte(orders.createdAt, start30)
         )
       )
-      .groupBy(sql`to_char(${orders.createdAt}, 'YYYY-MM-DD')`)
+      .groupBy(sql`to_char(${orders.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`)
 
     const chartMap = new Map(chartRows.map((r) => [r.day, r]))
     const salesChart = Array.from({ length: 30 }, (_, i) => {
@@ -163,7 +168,7 @@ export class OverviewService {
       salesChart,
       recentOrders,
       topProducts,
-      currency: 'USD',
+      currency,
       todayKey
     })
   }

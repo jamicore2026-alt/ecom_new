@@ -145,7 +145,7 @@ export const storefrontApi = {
 		}),
 
 	order: (fetchFn: typeof fetch, slug: string, orderNumber: string) =>
-		request<OrderDetail>(fetchFn, `/${slug}/orders/${orderNumber}`),
+		request<OrderDetail>(fetchFn, `/${slug}/orders/${encodeURIComponent(orderNumber)}`),
 
 	registerAccount: (fetchFn: typeof fetch, slug: string, body: { email: string; password: string; firstName?: string; lastName?: string }) =>
 		request<ShopperSessionData>(fetchFn, `/${slug}/auth/register`, {
@@ -184,6 +184,18 @@ export const storefrontApi = {
 			method: 'POST',
 			headers: { authorization: `Bearer ${token}` },
 			body: JSON.stringify({ productId })
+		}),
+
+	changePassword: (
+		fetchFn: typeof fetch,
+		slug: string,
+		token: string,
+		body: { currentPassword: string; newPassword: string }
+	) =>
+		request<ShopperSessionData>(fetchFn, `/${slug}/auth/password`, {
+			method: 'POST',
+			headers: { authorization: `Bearer ${token}` },
+			body: JSON.stringify(body)
 		}),
 
 	wishlistRemove: (fetchFn: typeof fetch, slug: string, token: string, productId: string) =>

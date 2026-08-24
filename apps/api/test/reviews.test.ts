@@ -58,11 +58,19 @@ describe('Product reviews', () => {
       })
     )
     expect(placed.status).toBe(200)
+    const reviewerOrderNumber = placed.body.data.orderNumber
 
     for (const email of [REVIEWER, PLAIN]) {
       const reg = await call(
         '/api/store/acme-store/auth/register',
-        json({ email, password: 'sup3rsecret', firstName: email === PLAIN ? 'Plain' : 'Rev', lastName: 'Shopper' })
+        json({
+          email,
+          password: 'sup3rsecret',
+          firstName: email === PLAIN ? 'Plain' : 'Rev',
+          lastName: 'Shopper',
+          // Guest accounts require order-number proof to attach credentials.
+          ...(email === REVIEWER ? { orderNumber: reviewerOrderNumber } : {})
+        })
       )
       expect(reg.status).toBe(200)
     }

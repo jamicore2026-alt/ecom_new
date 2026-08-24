@@ -26,35 +26,35 @@ export const productReviewsQuery = t.Object({
 })
 
 const checkoutItem = t.Object({
-  productId: t.String(),
-  variantId: t.String(),
+  productId: t.String({ maxLength: 30 }),
+  variantId: t.String({ maxLength: 30 }),
   quantity: t.Integer({ minimum: 1, maximum: 99 })
 })
 
 export const checkoutPreviewBody = t.Object({
-  items: t.Array(checkoutItem, { minItems: 1 }),
-  couponCode: t.Optional(t.String())
+  items: t.Array(checkoutItem, { minItems: 1, maxItems: 50 }),
+  couponCode: t.Optional(t.String({ minLength: 1, maxLength: 100 }))
 })
 
 export const addressBody = t.Object({
-  name: t.Optional(t.String()),
-  line1: t.Optional(t.String()),
-  line2: t.Optional(t.String()),
-  city: t.Optional(t.String()),
-  state: t.Optional(t.String()),
-  postalCode: t.Optional(t.String()),
-  country: t.Optional(t.String()),
-  phone: t.Optional(t.String())
+  name: t.Optional(t.String({ maxLength: 255 })),
+  line1: t.Optional(t.String({ maxLength: 255 })),
+  line2: t.Optional(t.String({ maxLength: 255 })),
+  city: t.Optional(t.String({ maxLength: 100 })),
+  state: t.Optional(t.String({ maxLength: 100 })),
+  postalCode: t.Optional(t.String({ maxLength: 20 })),
+  country: t.Optional(t.String({ maxLength: 2 })),
+  phone: t.Optional(t.String({ maxLength: 30 }))
 })
 
 export const checkoutBody = t.Object({
-  items: t.Array(checkoutItem, { minItems: 1 }),
-  couponCode: t.Optional(t.String()),
-  email: t.String(),
+  items: t.Array(checkoutItem, { minItems: 1, maxItems: 50 }),
+  couponCode: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
+  email: t.String({ format: 'email', maxLength: 255 }),
   shippingAddress: addressBody,
   billingAddress: t.Optional(addressBody),
-  paymentMethod: t.String(),
-  notes: t.Optional(t.String())
+  paymentMethod: t.String({ maxLength: 50 }),
+  notes: t.Optional(t.String({ maxLength: 2000 }))
 })
 
 export const orderParams = t.Object({

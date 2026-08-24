@@ -41,6 +41,8 @@ const headers = (config: ResolvedProviderConfig) => ({
   'Content-Type': 'application/json'
 })
 
+const REQUEST_TIMEOUT_MS = 15_000
+
 async function request<T>(
   config: ResolvedProviderConfig,
   path: string,
@@ -56,6 +58,7 @@ async function request<T>(
     res = await fetch(`${baseUrl(config)}${path}`, {
       method,
       headers: headers(config),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       ...(body === undefined ? {} : { body: JSON.stringify(body) })
     })
   } catch {
@@ -105,15 +108,24 @@ interface TamaraOrder {
   order_id: string
   status: string
   order_reference_id?: string
+  total_amount?: { amount: string | number; currency?: string }
+  shipping_amount?: { amount: string | number; currency?: string }
+  tax_amount?: { amount: string | number; currency?: string }
 }
 
+/**
+ * Map Tamara's status. `partially_captured` deliberately stays `pending` — we
+ * cannot confirm the captured portion from this endpoint, and marking the order
+ * fully paid would over-credit totals; the fully_captured event completes it.
+ */
 const mapStatus = (status: string): CallbackResult['status'] => {
   switch (status) {
     case 'approved':
     case 'authorised':
     case 'fully_captured':
-    case 'partially_captured':
       return 'paid'
+    case 'partially_captured':
+      return 'pending'
     case 'declined':
     case 'cancelled':
     case 'canceled':
@@ -123,6 +135,9 @@ const mapStatus = (status: string): CallbackResult['status'] => {
       return 'pending'
   }
 }
+
+const amountOf = (m?: { amount: string | number }) =>
+  m === undefined ? undefined : Number(m.amount)
 
 export const tamaraAdapter: PaymentProviderAdapter = {
   def: tamaraDef,
@@ -135,8 +150,8 @@ export const tamaraAdapter: PaymentProviderAdapter = {
 
     const body = {
       total_amount: { amount: ctx.total, currency },
-      shipping_amount: { amount: 0, currency },
-      tax_amount: { amount: 0, currency },
+      shipping_amount: { amount: ctx.shippingAmount ?? 0, currency },
+      tax_amount: { amount: ctx.taxAmount ?? 0, currency },
       order_reference_id: refId,
       order_number: refId,
       items: ctx.items.map((i, idx) => ({
@@ -146,7 +161,7 @@ export const tamaraAdapter: PaymentProviderAdapter = {
         sku: `${refId}-${idx + 1}`,
         quantity: i.quantity,
         unit_price: { amount: i.unitPrice, currency },
-        total_amount: { amount: i.unitPrice * i.quantity, currency }
+        total_amount: { amount: i.total ?? i.unitPrice * i.quantity, currency }
       })),
       consumer: {
         first_name: firstName || 'Customer',
@@ -186,17 +201,27 @@ export const tamaraAdapter: PaymentProviderAdapter = {
   },
 
   async verifyCallback(config, input: CallbackVerifyInput): Promise<CallbackResult> {
-    // Authenticate the webhook via its signed tamaraToken when configured…
+    // Authenticate the webhook via its signed tamaraToken — REQUIRED whenever the
+    // merchant configured a notification token. Unsigned calls are rejected before
+    // any gateway call or DB write happens.
     const token =
       input.headers.authorization ??
       input.headers['tamara-token'] ??
       ((input.body as Record<string, unknown> | null)?.token as string | undefined)
-    verifyTamaraJwt(token, config.credentials.notificationToken)
+    if (
+      config.credentials.notificationToken &&
+      !verifyTamaraJwt(token, config.credentials.notificationToken)
+    ) {
+      throw badRequest('PROVIDER_CALLBACK_INVALID', 'Invalid or missing Tamara webhook token')
+    }
 
     // …then confirm against Tamara's own record — never trust the payload alone.
     const body = input.body as Record<string, unknown> | null
     const orderId =
-      (body?.order_id as string | undefined) ?? input.query.orderId ?? undefined
+      (body?.order_id as string | undefined) ??
+      input.providerRef ??
+      input.query.orderId ??
+      undefined
     if (!orderId) {
       throw badRequest('PROVIDER_CALLBACK_INVALID', 'Missing order_id in callback')
     }
@@ -207,7 +232,13 @@ export const tamaraAdapter: PaymentProviderAdapter = {
       'GET'
     )
 
-    if (status === 401 || !data?.order_id) {
+    if (status === 401) {
+      throw badRequest('PROVIDER_AUTH_FAILED', 'Tamara rejected the API token')
+    }
+    if (status >= 500) {
+      throw badRequest('PROVIDER_UNREACHABLE', 'Tamara is unavailable')
+    }
+    if (!data?.order_id) {
       throw badRequest(
         'PROVIDER_ERROR',
         `Tamara order lookup failed${data && typeof data.message === 'string' ? `: ${data.message}` : ''}`
@@ -218,6 +249,8 @@ export const tamaraAdapter: PaymentProviderAdapter = {
       providerRef: data.order_id,
       status: mapStatus(data.status),
       eventId: `${data.order_id}:${data.status}`,
+      amount: amountOf(data.total_amount),
+      currency: data.total_amount?.currency,
       raw: data
     }
   },

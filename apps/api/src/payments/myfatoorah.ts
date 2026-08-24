@@ -34,6 +34,8 @@ export const myfatoorahDef: PaymentProviderDef = {
 const baseUrl = (config: ResolvedProviderConfig) =>
   config.mode === 'test' ? TEST_HOST : (LIVE_HOSTS[config.country ?? ''] ?? DEFAULT_LIVE_HOST)
 
+const REQUEST_TIMEOUT_MS = 15_000
+
 async function request<T>(
   config: ResolvedProviderConfig,
   path: string,
@@ -50,6 +52,7 @@ async function request<T>(
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       ...(body === undefined ? {} : { body: JSON.stringify(body) })
     })
   } catch {
@@ -104,7 +107,9 @@ export const myfatoorahAdapter: PaymentProviderAdapter = {
 
   async verifyCallback(config, input: CallbackVerifyInput): Promise<CallbackResult> {
     // Never trust the redirect payload — re-fetch authoritative status server-side.
+    // providerRef is the server-resolved reference from our own transaction row.
     const paymentId =
+      input.providerRef ??
       input.query.paymentId ??
       (input.body as Record<string, unknown> | null)?.paymentId ??
       ((input.body as Record<string, unknown> | null)?.Data as Record<string, unknown> | undefined)
@@ -119,11 +124,19 @@ export const myfatoorahAdapter: PaymentProviderAdapter = {
         InvoiceId: number
         InvoiceStatus: string
         InvoiceReference: string
+        InvoiceValue?: number
+        InvoiceDisplayCurrency?: string
         InvoiceTransactions: Array<{ TransactionStatus: string; PaidAmount?: number }>
       }>
     >(config, '/v2/GetPaymentStatus', { Key: paymentId, KeyType: 'PaymentId' })
 
-    if (status === 401 || !data?.IsSuccess) {
+    if (status === 401) {
+      throw badRequest('PROVIDER_AUTH_FAILED', 'MyFatoorah rejected the API key')
+    }
+    if (status >= 500) {
+      throw badRequest('PROVIDER_UNREACHABLE', 'MyFatoorah is unavailable')
+    }
+    if (!data?.IsSuccess) {
       throw badRequest(
         'PROVIDER_ERROR',
         `MyFatoorah status check failed: ${data?.Message ?? 'unauthorized'}`
@@ -140,10 +153,17 @@ export const myfatoorahAdapter: PaymentProviderAdapter = {
       Failed: 'failed'
     }
 
+    // Captured amount = sum of successful transaction payments on the invoice.
+    const paidAmount = (data.Data.InvoiceTransactions ?? [])
+      .filter((t) => ['Success', 'Succss'].includes(t.TransactionStatus))
+      .reduce((sum, t) => sum + Number(t.PaidAmount ?? 0), 0)
+
     return {
       providerRef: String(data.Data.InvoiceId),
       status: map[invoiceStatus] ?? 'failed',
       eventId: `${data.Data.InvoiceId}:${invoiceStatus}`,
+      amount: paidAmount > 0 ? paidAmount : data.Data.InvoiceValue,
+      currency: data.Data.InvoiceDisplayCurrency,
       raw: data
     }
   },

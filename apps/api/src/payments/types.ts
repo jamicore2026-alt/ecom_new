@@ -32,7 +32,10 @@ export interface SessionOrderContext {
   total: number
   currency: string
   customer: { name?: string; email?: string; phone?: string }
-  items: Array<{ name: string; quantity: number; unitPrice: number }>
+  items: Array<{ name: string; quantity: number; unitPrice: number; total?: number }>
+  /** Order-level components so providers receive a consistent amount breakdown. */
+  shippingAmount?: number
+  taxAmount?: number
   shippingAddress?: Record<string, unknown>
   returnUrl: string
   cancelUrl: string
@@ -49,12 +52,17 @@ export interface CallbackVerifyInput {
   query: Record<string, string>
   body: unknown
   headers: Record<string, string | undefined>
+  /** Server-resolved provider reference for the order (sync flow) — preferred over client payload. */
+  providerRef?: string
 }
 
 export interface CallbackResult {
   providerRef: string
   status: CallbackStatus
   eventId: string
+  /** Captured amount + currency when the gateway reports them — verified against the txn. */
+  amount?: number
+  currency?: string
   raw?: unknown
 }
 

@@ -71,7 +71,7 @@ describe('storefront funnel events', () => {
   it('separates channels', async () => {
     const res = await call(
       '/api/store/acme-store/events',
-      json({ type: 'view', channel: 'newsletter' })
+      json({ type: 'view', channel: 'email' })
     )
     expect(res.status).toBe(200)
 
@@ -79,7 +79,7 @@ describe('storefront funnel events', () => {
       .select()
       .from(visits)
       .where(
-        and(eq(visits.merchantId, merchantId), eq(visits.date, today()), eq(visits.channel, 'newsletter'))
+        and(eq(visits.merchantId, merchantId), eq(visits.date, today()), eq(visits.channel, 'email'))
       )
     expect(row.views).toBe(1)
 

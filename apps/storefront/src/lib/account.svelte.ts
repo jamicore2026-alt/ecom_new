@@ -9,6 +9,8 @@ interface RegisterInput {
 	password: string
 	firstName?: string
 	lastName?: string
+	/** Required by the API when claiming a guest account that has past orders. */
+	orderNumber?: string
 }
 
 class Account {
@@ -131,6 +133,13 @@ class Account {
 		if (browser && this.loadedSlug) {
 			localStorage.removeItem(key(this.loadedSlug))
 		}
+		// Force the next setSlug()/login() to reload cleanly.
+		this.loadedSlug = ''
+	}
+
+	async changePassword(fetchFn: typeof fetch, input: { currentPassword: string; newPassword: string }) {
+		const session = await storefrontApi.changePassword(fetchFn, this.slug, this.token, input)
+		this.persist(session)
 	}
 
 	/** True when a request failed because the stored session is no longer valid. */

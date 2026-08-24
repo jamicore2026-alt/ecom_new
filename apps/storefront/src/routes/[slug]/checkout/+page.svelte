@@ -64,18 +64,21 @@
 	const lineOptions = (options: Record<string, string>) =>
 		Object.entries(options).map(([k, v]) => `${k}: ${v}`).join(' · ')
 
+	const buildPreviewBody = () => ({
+		items: cart.items.map((i) => ({
+			productId: i.productId,
+			variantId: i.variantId,
+			quantity: i.quantity
+		})),
+		couponCode: couponCode.trim() || undefined,
+		shippingAddress: { country }
+	})
+
 	const refreshPreview = async () => {
 		if (!cart.items.length) return
 		previewError = ''
 		try {
-			summary = await storefrontApi.checkoutPreview(fetch, slug, {
-				items: cart.items.map((i) => ({
-					productId: i.productId,
-					variantId: i.variantId,
-					quantity: i.quantity
-				})),
-				couponCode: couponCode.trim() || undefined
-			})
+			summary = await storefrontApi.checkoutPreview(fetch, slug, buildPreviewBody())
 			previewed = true
 		} catch (e) {
 			summary = null
@@ -91,6 +94,16 @@
 		}
 	})
 
+	// Shipping zones/tax rules can differ per country — keep the quote in sync.
+	let lastPreviewCountry = $state('')
+	$effect(() => {
+		const current = country
+		if (lastPreviewCountry && current !== lastPreviewCountry && previewed) {
+			refreshPreview()
+		}
+		lastPreviewCountry = current
+	})
+
 	const applyCoupon = async () => {
 		couponError = ''
 		if (!couponCode.trim()) {
@@ -99,14 +112,7 @@
 			return
 		}
 		try {
-			const result = await storefrontApi.checkoutPreview(fetch, slug, {
-				items: cart.items.map((i) => ({
-					productId: i.productId,
-					variantId: i.variantId,
-					quantity: i.quantity
-				})),
-				couponCode: couponCode.trim()
-			})
+			const result = await storefrontApi.checkoutPreview(fetch, slug, buildPreviewBody())
 			summary = result
 			previewed = true
 		} catch (e) {
@@ -182,6 +188,12 @@
 			if (selectedIsProvider) {
 				const session = await storefrontApi.checkoutPay(fetch, slug, payload)
 				sessionStorage.setItem(`ecom:pending:${slug}`, session.orderNumber)
+				// Defense in depth: only ever redirect to an https gateway URL.
+				if (!/^https:\/\//i.test(session.redirectUrl)) {
+					orderError = 'Payment provider returned an invalid redirect — please contact support'
+					await refreshPreview()
+					return
+				}
 				window.location.href = session.redirectUrl
 				return
 			}

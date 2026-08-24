@@ -4,6 +4,12 @@ import type { RequestHandler } from './$types'
 
 export const prerender = false
 
+// Store slugs come from the API — escape before splicing into XML.
+const escapeXml = (s: string) =>
+	s.replace(/[<>&'"]/g, (c) =>
+		({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c] as string
+	)
+
 export const GET: RequestHandler = async ({ fetch, url, setHeaders }) => {
 	const base = siteUrl(url.origin)
 	let stores: Array<{ slug: string; name: string }> = []
@@ -16,7 +22,7 @@ export const GET: RequestHandler = async ({ fetch, url, setHeaders }) => {
 	const entries = stores
 		.map(
 			(s) =>
-				`\t<sitemap>\n\t\t<loc>${base}/${s.slug}/sitemap.xml</loc>\n\t</sitemap>`
+				`\t<sitemap>\n\t\t<loc>${base}/${escapeXml(s.slug)}/sitemap.xml</loc>\n\t</sitemap>`
 		)
 		.join('\n')
 

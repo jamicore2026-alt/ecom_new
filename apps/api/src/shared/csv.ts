@@ -55,7 +55,10 @@ export function parseCsv(text: string): string[][] {
 }
 
 export function csvEscape(value: unknown): string {
-  const s = value === null || value === undefined ? '' : String(value)
+  let s = value === null || value === undefined ? '' : String(value)
+  // Neutralize spreadsheet formula injection — a leading =+-@ followed by a
+  // letter would otherwise execute as a formula when opened in Excel/Sheets.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 

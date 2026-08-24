@@ -7,6 +7,7 @@ import { ACCESS_SECRET } from '../../plugins/auth'
 import { unauthorized } from '../../shared/errors'
 import { CustomerAuthService, type ShopperContext } from './service'
 import {
+  changePasswordBody,
   loginBody,
   registerBody,
   shopperOrdersQuery,
@@ -16,7 +17,8 @@ import {
   wishlistParams
 } from './model'
 
-export const SHOPPER_TOKEN_TTL = 60 * 60 * 24 * 30 // 30 days
+/** Shopper sessions are long-lived but bounded; configurable for deployments. */
+export const SHOPPER_TOKEN_TTL = Number(process.env.SHOPPER_TOKEN_TTL ?? 60 * 60 * 24 * 7)
 
 export const shopperJwt = jwt({ name: 'shopperJwt', secret: ACCESS_SECRET })
 
@@ -42,6 +44,10 @@ const shopperGuard = new Elysia({ name: 'shopper-guard' })
         .from(customers)
         .where(and(eq(customers.id, String(payload.sub))))
       if (!customer?.passwordHash) throw unauthorized('Account no longer exists')
+      // Password changes bump tokenVersion — pre-change tokens die immediately.
+      if (Number(payload.tv ?? 0) !== customer.tokenVersion) {
+        throw unauthorized('Session expired — please sign in again')
+      }
 
       const [merchant] = await db
         .select()
@@ -64,6 +70,7 @@ export const customerAuthModule = new Elysia({ prefix: '/api/store' })
         sub: result.data.tokenPayload.sub,
         mid: result.data.tokenPayload.mid,
         type: 'shopper',
+        tv: result.data.tokenPayload.tv,
         exp: `${SHOPPER_TOKEN_TTL}s`
       })
       return {
@@ -82,6 +89,7 @@ export const customerAuthModule = new Elysia({ prefix: '/api/store' })
         sub: result.data.tokenPayload.sub,
         mid: result.data.tokenPayload.mid,
         type: 'shopper',
+        tv: result.data.tokenPayload.tv,
         exp: `${SHOPPER_TOKEN_TTL}s`
       })
       return {
@@ -93,6 +101,30 @@ export const customerAuthModule = new Elysia({ prefix: '/api/store' })
   )
 
   .use(shopperGuard)
+  .post(
+    '/:slug/auth/password',
+    async ({ params, body, shopperJwt, shopper }) => {
+      const result = await CustomerAuthService.changePassword(params.slug, shopper, body)
+      // Old tokens are dead (tokenVersion bumped) — hand back a fresh session.
+      const token = await shopperJwt.sign({
+        sub: result.data.tokenPayload.sub,
+        mid: result.data.tokenPayload.mid,
+        type: 'shopper',
+        tv: result.data.tokenPayload.tv,
+        exp: `${SHOPPER_TOKEN_TTL}s`
+      })
+      return {
+        success: true,
+        data: { token, expiresIn: SHOPPER_TOKEN_TTL, customer: result.data.customer }
+      }
+    },
+    {
+      params: storeParams,
+      body: changePasswordBody,
+      detail: { tags: ['Storefront'], summary: 'Change password (revokes other sessions)' }
+    }
+  )
+
   .get(
     '/:slug/auth/me',
     ({ params, shopper }) => CustomerAuthService.profile(params.slug, shopper),

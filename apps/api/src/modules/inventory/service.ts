@@ -147,36 +147,45 @@ export class InventoryService {
     if (input.change === 0) throw badRequest('BAD_REQUEST', 'Change must be non-zero')
 
     const [found] = await db
-      .select({ variant: productVariants, product: products })
+      .select({ id: productVariants.id })
       .from(productVariants)
       .innerJoin(products, eq(productVariants.productId, products.id))
       .where(and(eq(productVariants.id, variantId), eq(products.merchantId, merchantId)))
     if (!found) throw notFound('NOT_FOUND', 'Variant not found')
 
-    const { variant } = found
-    const afterValue = variant.inventory + input.change
-    if (afterValue < 0) {
-      throw badRequest('BAD_REQUEST', `Cannot reduce below zero (current stock ${variant.inventory})`)
-    }
+    // Locked read-modify-write so a concurrent sale can't lose this adjustment.
+    const result = await db.transaction(async (tx) => {
+      const [variant] = await tx
+        .select()
+        .from(productVariants)
+        .where(eq(productVariants.id, variantId))
+        .for('update')
+      const afterValue = variant.inventory + input.change
+      if (afterValue < 0) {
+        throw badRequest('BAD_REQUEST', `Cannot reduce below zero (current stock ${variant.inventory})`)
+      }
 
-    const [updated] = await db
-      .update(productVariants)
-      .set({ inventory: afterValue })
-      .where(eq(productVariants.id, variantId))
-      .returning()
+      const [updated] = await tx
+        .update(productVariants)
+        .set({ inventory: afterValue })
+        .where(eq(productVariants.id, variantId))
+        .returning()
 
-    const [log] = await db
-      .insert(inventoryLogs)
-      .values({
-        merchantId,
-        variantId,
-        change: input.change,
-        beforeValue: variant.inventory,
-        afterValue,
-        reason: input.reason
-      })
-      .returning()
+      const [log] = await tx
+        .insert(inventoryLogs)
+        .values({
+          merchantId,
+          variantId,
+          change: input.change,
+          beforeValue: variant.inventory,
+          afterValue,
+          reason: input.reason
+        })
+        .returning()
 
-    return ok({ variant: updated, log })
+      return { updated, log }
+    })
+
+    return ok({ variant: result.updated, log: result.log })
   }
 }

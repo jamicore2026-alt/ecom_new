@@ -384,7 +384,7 @@ export class SettingsService {
       .where(and(eq(users.merchantId, merchantId), eq(users.email, email)))
     if (existing) throw conflict('DUPLICATE', 'A staff member with this email already exists')
 
-    const passwordHash = await hash(input.password, 10)
+    const passwordHash = await hash(input.password, 12)
     const [created] = await db
       .insert(users)
       .values({
@@ -438,7 +438,7 @@ export class SettingsService {
     const values: Partial<User> = {}
     if (input.name !== undefined) values.name = input.name
     if (input.email !== undefined) values.email = input.email.toLowerCase()
-    if (input.password !== undefined) values.passwordHash = await hash(input.password, 10)
+    if (input.password !== undefined) values.passwordHash = await hash(input.password, 12)
     if (input.role !== undefined) values.role = input.role
     if (input.permissions !== undefined) values.permissions = input.permissions as Permission[]
     if (input.status !== undefined) values.status = input.status

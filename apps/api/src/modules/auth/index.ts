@@ -1,5 +1,5 @@
 import { Elysia, t } from 'elysia'
-import { accessJwt, refreshJwt, authPlugin, isRevoked, revokeToken } from '../../plugins/auth'
+import { accessJwt, refreshJwt, authPlugin, claimRefreshToken, revokeToken } from '../../plugins/auth'
 import { AuthService } from './service'
 import { loginBody, refreshBody, logoutBody, tokenPair, meResponse } from './model'
 import { unauthorized } from '../../shared/errors'
@@ -81,7 +81,10 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
       if (!payload || payload.type !== 'refresh' || !payload.jti) {
         throw unauthorized('Invalid refresh token')
       }
-      if (await isRevoked(token)) {
+
+      // Atomically claim the old token — replayed tokens lose the race and are rejected here.
+      const claimed = await claimRefreshToken(token, new Date(Number(payload.exp) * 1000))
+      if (!claimed) {
         throw unauthorized('Refresh token has been revoked')
       }
 
@@ -104,9 +107,7 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
         exp: `${REFRESH_TOKEN_TTL}s`
       })
 
-      // Rotate: revoke the old refresh token so it can't be replayed
-      await revokeToken(token, new Date(Number(payload.exp) * 1000), user.id)
-
+      // Rotation complete — the new pair is signed above with a fresh jti.
       cookie[REFRESH_COOKIE]?.set({ value: newRefreshToken, ...refreshCookieOptions })
 
       return {
