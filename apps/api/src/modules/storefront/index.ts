@@ -4,6 +4,7 @@ import {
   storefrontQuery,
   storeParams,
   productSlugParams,
+  productReviewsQuery,
   checkoutPreviewBody,
   checkoutBody,
   orderParams,
@@ -72,6 +73,16 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
     {
       params: productSlugParams,
       detail: { tags: ['Storefront'], summary: 'Public product detail' }
+    }
+  )
+
+  .get(
+    '/:slug/products/:productSlug/reviews',
+    ({ params, query }) => StorefrontService.productReviews(params.slug, params.productSlug, query),
+    {
+      params: productSlugParams,
+      query: productReviewsQuery,
+      detail: { tags: ['Storefront'], summary: 'Public approved product reviews' }
     }
   )
 

@@ -1,4 +1,5 @@
-import { and, asc, count, desc, eq, gte, ilike, inArray, lt, lte, ne, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, lt, lte, ne, sql } from 'drizzle-orm'
+import type { SQL } from 'drizzle-orm'
 import { db } from '../../database/client'
 import {
   categories,
@@ -14,6 +15,7 @@ import {
   productImages,
   products,
   productVariants,
+  reviews,
   shippingSettings,
   storeSettings,
   taxSettings,
@@ -23,6 +25,7 @@ import { DiscountsService } from '../discounts/service'
 import { EmailsService } from '../emails/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { roundForCurrency } from '../../shared/currency'
+import { productSearchCondition, productSearchRank } from '../../shared/product-search'
 import { getProvider, listProviders } from '../../payments/registry'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
@@ -405,12 +408,11 @@ export class StorefrontService {
     ]
 
     const search = q.search?.trim()
+    let relevance: SQL | undefined
     if (search) {
-      const cond = or(
-        ilike(products.name, `%${search}%`),
-        ilike(products.description, `%${search}%`)
-      )
+      const cond = productSearchCondition(search)
       if (cond) conditions.push(cond)
+      relevance = productSearchRank(search)
     }
 
     if (q.categoryId) {
@@ -432,15 +434,17 @@ export class StorefrontService {
 
     const orderBy =
       q.sort === 'price_asc'
-        ? asc(products.price)
+        ? [asc(products.price)]
         : q.sort === 'price_desc'
-          ? desc(products.price)
-          : desc(products.createdAt)
+          ? [desc(products.price)]
+          : relevance
+            ? [desc(relevance), desc(products.createdAt)]
+            : [desc(products.createdAt)]
     const rows = await db
       .select()
       .from(products)
       .where(where)
-      .orderBy(orderBy)
+      .orderBy(...orderBy)
       .limit(limit)
       .offset(offset)
 
@@ -517,6 +521,7 @@ export class StorefrontService {
       image,
       images: gallery,
       stock,
+      rating: await this.ratingSummary(store.merchant.id, product.id),
       variants: variants.map((v) => ({
         id: v.id,
         sku: v.sku,
@@ -530,6 +535,94 @@ export class StorefrontService {
         ? { id: category.id, name: category.name, slug: category.slug, image: category.image }
         : null,
       related: await this.enrich(store.merchant.id, relatedRows)
+    })
+  }
+
+  /** Approved-review aggregate for a single product. */
+  private static async ratingSummary(merchantId: string, productId: string) {
+    const [row] = await db
+      .select({
+        average: sql<string>`avg(${reviews.rating})`.as('average'),
+        count: count()
+      })
+      .from(reviews)
+      .where(and(eq(reviews.merchantId, merchantId), eq(reviews.productId, productId), eq(reviews.status, 'approved')))
+    if (!row || Number(row.count) === 0) return null
+    return {
+      average: Math.round(Number(row.average ?? 0) * 10) / 10,
+      count: Number(row.count)
+    }
+  }
+
+  /** Public approved reviews for a product, with verified-purchase flags. */
+  static async productReviews(
+    slug: string,
+    productSlug: string,
+    q: { page?: string; limit?: string }
+  ) {
+    const store = await this.resolveStore(slug)
+    const [product] = await db
+      .select({ id: products.id })
+      .from(products)
+      .where(
+        and(
+          eq(products.merchantId, store.merchant.id),
+          eq(products.status, 'active'),
+          eq(products.slug, productSlug)
+        )
+      )
+    if (!product) throw notFound('PRODUCT_NOT_FOUND', 'Product not found')
+
+    const { page, limit, offset } = parsePagination(q)
+    const where = and(eq(reviews.productId, product.id), eq(reviews.status, 'approved'))
+
+    const [{ total }] = await db.select({ total: count() }).from(reviews).where(where)
+    const rows = await db
+      .select({
+        id: reviews.id,
+        customerId: reviews.customerId,
+        authorName: reviews.authorName,
+        rating: reviews.rating,
+        title: reviews.title,
+        body: reviews.body,
+        createdAt: reviews.createdAt
+      })
+      .from(reviews)
+      .where(where)
+      .orderBy(desc(reviews.createdAt))
+      .limit(limit)
+      .offset(offset)
+
+    // Verified purchase = the reviewer's customer has a non-cancelled order containing this product.
+    let verifiedIds = new Set<string>()
+    const customerIds = rows.map((r) => r.customerId).filter((v): v is string => Boolean(v))
+    if (customerIds.length > 0) {
+      const purchased = await db
+        .selectDistinct({ customerId: orders.customerId })
+        .from(orders)
+        .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+        .where(
+          and(
+            eq(orders.merchantId, store.merchant.id),
+            ne(orders.status, 'cancelled'),
+            inArray(orders.customerId, customerIds),
+            eq(orderItems.productId, product.id)
+          )
+        )
+      verifiedIds = new Set(purchased.map((p) => p.customerId).filter((v): v is string => Boolean(v)))
+    }
+
+    return ok({
+      items: rows.map((r) => ({
+        id: r.id,
+        authorName: r.authorName,
+        rating: r.rating,
+        title: r.title,
+        body: r.body,
+        createdAt: r.createdAt,
+        verifiedPurchase: r.customerId ? verifiedIds.has(r.customerId) : false
+      })),
+      meta: makeMeta(page, limit, Number(total))
     })
   }
 

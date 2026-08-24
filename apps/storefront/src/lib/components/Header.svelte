@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { cart } from '$lib/cart.svelte'
+	import { account } from '$lib/account.svelte'
 	import type { Category, StoreInfo } from '$lib/types'
 
 	interface Props {
@@ -12,6 +13,8 @@
 
 	$effect(() => {
 		cart.setSlug(slug)
+		account.setSlug(slug)
+		account.ensureWishlist(fetch)
 	})
 </script>
 
@@ -79,6 +82,29 @@
 					Search
 				</button>
 			</form>
+			<a
+				href={`/${slug}/account`}
+				class="flex h-9 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+			>
+				{#if account.signedIn && account.customer}
+					{account.customer.firstName || 'Account'}
+				{:else}
+					Sign in
+				{/if}
+			</a>
+			<a
+				href={`/${slug}/wishlist`}
+				class="relative flex h-9 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+			>
+				Wishlist
+				{#if account.wishlist.length > 0}
+					<span
+						class="flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white"
+					>
+						{account.wishlist.length}
+					</span>
+				{/if}
+			</a>
 			<a
 				href={`/${slug}/cart`}
 				class="relative flex h-9 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"

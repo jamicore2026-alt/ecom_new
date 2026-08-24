@@ -11,6 +11,7 @@ const PROTECTED_PREFIXES = [
 	'/orders',
 	'/customers',
 	'/discounts',
+	'/reviews',
 	'/settings'
 ]
 

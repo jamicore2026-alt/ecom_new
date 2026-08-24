@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation'
 	import { ApiError, storefrontApi } from '$lib/api'
 	import { cart } from '$lib/cart.svelte'
+	import { account } from '$lib/account.svelte'
 	import { money, placeholderImage } from '$lib/format'
 	import { track } from '$lib/analytics'
 	import type { CheckoutSummary } from '$lib/types'
@@ -13,6 +14,7 @@
 
 	$effect(() => {
 		track(slug, 'checkout_start')
+		account.setSlug(slug)
 	})
 
 	const paymentMethods = $derived(
@@ -46,6 +48,15 @@
 		if (!paymentMethod) {
 			paymentMethod = onlineProviders[0]?.id ?? paymentMethods[0]?.id ?? ''
 		}
+	})
+
+	$effect(() => {
+		const customer = account.customer
+		if (!customer) return
+		if (!email.trim()) email = customer.email
+		const fullName = [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim()
+		if (!shippingName.trim() && fullName) shippingName = fullName
+		if (!phone.trim() && customer.phone) phone = customer.phone
 	})
 
 	const selectedIsProvider = $derived(onlineProviders.some((p) => p.id === paymentMethod))
@@ -216,6 +227,12 @@
 
 				<section class="rounded-2xl border border-gray-200 bg-white p-6">
 					<h2 class="text-lg font-semibold text-gray-900">Contact</h2>
+					{#if account.signedIn && account.customer}
+						<p class="mt-1 text-xs text-gray-400">
+							Ordering as {account.customer.email} ·
+							<a href={`/${slug}/account`} class="font-medium text-indigo-600 hover:text-indigo-700">Your account</a>
+						</p>
+					{/if}
 					<div class="mt-4">
 						<label class="text-sm font-medium text-gray-700" for="email">Email</label>
 						<input

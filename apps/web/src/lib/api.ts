@@ -123,6 +123,22 @@ export const api = {
 		const access = getAccessToken()
 		if (access) headers.set('authorization', `Bearer ${access}`)
 		return request<T>(path, { method: 'POST', body: form, headers })
+	},
+	download: async (path: string, filename: string): Promise<void> => {
+		const headers = new Headers()
+		const access = getAccessToken()
+		if (access) headers.set('authorization', `Bearer ${access}`)
+		const res = await fetch(path, { headers })
+		if (!res.ok) {
+			throw new ApiError({ code: 'HTTP_ERROR', message: `Download failed (${res.status})` }, res.status)
+		}
+		const blob = await res.blob()
+		const url = URL.createObjectURL(blob)
+		const a = document.createElement('a')
+		a.href = url
+		a.download = filename
+		a.click()
+		URL.revokeObjectURL(url)
 	}
 }
 

@@ -9,13 +9,17 @@ import {
   jsonb,
   uniqueIndex,
   index,
-  primaryKey
+  primaryKey,
+  customType
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
 import type { Address, Permission } from '../shared/types'
 
 // scale 3 supports GCC currencies with 3 decimals (KWD/BHD/OMR)
 const money = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
+
+const tsvector = customType<{ data: string; driverData: string }>({ dataType: () => 'tsvector' })
 
 const id = (name: string) => varchar(name, { length: 30 }).$defaultFn(() => createId())
 
@@ -93,12 +97,16 @@ export const products = pgTable(
     trackInventory: boolean('track_inventory').notNull().default(false),
     lowStockThreshold: integer('low_stock_threshold').notNull().default(5),
     status: varchar('status', { length: 20 }).notNull().default('active'),
+    searchVector: tsvector('search_vector').generatedAlwaysAs(
+      sql`to_tsvector('english', coalesce(name, '') || ' ' || coalesce(sku, '') || ' ' || coalesce(description, ''))`
+    ),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('products_merchant_sku_idx').on(t.merchantId, t.sku),
-    index('products_merchant_idx').on(t.merchantId)
+    index('products_merchant_idx').on(t.merchantId),
+    index('products_search_idx').using('gin', t.searchVector)
   ]
 )
 
@@ -164,6 +172,7 @@ export const customers = pgTable(
     id: id('id').primaryKey(),
     merchantId: merchantIdRef(),
     email: varchar('email', { length: 255 }).notNull(),
+    passwordHash: varchar('password_hash', { length: 255 }),
     firstName: varchar('first_name', { length: 255 }),
     lastName: varchar('last_name', { length: 255 }),
     phone: varchar('phone', { length: 50 }),
@@ -253,6 +262,50 @@ export const returnsTable = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull()
   },
   (t) => [index('returns_merchant_idx').on(t.merchantId, t.orderId)]
+)
+
+export const reviews = pgTable(
+  'reviews',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    productId: varchar('product_id', { length: 30 })
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    customerId: varchar('customer_id', { length: 30 }).references(() => customers.id, {
+      onDelete: 'set null'
+    }),
+    authorName: varchar('author_name', { length: 255 }).notNull(),
+    rating: integer('rating').notNull(),
+    title: varchar('title', { length: 255 }),
+    body: text('body'),
+    status: varchar('status', { length: 20 }).notNull().default('pending'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('reviews_product_customer_idx').on(t.productId, t.customerId),
+    index('reviews_merchant_status_idx').on(t.merchantId, t.status)
+  ]
+)
+
+export const wishlistItems = pgTable(
+  'wishlist_items',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    customerId: varchar('customer_id', { length: 30 })
+      .notNull()
+      .references(() => customers.id, { onDelete: 'cascade' }),
+    productId: varchar('product_id', { length: 30 })
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('wishlist_customer_product_idx').on(t.customerId, t.productId),
+    index('wishlist_merchant_idx').on(t.merchantId)
+  ]
 )
 
 export const refunds = pgTable(
@@ -516,6 +569,8 @@ export const table = {
   orderItems,
   returnsTable,
   refunds,
+  reviews,
+  wishlistItems,
   coupons,
   promotions,
   storeSettings,
@@ -555,6 +610,8 @@ export type ReturnRecord = typeof returnsTable.$inferSelect
 export type NewReturn = typeof returnsTable.$inferInsert
 export type Refund = typeof refunds.$inferSelect
 export type NewRefund = typeof refunds.$inferInsert
+export type Review = typeof reviews.$inferSelect
+export type NewReview = typeof reviews.$inferInsert
 export type Coupon = typeof coupons.$inferSelect
 export type NewCoupon = typeof coupons.$inferInsert
 export type Promotion = typeof promotions.$inferSelect

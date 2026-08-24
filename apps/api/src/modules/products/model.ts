@@ -71,3 +71,9 @@ export const productQuery = t.Object({
 export const variantParams = t.Object({
   id: t.String()
 })
+
+export const importCsvBody = t.Object({
+  // NOTE: no MIME whitelist — Elysia validates t.File types via magic-byte
+  // sniffing, which plain text CSVs can never satisfy. Content is parsed as text.
+  file: t.File()
+})

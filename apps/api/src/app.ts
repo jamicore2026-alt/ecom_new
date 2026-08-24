@@ -9,9 +9,11 @@ import { ordersModule } from './modules/orders'
 import { inventoryModule } from './modules/inventory'
 import { customersModule } from './modules/customers'
 import { discountsModule } from './modules/discounts'
+import { reviewsModule } from './modules/reviews'
 import { analyticsModule } from './modules/analytics'
 import { settingsModule } from './modules/settings'
 import { storefrontModule } from './modules/storefront'
+import { customerAuthModule } from './modules/customer-auth'
 import { webhooksModule } from './modules/webhooks'
 import { uploadsModule } from './modules/uploads'
 
@@ -50,6 +52,7 @@ export const app = new Elysia()
           { name: 'Inventory', description: 'Stock levels, adjustments and history' },
           { name: 'Customers', description: 'Customer directory and order history' },
           { name: 'Discounts', description: 'Coupons and promotions' },
+          { name: 'Reviews', description: 'Product review moderation' },
           { name: 'Analytics', description: 'Sales, products, customers and conversion analytics' },
         { name: 'Settings', description: 'Store, payments, shipping, taxes and staff' },
         { name: 'Storefront', description: 'Public storefront endpoints (no auth required)' },
@@ -66,9 +69,11 @@ export const app = new Elysia()
   .use(inventoryModule)
   .use(customersModule)
   .use(discountsModule)
+  .use(reviewsModule)
   .use(analyticsModule)
   .use(settingsModule)
   .use(storefrontModule)
+  .use(customerAuthModule)
   .use(webhooksModule)
   .use(uploadsModule)
 

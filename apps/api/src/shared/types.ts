@@ -37,6 +37,9 @@ export type InventoryReason = (typeof INVENTORY_REASONS)[number]
 export const CHANNELS = ['organic', 'paid', 'social', 'email', 'direct'] as const
 export type Channel = (typeof CHANNELS)[number]
 
+export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const
+export type ReviewStatus = (typeof REVIEW_STATUSES)[number]
+
 export interface Address {
   name?: string
   line1?: string

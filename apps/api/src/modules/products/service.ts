@@ -2,6 +2,8 @@ import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, sql } from 'dr
 import { db } from '../../database/client'
 import { categories, inventoryLogs, productImages, products, productVariants } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
+import { productSearchCondition } from '../../shared/product-search'
+import { parseCsv, toCsv } from '../../shared/csv'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
 import type { NewProduct, NewProductVariant } from '../../database/schema'
@@ -115,7 +117,7 @@ export class ProductsService {
 
     const search = q.search?.trim()
     if (search) {
-      const cond = or(ilike(products.name, `%${search}%`), ilike(products.sku, `%${search}%`))
+      const cond = productSearchCondition(search)
       if (cond) conditions.push(cond)
     }
     if (q.status) conditions.push(eq(products.status, q.status))
@@ -743,5 +745,274 @@ export class ProductsService {
     if (!found) throw notFound('NOT_FOUND', 'Variant not found')
     await db.delete(productVariants).where(eq(productVariants.id, variantId))
     return ok({ deleted: true })
+  }
+
+  /* ----------------------------- csv export ------------------------------ */
+
+  static async exportCsv(merchantId: string): Promise<string> {
+    const productRows = await db
+      .select()
+      .from(products)
+      .where(eq(products.merchantId, merchantId))
+      .orderBy(asc(products.createdAt))
+    const ids = productRows.map((p) => p.id)
+    const variantRows = ids.length
+      ? await db
+          .select()
+          .from(productVariants)
+          .where(inArray(productVariants.productId, ids))
+          .orderBy(asc(productVariants.createdAt))
+      : []
+    const catRows = await db.select().from(categories).where(eq(categories.merchantId, merchantId))
+    const catSlugById = new Map(catRows.map((c) => [c.id, c.slug]))
+
+    const variantsByProduct = new Map<string, typeof variantRows>()
+    for (const v of variantRows) {
+      variantsByProduct.set(v.productId, [...(variantsByProduct.get(v.productId) ?? []), v])
+    }
+
+    const headers = [
+      'sku',
+      'name',
+      'slug',
+      'description',
+      'price',
+      'compare_at_price',
+      'cost',
+      'status',
+      'category_slug',
+      'track_inventory',
+      'low_stock_threshold',
+      'variant_sku',
+      'option_values',
+      'inventory'
+    ]
+
+    const rows: unknown[][] = []
+    for (const p of productRows) {
+      const base = [
+        p.sku ?? '',
+        p.name,
+        p.slug,
+        p.description,
+        p.price,
+        p.compareAtPrice ?? '',
+        p.cost,
+        p.status,
+        p.categoryId ? (catSlugById.get(p.categoryId) ?? '') : '',
+        p.trackInventory,
+        p.lowStockThreshold
+      ]
+      const vs = variantsByProduct.get(p.id) ?? []
+      if (vs.length === 0) {
+        rows.push([...base, '', '', ''])
+      } else {
+        for (const v of vs) {
+          rows.push([
+            ...base,
+            v.sku ?? '',
+            JSON.stringify(v.optionValues ?? {}),
+            v.inventory
+          ])
+        }
+      }
+    }
+    return toCsv(headers, rows)
+  }
+
+  /* ----------------------------- csv import ------------------------------ */
+
+  static async importCsv(merchantId: string, text: string) {
+    const parsed = parseCsv(text)
+    if (parsed.length < 2) {
+      throw badRequest('BAD_REQUEST', 'CSV needs a header row and at least one data row')
+    }
+    const header = parsed[0].map((h) => h.trim().toLowerCase())
+    const col = (name: string) => header.indexOf(name)
+    if (col('name') === -1) throw badRequest('BAD_REQUEST', 'CSV must include a "name" column')
+
+    // Group data rows into product blocks keyed by the parent SKU column.
+    const blocks = new Map<string, Array<{ line: number; cells: string[] }>>()
+    for (let i = 1; i < parsed.length; i++) {
+      const cells = parsed[i]
+      const sku = col('sku') !== -1 ? (cells[col('sku')] ?? '').trim() : ''
+      const key = sku || `__line_${i + 1}`
+      const bucket = blocks.get(key) ?? []
+      bucket.push({ line: i + 1, cells })
+      blocks.set(key, bucket)
+    }
+
+    const catRows = await db
+      .select({ id: categories.id, slug: categories.slug })
+      .from(categories)
+      .where(eq(categories.merchantId, merchantId))
+    const catBySlug = new Map(catRows.map((c) => [c.slug, c.id]))
+
+    const errors: Array<{ line: number; message: string }> = []
+    let created = 0
+    let updated = 0
+
+    class RowError extends Error {}
+
+    const num = (cells: string[], name: string): number | null => {
+      const idx = col(name)
+      if (idx === -1) return null
+      const raw = (cells[idx] ?? '').trim()
+      if (raw === '') return null
+      const n = Number(raw)
+      if (!Number.isFinite(n)) throw new RowError(`Invalid number in "${name}": ${raw}`)
+      return n
+    }
+    const str = (cells: string[], name: string): string | undefined => {
+      const idx = col(name)
+      if (idx === -1) return undefined
+      return (cells[idx] ?? '').trim()
+    }
+
+    for (const [, lines] of blocks) {
+      try {
+        const first = lines[0]
+        const name = str(first.cells, 'name')
+        if (!name) throw new RowError('Missing required "name"')
+        const price = num(first.cells, 'price')
+        if (price === null || price < 0) throw new RowError('"price" must be a non-negative number')
+
+        const statusRaw = str(first.cells, 'status')
+        const status =
+          statusRaw && ['active', 'draft', 'archived'].includes(statusRaw) ? statusRaw : 'active'
+        const trackInventoryRaw = str(first.cells, 'track_inventory')?.toLowerCase()
+        const trackInventory =
+          trackInventoryRaw === undefined ? undefined : ['true', '1', 'yes'].includes(trackInventoryRaw)
+        const lowStockThreshold = num(first.cells, 'low_stock_threshold')
+        const compareAtPrice = num(first.cells, 'compare_at_price')
+        const cost = num(first.cells, 'cost')
+        const description = str(first.cells, 'description')
+        const categorySlug = str(first.cells, 'category_slug')
+        let categoryId: string | null | undefined
+        if (categorySlug !== undefined) {
+          categoryId = categorySlug ? (catBySlug.get(categorySlug) ?? null) : null
+        }
+
+        const sku = str(first.cells, 'sku') || null
+        let existing: typeof products.$inferSelect | undefined
+        if (sku) {
+          ;[existing] = await db
+            .select()
+            .from(products)
+            .where(and(eq(products.merchantId, merchantId), eq(products.sku, sku)))
+        }
+
+        const productId = await db.transaction(async (tx) => {
+          if (existing) {
+            const patch: Partial<typeof products.$inferInsert> = {}
+            if (header.includes('name')) patch.name = name
+            if (header.includes('slug') && str(first.cells, 'slug')) patch.slug = slugify(str(first.cells, 'slug')!)
+            if (header.includes('description') && description !== undefined) patch.description = description
+            if (price !== null) patch.price = price
+            if (header.includes('compare_at_price')) patch.compareAtPrice = compareAtPrice
+            if (cost !== null) patch.cost = cost
+            if (statusRaw !== undefined) patch.status = status
+            if (categoryId !== undefined) patch.categoryId = categoryId
+            if (trackInventory !== undefined) patch.trackInventory = trackInventory
+            if (lowStockThreshold !== null) patch.lowStockThreshold = lowStockThreshold ?? 5
+            if (Object.keys(patch).length > 0) {
+              await tx.update(products).set(patch).where(eq(products.id, existing!.id))
+            }
+            updated++
+            return existing!.id
+          }
+
+          const [inserted] = await tx
+            .insert(products)
+            .values({
+              merchantId,
+              sku,
+              name,
+              slug: await this.uniqueSlug(merchantId, name),
+              description: description ?? '',
+              price,
+              compareAtPrice: compareAtPrice ?? null,
+              cost: cost ?? 0,
+              categoryId: categoryId ?? null,
+              trackInventory: trackInventory ?? false,
+              lowStockThreshold: lowStockThreshold ?? 5,
+              status
+            })
+            .returning()
+          created++
+          return inserted.id
+        })
+
+        /* variants: upsert by variant_sku within the product (never deletes) */
+        if (col('variant_sku') !== -1 || col('inventory') !== -1) {
+          const existingVariants = await db
+            .select()
+            .from(productVariants)
+            .where(eq(productVariants.productId, productId))
+          const bySku = new Map(
+            existingVariants.filter((v) => v.sku).map((v) => [v.sku as string, v])
+          )
+
+          for (const { line, cells } of lines) {
+            const vSku = str(cells, 'variant_sku') || null
+            const ovRaw = str(cells, 'option_values')
+            let optionValues: Record<string, string> | undefined
+            if (ovRaw) {
+              try {
+                const parsedOv = JSON.parse(ovRaw)
+                if (parsedOv && typeof parsedOv === 'object' && !Array.isArray(parsedOv)) {
+                  optionValues = parsedOv
+                }
+              } catch {
+                throw new RowError(`Invalid option_values JSON on a "${name}" row`)
+              }
+            }
+            const vPrice = num(cells, 'price')
+            const inventoryRaw = num(cells, 'inventory')
+            if (inventoryRaw !== null && inventoryRaw < 0) {
+              throw new RowError(`"inventory" cannot be negative on a "${name}" row`)
+            }
+            const inventory =
+              inventoryRaw === null ? undefined : Math.max(0, Math.floor(inventoryRaw))
+
+            const match = vSku ? bySku.get(vSku) : undefined
+            if (match) {
+              const patch: Partial<typeof productVariants.$inferInsert> = {}
+              if (vPrice !== null) patch.price = vPrice
+              if (optionValues !== undefined) patch.optionValues = optionValues
+              if (inventory !== undefined && inventory !== match.inventory) {
+                patch.inventory = inventory
+                await db.insert(inventoryLogs).values({
+                  merchantId,
+                  variantId: match.id,
+                  change: inventory - match.inventory,
+                  beforeValue: match.inventory,
+                  afterValue: inventory,
+                  reason: 'import',
+                  reference: 'csv-import'
+                })
+              }
+              if (Object.keys(patch).length > 0) {
+                await db.update(productVariants).set(patch).where(eq(productVariants.id, match.id))
+              }
+            } else {
+              await db.insert(productVariants).values({
+                productId,
+                sku: vSku,
+                optionValues: optionValues ?? {},
+                price: vPrice ?? price,
+                compareAtPrice:
+                  header.includes('compare_at_price') ? (compareAtPrice ?? null) : null,
+                inventory: inventory ?? 0
+              })
+            }
+          }
+        }
+      } catch (e) {
+        errors.push({ line: lines[0].line, message: e instanceof Error ? e.message : 'Import failed' })
+      }
+    }
+
+    return ok({ created, updated, failed: errors.length, errors })
   }
 }

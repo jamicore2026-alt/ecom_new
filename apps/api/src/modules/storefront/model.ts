@@ -20,6 +20,11 @@ export const productSlugParams = t.Object({
   productSlug: t.String()
 })
 
+export const productReviewsQuery = t.Object({
+  page: t.Optional(t.String()),
+  limit: t.Optional(t.String())
+})
+
 const checkoutItem = t.Object({
   productId: t.String(),
   variantId: t.String(),

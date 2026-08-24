@@ -1,7 +1,8 @@
 # AGENTS.md — Project Memory
 
-> Audit date: 2026-08-22 · HEAD: `e1630b6` + security/bug-fix batch + payments batch + Phase-1 growth batch (uncommitted)
-> Verified state after Phase-1 batch (images, emails, SEO, events): tests 63/63 pass (incl. uploads/emails/events) · typecheck pass · svelte-check 0 errors (web has 71 pre-existing a11y warnings)
+> Audit date: 2026-08-24 · HEAD: `b6f239a` (Phase 1 committed) + Phase-2 complete: customer accounts + reviews + wishlists + FTS search + CSV export/import (all uncommitted)
+> Verified state after CSV batch: tests 96/96 pass (12 files, new csv.test.ts) · typecheck pass · svelte-check 0 errors (web has 71 pre-existing a11y warnings)
+> NOTE: seed now clamps order qty to stock and ×4s variant inventory — re-run `bun run db:seed` to restore; tests find products with stock ≥ 20
 
 ## What this is
 
@@ -53,6 +54,32 @@ Migrations committed in `drizzle/` (0000–0002). Analytics computed live via SQ
 ### Storefront public API (no auth)
 `/api/store/:slug/*`: GET store, categories(tree+counts), products(filters/sort price_asc|price_desc|newest), products/:productSlug(+variants+related), search; POST checkout/preview (validates stock/variants/coupon, computes subtotal/shipping/tax/total), POST checkout (creates order, decrements inventory + logs, upserts customer), POST checkout/pay (provider flow), POST orders/:orderNumber/sync; GET orders/:orderNumber (public confirmation). Also GET `/api/store` (active store list) + `/api/store/:slug/sitemap` (category+product slugs for SEO).
 
+### Storefront customer accounts (`modules/customer-auth`)
+- `customers.passwordHash` nullable varchar(255) (migration 0006) — guests stay passwordless until they register; register on an existing guest email ATTACHES credentials to that row (past orders link automatically).
+- Routes: POST `/:slug/auth/register` {email,password≥8,firstName?,lastName?} → 409 EMAIL_IN_USE if hash exists; POST `/:slug/auth/login`; GET `/:slug/auth/me`; GET `/:slug/auth/orders` (paginated, items+itemCount). All under tags ['Storefront'].
+- Shopper JWT: separate `shopperJwt` instance (same ACCESS_SECRET), payload `{sub: customerId, mid: merchantId, type:'shopper'}`, TTL 30 days (`SHOPPER_TOKEN_TTL`); returned in body only — NO cookie. Guard = scoped derive plugin `shopperGuard` (like requirePermission pattern): verify type==='shopper' → load customer (must still have passwordHash) → active merchant. Cross-store tokens rejected via `CustomerAuthService.requireShopper(slug, shopper)` comparing customer.merchantId vs slug's merchant.
+- Email normalization: service lowercases/trims; route-level `format:'email'` validation is strict (rejects padded strings) — clients must trim before send.
+
+### Product reviews
+- `reviews` table (migration 0007): merchantId cascade, productId cascade, customerId set-null (unique pair productId+customerId), authorName, rating 1–5 int, title/body nullable, status pending|approved|rejected (`REVIEW_STATUSES` in shared/types), indexes merchant+status. Moderation writes gated by `requirePermission('products:write')` (no dedicated permission — deliberate); reads any authed staff.
+- Merchant module `modules/reviews`: GET /api/reviews?status&productId&rating&page (joins product name + customer email), PATCH /api/reviews/:id {status}, DELETE /api/reviews/:id. Swagger tag 'Reviews'. Web: nav item 'Reviews' (star icon) + `(app)/reviews/+page.svelte` status tabs w/ approve/reject/reset/delete; `/reviews` added to hooks.server.ts protected prefixes.
+- Public: PDP payload now carries `rating {average,count}|null`; GET /api/store/:slug/products/:productSlug/reviews (approved only, newest first, paginated) returns `verifiedPurchase` per review = reviewer's customer has a non-cancelled order containing that product.
+- Shopper submit: POST /api/store/:slug/auth/reviews {productId,rating 1–5,title?,body?} via shopperGuard — upsert on (product,customer); re-submission RESETS status to 'pending' and re-moderates; product must be active + same store; authorName = first+last name fallback email local-part.
+- Storefront PDP: stars under title (anchor #reviews), full reviews section (summary card + write form when signed in via account.submitReview, Load-more pagination server-load first page with graceful `.catch(() => empty)`), JSON-LD aggregateRating when count > 0.
+
+### Wishlists
+- `wishlist_items` table (migration 0008): merchantId cascade, customerId cascade, productId cascade, unique (customerId, productId). No status — add is idempotent (`onConflictDoNothing`), remove tolerates absent rows.
+- Shopper endpoints (shopperGuard, tags 'Storefront'): GET /:slug/auth/wishlist (newest first; joins active products only — archived items drop out silently; returns card data {name, slug, price, compareAtPrice, image, stock, variantId = first-created variant, optionCount}), POST /:slug/auth/wishlist {productId} (404 PRODUCT_NOT_FOUND unless product is active + same store), DELETE /:slug/auth/wishlist/:productId.
+- Account singleton holds `wishlist` state loaded once per customer via ensureWishlist(fetch) (called from Header $effect + wishlist page + PDP toggle); addToWishlist refetches to keep card data accurate; logout clears. Header shows Wishlist pill with count badge.
+- Storefront `/[slug]/wishlist` client-only page: grid cards (image/name/price/stock) with Add-to-cart (uses default variantId, optionValues {}) + Remove; guest sees sign-in prompt. PDP heart button next to Add-to-cart when signed in (aria-pressed, rose highlight).
+- Seed fix (same batch): order generation clamps qty to remaining stock and picks from in-stock variants; variant inventory ×4 at insert (zeros stay 0 — intentional out-of-stock demos). Previously 120 seeded orders drove stock deeply negative and made test product finders flaky.
+
+### Full-text search
+- `products.search_vector` tsvector GENERATED ALWAYS AS `to_tsvector('english', name || sku || description)` STORED + GIN index (migration 0009; drizzle has no native tsvector type — declared via `customType` in schema.ts).
+- `shared/product-search.ts`: `productSearchCondition(term)` = tsvector `@@ websearch_to_tsquery('english', term)` OR ILIKE name/sku fallback (prefix/partial words FTS can't see); `productSearchRank(term)` = `ts_rank(...)` for relevance ordering.
+- Storefront `/products?search=` and `/search` use it; when searching with no explicit sort → rank desc, createdAt tiebreak. Merchant GET /api/products?search= uses the same condition.
+- websearch_to_tsquery is injection-safe (parameterized) and word-order independent; stopword-only queries fall through to ILIKE. search.test.ts uses its own fixtures (created via merchant API, deleted in afterAll) — don't depend on seed product names.
+
 ### Product images + uploads
 - `modules/uploads`: POST `/api/uploads` (`t.Files`, jpg/png/webp/gif ≤5MB, `requirePermission('products:write')`) → saves under `apps/api/uploads/<cuid2>.<ext>`; public static GET `/uploads/*` (declared BEFORE authPlugin — Elysia scoped derives only apply to routes registered after `.use()`). Storage adapter in `shared/storage.ts`.
 - `product_images` rows (sortOrder asc, createdAt tiebreak); products carry `images[]` + `primaryImage`; product update = full-set replace. Web ImageManager component handles upload/reorder/primary/delete; dev proxy `/uploads` in both SvelteKit vite configs.
@@ -85,8 +112,8 @@ State: `session.svelte.ts` (Svelte 5 runes singleton; bootstrap() hydrates from 
 `hooks.server.ts`: server-side guard — protected prefixes (dashboard/analytics/products/inventory/orders/customers/discounts/settings) require `md.refresh` cookie else 302 /login; /login redirects to /dashboard when session present. Presence check only (not JWT verification) — real auth still enforced by API.
 
 ## Storefront (apps/storefront)
-Routes under `[slug]/`: home(featured 8, meta/OG), products(list w/ filter form), products/[product](variant picker PDP, gallery + JSON-LD Product), categories/[category], search(?q=), cart(client-side), checkout(contact/address/coupon → preview → place order; online providers → /checkout/pay → gateway redirect, sessionStorage `ecom:pending:${slug}`), checkout/return(sync + redirect to confirmation, retry on pending), orders/[orderNumber](confirmation; pending-payment banner with "Check now" re-sync). Plus root `/sitemap.xml`, `/[slug]/sitemap.xml`, `/robots.txt`.
-Cart: `cart.svelte.ts` class singleton, localStorage key `ecom:cart:${slug}`, lines snapshot product data at add-time, merge by variantId, qty cap 99. api.ts uses injected fetchFn (SSR-safe), typed ApiError, plus `loadError(err, notFoundMessage)` helper — all page.server loads wrap API calls; ApiError 404 → SvelteKit error(404), else error(status)/rethrow. Home degrades gracefully to empty featured list. PDP resets variant/qty/notice via `$effect` keyed on `data.product.id`; selectedVariant falls back to variants[0] when stale.
+Routes under `[slug]/`: home(featured 8, meta/OG), products(list w/ filter form), products/[product](variant picker PDP, gallery + JSON-LD Product), categories/[category], search(?q=), cart(client-side), checkout(contact/address/coupon → preview → place order; online providers → /checkout/pay → gateway redirect, sessionStorage `ecom:pending:${slug}`; prefills email/name/phone from shopper session when signed in), checkout/return(sync + redirect to confirmation, retry on pending), orders/[orderNumber](confirmation; pending-payment banner with "Check now" re-sync), account(client-only: login/register tabs → profile + paginated order history linking to confirmation pages; 401 auto-logout). Plus root `/sitemap.xml`, `/[slug]/sitemap.xml`, `/robots.txt`.
+Cart: `cart.svelte.ts` class singleton, localStorage key `ecom:cart:${slug}`, lines snapshot product data at add-time, merge by variantId, qty cap 99. Shopper session: `account.svelte.ts` singleton, localStorage key `ecom:auth:${slug}` (token+customer), `setSlug/login/register/orders/logout/isAuthError`. Header shows Sign in / first-name pill linking to account. api.ts uses injected fetchFn (SSR-safe), typed ApiError, plus `loadError(err, notFoundMessage)` helper — all page.server loads wrap API calls; ApiError 404 → SvelteKit error(404), else error(status)/rethrow. Home degrades gracefully to empty featured list. PDP resets variant/qty/notice via `$effect` keyed on `data.product.id`; selectedVariant falls back to variants[0] when stale.
 
 ## Known issues / remaining tech debt (after fix batch 2026-08-22)
 
@@ -108,7 +135,7 @@ Cart: `cart.svelte.ts` class singleton, localStorage key `ecom:cart:${slug}`, li
 - adapter-auto unpinned in both SvelteKit apps; prod API origin config still dev-proxy-only
 - hooks.server.ts guard is cookie-presence based, not JWT-verified (fine as UX guard; API enforces real auth)
 - Logout endpoint returns 400 when POSTed with content-type json but empty body (clients send `{}`)
-- Roadmap Phase 2 (next): storefront customer accounts (email+password), reviews, wishlists, FTS search, CSV export/import; Phase 3: fulfillment tracking, abandoned-cart queue (pg-boss), outbound merchant webhooks, multi-warehouse, i18n ar+RTL (prioritized per user)
+- Roadmap Phase 2 (next): CSV export/import (customer accounts ✅, reviews ✅, wishlists ✅, FTS search ✅ done); Phase 3: fulfillment tracking, abandoned-cart queue (pg-boss), outbound merchant webhooks, multi-warehouse, i18n ar+RTL (prioritized per user)
 
 ## Gotchas
 - Elysia: method chaining required for type inference; explicit `.use()` for plugins that add context types

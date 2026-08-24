@@ -9,9 +9,15 @@ import type {
 	Page,
 	PaymentSyncResult,
 	ProductDetail,
+	ProductReview,
 	ProductSummary,
 	ProviderCheckoutSession,
-	StoreInfo
+	ShopperCustomer,
+	ShopperOrderSummary,
+	ShopperSessionData,
+	StoreInfo,
+	SubmittedReview,
+	WishListItem
 } from './types'
 
 const base = '/api/store'
@@ -87,6 +93,25 @@ export const storefrontApi = {
 	product: (fetchFn: typeof fetch, slug: string, productSlug: string) =>
 		request<ProductDetail>(fetchFn, `/${slug}/products/${productSlug}`),
 
+	productReviews: (
+		fetchFn: typeof fetch,
+		slug: string,
+		productSlug: string,
+		params: { page?: number | string; limit?: number | string } = {}
+	) => request<Page<ProductReview>>(fetchFn, `/${slug}/products/${productSlug}/reviews${qs(params)}`),
+
+	submitReview: (
+		fetchFn: typeof fetch,
+		slug: string,
+		token: string,
+		body: { productId: string; rating: number; title?: string; body?: string }
+	) =>
+		request<SubmittedReview>(fetchFn, `/${slug}/auth/reviews`, {
+			method: 'POST',
+			headers: { authorization: `Bearer ${token}` },
+			body: JSON.stringify(body)
+		}),
+
 	search: (fetchFn: typeof fetch, slug: string, params: ProductListParams = {}) =>
 		request<Page<ProductSummary>>(fetchFn, `/${slug}/search${qs(params)}`),
 
@@ -120,7 +145,53 @@ export const storefrontApi = {
 		}),
 
 	order: (fetchFn: typeof fetch, slug: string, orderNumber: string) =>
-		request<OrderDetail>(fetchFn, `/${slug}/orders/${orderNumber}`)
+		request<OrderDetail>(fetchFn, `/${slug}/orders/${orderNumber}`),
+
+	registerAccount: (fetchFn: typeof fetch, slug: string, body: { email: string; password: string; firstName?: string; lastName?: string }) =>
+		request<ShopperSessionData>(fetchFn, `/${slug}/auth/register`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		}),
+
+	loginAccount: (fetchFn: typeof fetch, slug: string, body: { email: string; password: string }) =>
+		request<ShopperSessionData>(fetchFn, `/${slug}/auth/login`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		}),
+
+	me: (fetchFn: typeof fetch, slug: string, token: string) =>
+		request<ShopperCustomer>(fetchFn, `/${slug}/auth/me`, {
+			headers: { authorization: `Bearer ${token}` }
+		}),
+
+	myOrders: (
+		fetchFn: typeof fetch,
+		slug: string,
+		token: string,
+		params: { page?: number | string; limit?: number | string } = {}
+	) =>
+		request<Page<ShopperOrderSummary>>(fetchFn, `/${slug}/auth/orders${qs(params)}`, {
+			headers: { authorization: `Bearer ${token}` }
+		}),
+
+	wishlist: (fetchFn: typeof fetch, slug: string, token: string) =>
+		request<{ items: WishListItem[] }>(fetchFn, `/${slug}/auth/wishlist`, {
+			headers: { authorization: `Bearer ${token}` }
+		}),
+
+	wishlistAdd: (fetchFn: typeof fetch, slug: string, token: string, productId: string) =>
+		request<{ saved: boolean }>(fetchFn, `/${slug}/auth/wishlist`, {
+			method: 'POST',
+			headers: { authorization: `Bearer ${token}` },
+			body: JSON.stringify({ productId })
+		}),
+
+	wishlistRemove: (fetchFn: typeof fetch, slug: string, token: string, productId: string) =>
+		request<{ removed: boolean }>(
+			fetchFn,
+			`/${slug}/auth/wishlist/${encodeURIComponent(productId)}`,
+			{ method: 'DELETE', headers: { authorization: `Bearer ${token}` } }
+		)
 }
 
 export function loadError(err: unknown, notFoundMessage: string): never {

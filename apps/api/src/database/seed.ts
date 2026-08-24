@@ -275,6 +275,8 @@ async function main() {
       .returning()
 
     for (const v of def.variants) {
+      // Headroom so the 120 seeded orders can't drain stock negative
+      const inventory = v.inventory === 0 ? 0 : v.inventory * 4
       const [variant] = await db
         .insert(productVariants)
         .values({
@@ -283,11 +285,11 @@ async function main() {
           sku: v.sku ?? def.sku,
           price: def.price,
           compareAtPrice: def.compareAt ?? null,
-          inventory: v.inventory,
+          inventory,
           image: null
         })
         .returning()
-      stockMap.set(variant.id, v.inventory)
+      stockMap.set(variant.id, inventory)
       variantCatalog.push({
         id: variant.id,
         productId: product.id,
@@ -336,13 +338,21 @@ async function main() {
     const itemCount = int(1, 5)
 
     let subtotal = 0
-    const chosen = Array.from({ length: itemCount }, () => pick(variantCatalog))
-    const itemTotals = chosen.map((v) => {
-      const qty = int(1, 3)
-      const total = Number((v.price * qty).toFixed(2))
-      subtotal = Number((subtotal + total).toFixed(2))
-      return { ...v, qty, total }
+    const chosen = Array.from({ length: itemCount }, () => {
+      const inStock = variantCatalog.filter((v) => (stockMap.get(v.id) ?? 0) > 0)
+      return pick(inStock.length > 0 ? inStock : variantCatalog)
     })
+    const itemTotals = chosen
+      .map((v) => {
+        const available = stockMap.get(v.id) ?? 0
+        const qty = Math.min(int(1, 3), Math.max(available, 0))
+        if (qty === 0) return null
+        const total = Number((v.price * qty).toFixed(2))
+        subtotal = Number((subtotal + total).toFixed(2))
+        return { ...v, qty, total }
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+    if (itemTotals.length === 0) continue
 
     const discount = rand() < 0.18 ? Number((subtotal * (0.05 + rand() * 0.15)).toFixed(2)) : 0
     const taxable = Number((subtotal - discount).toFixed(2))

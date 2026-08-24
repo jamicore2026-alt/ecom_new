@@ -84,9 +84,43 @@ export interface ProductDetail {
 	image: string | null
 	images?: string[]
 	stock: number
+	rating?: { average: number; count: number } | null
 	variants: ProductVariant[]
 	category: CategoryRef | null
 	related: ProductSummary[]
+}
+
+export interface ProductReview {
+	id: string
+	authorName: string
+	rating: number
+	title: string | null
+	body: string | null
+	createdAt: string
+	verifiedPurchase: boolean
+}
+
+export interface SubmittedReview {
+	id: string
+	productId: string
+	rating: number
+	title: string | null
+	body: string | null
+	status: 'pending' | 'approved' | 'rejected'
+	createdAt: string
+}
+
+export interface WishListItem {
+	productId: string
+	name: string
+	slug: string
+	price: number
+	compareAtPrice: number | null
+	image: string | null
+	stock: number
+	variantId: string
+	optionCount: number
+	savedAt: string
 }
 
 export interface Meta {
@@ -217,4 +251,39 @@ export interface OrderDetail extends CheckoutOrder {
 	billingAddress: AddressInput | null
 	notes: string | null
 	items: OrderLineItem[]
+}
+
+export interface ShopperCustomer {
+	id: string
+	merchantId: string
+	email: string
+	firstName: string | null
+	lastName: string | null
+	phone: string | null
+	ordersCount: number
+	totalSpent: number
+	createdAt: string
+}
+
+export interface ShopperSessionData {
+	token: string
+	expiresIn: number
+	customer: ShopperCustomer
+}
+
+export interface ShopperOrderSummary {
+	id: string
+	orderNumber: string
+	status: string
+	paymentStatus: string
+	paymentMethod?: string | null
+	subtotal: number
+	shippingTotal: number
+	discountTotal: number
+	taxTotal: number
+	total: number
+	currency: string
+	createdAt: string
+	itemCount: number
+	items: Array<{ name: string; sku: string | null; price: number; quantity: number; total: number }>
 }

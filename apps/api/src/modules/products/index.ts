@@ -5,6 +5,7 @@ import {
   bulkEditBody,
   categoryBody,
   createProductBody,
+  importCsvBody,
   productQuery,
   updateProductBody,
   variantInput
@@ -15,6 +16,17 @@ export const productsModule = new Elysia({ prefix: '/api' })
   .get('/products', async ({ query, auth }) => ProductsService.list(auth.merchant.id, query), {
     query: productQuery
   })
+  // registered before '/products/:id' so "export" is not captured as an id
+  .get(
+    '/products/export',
+    async ({ auth, set }) => {
+      const csv = await ProductsService.exportCsv(auth.merchant.id)
+      set.headers['content-type'] = 'text/csv; charset=utf-8'
+      set.headers['content-disposition'] = `attachment; filename="products-${auth.merchant.slug}-${new Date().toISOString().slice(0, 10)}.csv"`
+      return csv
+    },
+    { detail: { summary: 'Export products as CSV (one row per variant)' } }
+  )
   .get('/products/:id', async ({ params, auth }) => ProductsService.get(auth.merchant.id, params.id))
   .get('/products/:id/variants', async ({ params, auth }) =>
     ProductsService.listVariants(auth.merchant.id, params.id)
@@ -27,6 +39,14 @@ export const productsModule = new Elysia({ prefix: '/api' })
   .post('/products/bulk', async ({ body, auth }) => ProductsService.bulkEdit(auth.merchant.id, body), {
     body: bulkEditBody
   })
+  .post(
+    '/products/import',
+    async ({ body, auth }) => {
+      const text = await body.file.text()
+      return ProductsService.importCsv(auth.merchant.id, text)
+    },
+    { body: importCsvBody, detail: { summary: 'Import products from CSV (upsert by SKU)' } }
+  )
   .put(
     '/products/:id',
     async ({ params, body, auth }) => ProductsService.update(auth.merchant.id, params.id, body),

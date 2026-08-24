@@ -38,7 +38,45 @@
 	let editProduct = $state<Product | null>(null)
 	let catModal = $state(false)
 
+	// csv
+	let exporting = $state(false)
+	let importing = $state(false)
+	let importOpen = $state(false)
+	let importFile = $state<File | null>(null)
+	let importResult = $state<{ created: number; updated: number; failed: number; errors: Array<{ line: number; message: string }> } | null>(null)
+
 	const canWrite = () => session.can('products:write')
+
+	async function exportCsv() {
+		exporting = true
+		try {
+			await api.download('/api/products/export', `products-${new Date().toISOString().slice(0, 10)}.csv`)
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			exporting = false
+		}
+	}
+
+	async function runImport() {
+		if (!importFile) return
+		importing = true
+		try {
+			const form = new FormData()
+			form.append('file', importFile, importFile.name)
+			const res = await api.upload<{ success: boolean; data: { created: number; updated: number; failed: number; errors: Array<{ line: number; message: string }> } }>(
+				'/api/products/import',
+				form
+			)
+			importResult = res.data
+			toast.success(`Imported ${res.data.created} created, ${res.data.updated} updated`)
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			importing = false
+		}
+	}
 
 	async function load() {
 		loading = true
@@ -142,7 +180,9 @@
 			<p class="text-sm text-gray-500">{meta.total} total</p>
 		</div>
 		<div class="flex gap-2">
+			<Button variant="secondary" loading={exporting} onclick={exportCsv}>Export CSV</Button>
 			{#if canWrite()}
+				<Button variant="secondary" onclick={() => { importResult = null; importFile = null; importOpen = true }}>Import CSV</Button>
 				<Button variant="secondary" onclick={() => (catModal = true)}>Categories</Button>
 				<Button onclick={() => { editProduct = null; editOpen = true }}>Add product</Button>
 			{/if}
@@ -334,4 +374,45 @@
 <!-- Categories modal -->
 {#if catModal && canWrite()}
 	<CategoriesManager categories={categories} onClose={() => (catModal = false)} onSaved={() => { loadCategories() }} />
+{/if}
+
+<!-- Import CSV modal -->
+{#if importOpen && canWrite()}
+	<Modal title="Import products from CSV" open={true} width="sm" onClose={() => (importOpen = false)}>
+		<div class="space-y-4">
+			<p class="text-sm text-gray-500">
+				One row per variant. Existing products are matched by SKU and updated — nothing is deleted.
+			</p>
+			<input
+				type="file"
+				accept=".csv,text/csv"
+				class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700"
+				onchange={(e) => {
+					const files = (e.currentTarget as HTMLInputElement).files
+					importFile = files && files.length > 0 ? files[0] : null
+					importResult = null
+				}}
+			/>
+			{#if importResult}
+				<div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+					<p>
+						<span class="font-semibold text-green-700">{importResult.created} created</span> ·
+						<span class="font-semibold text-indigo-700">{importResult.updated} updated</span> ·
+						<span class="font-semibold {importResult.failed > 0 ? 'text-red-700' : 'text-gray-500'}">{importResult.failed} failed</span>
+					</p>
+					{#if importResult.errors.length > 0}
+						<ul class="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-red-600">
+							{#each importResult.errors as err (err.line)}
+								<li>Line {err.line}: {err.message}</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			{/if}
+			<div class="flex justify-end gap-2 pt-2">
+				<Button variant="secondary" onclick={() => (importOpen = false)}>Close</Button>
+				<Button loading={importing} disabled={!importFile} onclick={runImport}>Import</Button>
+			</div>
+		</div>
+	</Modal>
 {/if}

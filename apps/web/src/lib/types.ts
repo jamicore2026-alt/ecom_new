@@ -490,3 +490,19 @@ export interface ConversionAnalytics {
 	to: string
 	comparison: { previous: { conversionRate: number }; conversionDeltaPct: number; viewsDeltaPct: number }
 }
+
+export interface Review {
+	id: string
+	productId: string
+	productName: string | null
+	productSlug: string | null
+	customerId: string | null
+	customerEmail: string | null
+	authorName: string
+	rating: number
+	title: string | null
+	body: string | null
+	status: 'pending' | 'approved' | 'rejected'
+	createdAt: string
+	updatedAt: string
+}
