@@ -45,6 +45,9 @@ Multi-tenant e-commerce monorepo (**Turborepo + Bun**, packageManager `bun@1.3.1
 
 Both SvelteKit apps proxy `/api → http://localhost:3005` in dev (`vite.config.ts`, strictPort). Storefront home `/` redirects to `/{PUBLIC_DEFAULT_STORE}` = `acme-store`.
 
+## Production topology (Coolify, 2026-08-25)
+Three services + Postgres: API `api.jamicore.com`, dashboard `merchant.jamicore.com`, storefront `store.jamicore.com`. Both frontends ship a same-origin reverse proxy (`src/routes/api/[...path]` + `uploads/[...path]` → `lib/server/api-proxy.ts`, runtime env `API_ORIGIN`, default localhost:3005) so browsers never talk cross-origin to the API — no CORS/cookie issues, hooks guard keeps working. Storefront `PUBLIC_*` vars are build-time Dockerfile ARGs (baked); `API_ORIGIN` is runtime. All three have Dockerfiles (build context = repo root: `docker build -f apps/<app>/Dockerfile .`). Mount a volume at `/app/apps/api/uploads` on the API container or uploaded images are lost on redeploy. Run `bun run db:migrate` as a Coolify pre-deploy command (devDeps incl. drizzle-kit stay in the image for this). Swagger auto-disabled when NODE_ENV=production.
+
 ## Commands
 
 ```bash
