@@ -32,6 +32,12 @@ export interface StorageAdapter {
 
 const extFromType = (type: string) => ALLOWED_IMAGE_TYPES[type]
 
+/**
+ * Key hygiene shared by both drivers: strip traversal segments and leading
+ * slashes so a crafted public URL can never escape the uploads namespace.
+ */
+const sanitizeKey = (key: string) => key.replaceAll('..', '').replace(/^\/+/, '')
+
 /** S3/MinIO storage — set STORAGE_DRIVER=s3 + S3_* env vars. */
 class S3Storage implements StorageAdapter {
   private client: InstanceType<typeof Bun.S3Client>
@@ -72,14 +78,14 @@ class S3Storage implements StorageAdapter {
   }
 
   async read(key: string): Promise<File | null> {
-    const file = this.client.file(key)
+    const file = this.client.file(sanitizeKey(key))
     if (!(await file.exists())) return null
     const buf = await file.arrayBuffer()
     return new File([buf], key.split('/').pop() ?? 'file')
   }
 
   async remove(key: string): Promise<void> {
-    await this.client.delete(key)
+    await this.client.delete(sanitizeKey(key))
   }
 }
 
@@ -89,8 +95,7 @@ class LocalDiskStorage implements StorageAdapter {
     process.env.UPLOAD_DIR ?? `${import.meta.dir}/../../uploads`
 
   private resolve(key: string) {
-    const safe = key.replaceAll('..', '').replace(/^\/+/, '')
-    return `${this.root}/${safe}`
+    return `${this.root}/${sanitizeKey(key)}`
   }
 
   async save(merchantId: string, file: File): Promise<StoredFile> {
@@ -124,5 +129,8 @@ class LocalDiskStorage implements StorageAdapter {
   }
 }
 
-export const storage: StorageAdapter =
-  process.env.STORAGE_DRIVER === 's3' ? new S3Storage() : new LocalDiskStorage()
+const useS3 = process.env.STORAGE_DRIVER === 's3'
+export const storage: StorageAdapter = useS3 ? new S3Storage() : new LocalDiskStorage()
+console.log(
+  `[storage] driver: ${useS3 ? `s3 (bucket: ${process.env.S3_BUCKET ?? 'jamicore-uploads'})` : 'local-disk'}`
+)

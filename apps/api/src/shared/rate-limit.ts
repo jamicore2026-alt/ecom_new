@@ -42,7 +42,7 @@ const sweep = () => {
 }
 
 export const rateLimiter = (app: Elysia) =>
-  app.onRequest(({ request, set }) => {
+  app.onRequest(({ request, server, set }) => {
     // Test suites share one process and would trip per-IP limits.
     if (process.env.NODE_ENV === 'test') return
 
@@ -53,8 +53,15 @@ export const rateLimiter = (app: Elysia) =>
     const now = Date.now()
     if (now - lastSweep > WINDOW_MS) sweep()
 
-    const forwarded = request.headers.get('x-forwarded-for') ?? ''
-    const ip = forwarded.split(',')[0].trim() || 'local'
+    // x-forwarded-for is honored by default because every supported topology
+    // (dev vite proxy, Coolify/Traefik) sits behind a proxy that sets it.
+    // Set TRUST_PROXY=false when the API port is exposed directly to the
+    // internet — otherwise attackers can rotate spoofed XFF values to get a
+    // fresh rate-limit bucket per request. Falls back to the real socket IP.
+    const trustProxy = process.env.TRUST_PROXY !== 'false'
+    const socketIp = server?.requestIP(request)?.address ?? 'local'
+    const forwarded = trustProxy ? (request.headers.get('x-forwarded-for') ?? '') : ''
+    const ip = forwarded.split(',')[0].trim() || socketIp
     const key = `${ip}:${pathname}`
     const hits = (buckets.get(key) ?? []).filter((t) => t > now - WINDOW_MS)
 

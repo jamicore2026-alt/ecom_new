@@ -56,11 +56,18 @@ export const uploadsModule = new Elysia({ name: 'uploads' })
   .post(
     '/api/uploads',
     async ({ body, auth }) => {
+      const kinds: (keyof typeof CONTENT_TYPES)[] = []
       for (const f of body.files) {
         const kind = await detectImageKind(f)
         if (!kind) throw badRequest('BAD_REQUEST', `Unsupported or corrupt image: ${f.name}`)
+        kinds.push(kind)
       }
-      const stored = await UploadsService.saveImages(auth.merchant.id, body.files)
+      // Re-wrap with the sniffed type so the stored/served content-type always
+      // matches the actual bytes, never the client-declared header.
+      const verified = body.files.map(
+        (f, i) => new File([f], f.name, { type: CONTENT_TYPES[kinds[i]] })
+      )
+      const stored = await UploadsService.saveImages(auth.merchant.id, verified)
       return { success: true as const, data: stored }
     },
     { body: uploadBody, detail: { summary: 'Upload product images (multipart)' } }

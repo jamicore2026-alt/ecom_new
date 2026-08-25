@@ -31,6 +31,7 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/ecom_merchant
       JWT_ACCESS_SECRET: ci-access-secret
       JWT_REFRESH_SECRET: ci-refresh-secret
+      ENCRYPTION_KEY: ci-encryption-key
     steps:
       - uses: actions/checkout@v4
 
