@@ -62,7 +62,7 @@ class S3Storage implements StorageAdapter {
 
     const name = `${createId()}.${ext}`
     const key = `${merchantId}/${name}`
-    this.client.put(key, file)
+    await this.client.write(key, file, { type })
     return {
       url: `${UPLOAD_URL_PREFIX}/${key}`,
       key,
