@@ -15,6 +15,7 @@ import {
 import { getProvider } from '../../payments/registry'
 import { decryptJson } from '../../shared/crypto'
 import { applyManualMarkPaid } from '../../shared/order-payments'
+import { cancelPendingOrderTx } from '../../shared/order-cancel'
 import { EmailsService } from '../emails/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
@@ -26,18 +27,21 @@ const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   pending: ['processing', 'cancelled'],
   processing: ['shipped', 'cancelled'],
   shipped: ['delivered', 'cancelled'],
-  delivered: ['refunded'],
+  // `refunded` is reachable ONLY through createRefund() after a real refund —
+  // never via a generic status mutation.
+  delivered: [],
   cancelled: [],
   refunded: []
 }
 
-/** Legal paymentStatus changes for the manual status endpoint. Refunds go through
- *  the refunds flow; `paid` must only ever come from `unpaid`. */
+/** Legal paymentStatus changes for the manual status endpoint. Refund states
+ *  (partially_refunded / refunded) are owned exclusively by createRefund();
+ *  `paid` must only ever come from `unpaid`. */
 const PAYMENT_TRANSITIONS: Record<string, string[]> = {
   unpaid: ['paid', 'failed'],
   pending: ['paid', 'failed'], // legacy rows
-  paid: ['partially_refunded', 'refunded'],
-  partially_refunded: ['refunded'],
+  paid: [],
+  partially_refunded: [],
   failed: [],
   refunded: []
 }
@@ -255,55 +259,28 @@ export class OrdersService {
     if (order.status === 'cancelled' || order.status === 'refunded') {
       throw badRequest('INVALID_TRANSITION', `Order is already ${order.status}`)
     }
-
-    const items = await db
-      .select()
-      .from(orderItems)
-      .where(eq(orderItems.orderId, id))
-
-    // Approved returns already restocked their units — don't double-restock them.
-    const approvedRows = await db
-      .select({
-        orderItemId: returnsTable.orderItemId,
-        returned: sql<number>`coalesce(sum(${returnsTable.quantity}), 0)`
-      })
-      .from(returnsTable)
-      .where(and(eq(returnsTable.orderId, id), eq(returnsTable.status, 'approved')))
-      .groupBy(returnsTable.orderItemId)
-    const approvedByItem = new Map(
-      approvedRows.map((r) => [r.orderItemId, Number(r.returned)])
-    )
-
-    const result = await db.transaction(async (tx) => {
-      await this.restockTx(
-        tx,
-        merchantId,
-        items
-          .filter((i) => i.variantId)
-          .map((i) => ({
-            variantId: i.variantId as string,
-            quantity: Math.max(0, i.quantity - (approvedByItem.get(i.id) ?? 0))
-          }))
-          .filter((i) => i.quantity > 0),
-        'cancel'
+    // Money has moved (or partially moved) — cancellation cannot undo a payment.
+    // Refunds are the only way out of paid/partially_refunded states.
+    if (['paid', 'partially_refunded', 'refunded'].includes(order.paymentStatus)) {
+      throw badRequest(
+        'REFUND_REQUIRED',
+        'Paid orders must be refunded via the refunds flow — cancelling would lose the payment trail'
       )
+    }
+    // Only pre-shipment orders can be cancelled; shipped/delivered orders need returns.
+    if (!['pending', 'processing'].includes(order.status)) {
+      throw badRequest('INVALID_TRANSITION', `Cannot cancel a ${order.status} order`)
+    }
 
-      const [updated] = await tx
-        .update(orders)
-        .set({
-          status: 'cancelled',
-          paymentStatus:
-            order.paymentStatus === 'paid' || order.paymentStatus === 'partially_refunded'
-              ? 'refunded'
-              : 'failed',
-          fulfillmentStatus: 'unfulfilled'
-        })
-        .where(eq(orders.id, id))
-        .returning()
-      return updated
-    })
+    const applied = await db.transaction((tx) => cancelPendingOrderTx(tx, order))
+    // A racing path (sweep / webhook) resolved the order first.
+    if (!applied) throw badRequest('INVALID_TRANSITION', 'Order was already updated')
 
-    return ok(result)
+    const [updated] = await db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
+    return ok(updated)
   }
 
   /* ------------------------- returns / refunds ---------------------------- */
@@ -327,34 +304,48 @@ export class OrdersService {
       .where(and(eq(orderItems.id, input.orderItemId), eq(orderItems.orderId, order.id)))
     if (!item) throw notFound('NOT_FOUND', 'Order item not found')
 
-    // Cumulative check — sum of all non-rejected returns must not exceed purchased qty
-    const [returnedRow] = await db
-      .select({ returned: sql<number>`coalesce(sum(${returnsTable.quantity}), 0)` })
-      .from(returnsTable)
-      .where(
-        and(
-          eq(returnsTable.orderItemId, item.id),
-          sql`${returnsTable.status} != 'rejected'`
-        )
-      )
-    const alreadyReturned = Number(returnedRow?.returned ?? 0)
-    const available = item.quantity - alreadyReturned
-    if (input.quantity > available) {
-      throw badRequest('BAD_REQUEST', `Only ${available} unit(s) available to return`)
-    }
+    // Lock the order row for the whole check+insert so two concurrent returns
+    // can never reserve the same units (P1-02).
+    const created = await db.transaction(async (tx) => {
+      const [lockedOrder] = await tx
+        .select()
+        .from(orders)
+        .where(eq(orders.id, order.id))
+        .for('update')
+      if (lockedOrder.status === 'cancelled') {
+        throw badRequest('BAD_REQUEST', 'Cannot return a cancelled order')
+      }
 
-    const [created] = await db
-      .insert(returnsTable)
-      .values({
-        merchantId,
-        orderId: order.id,
-        orderItemId: item.id,
-        quantity: input.quantity,
-        amount: Number((item.price * input.quantity).toFixed(2)),
-        reason: input.reason ?? null,
-        status: 'pending'
-      })
-      .returning()
+      // Cumulative check — sum of all non-rejected/non-failed returns must not exceed purchased qty
+      const [returnedRow] = await tx
+        .select({ returned: sql<number>`coalesce(sum(${returnsTable.quantity}), 0)` })
+        .from(returnsTable)
+        .where(
+          and(
+            eq(returnsTable.orderItemId, item.id),
+            sql`${returnsTable.status} NOT IN ('rejected', 'failed')`
+          )
+        )
+      const alreadyReturned = Number(returnedRow?.returned ?? 0)
+      const available = item.quantity - alreadyReturned
+      if (input.quantity > available) {
+        throw badRequest('BAD_REQUEST', `Only ${available} unit(s) available to return`)
+      }
+
+      const [row] = await tx
+        .insert(returnsTable)
+        .values({
+          merchantId,
+          orderId: order.id,
+          orderItemId: item.id,
+          quantity: input.quantity,
+          amount: Number((item.price * input.quantity).toFixed(2)),
+          reason: input.reason ?? null,
+          status: 'pending'
+        })
+        .returning()
+      return row
+    })
 
     return ok(created)
   }
@@ -370,31 +361,54 @@ export class OrdersService {
       .where(and(eq(returnsTable.id, id), eq(returnsTable.merchantId, merchantId)))
     if (!ret) throw notFound('NOT_FOUND', 'Return not found')
     if (ret.status !== 'pending') {
-      throw badRequest('BAD_REQUEST', `Return is already ${ret.status}`)
+      throw badRequest('RETURN_ALREADY_PROCESSED', `Return is already ${ret.status}`)
     }
 
     const updated = await db.transaction(async (tx) => {
-      if (input.status === 'approved' && ret.orderItemId) {
+      // Atomic claim: only the transaction that flips pending→approved/rejected
+      // may proceed — concurrent approvals can never double-restock (P0-06).
+      const [claimed] = await tx
+        .update(returnsTable)
+        .set({ status: input.status })
+        .where(
+          and(
+            eq(returnsTable.id, id),
+            eq(returnsTable.merchantId, merchantId),
+            eq(returnsTable.status, 'pending')
+          )
+        )
+        .returning()
+      if (!claimed) {
+        throw badRequest('RETURN_ALREADY_PROCESSED', 'Return was just processed by someone else')
+      }
+
+      if (input.status === 'approved' && claimed.orderItemId) {
+        // A cancelled order already restored its inventory — approving a return
+        // against it would restock dead stock (P1-01). Checked inside the same
+        // transaction as the restock, with the order locked.
+        const [order] = await tx
+          .select()
+          .from(orders)
+          .where(eq(orders.id, claimed.orderId))
+          .for('update')
+        if (!order || order.status === 'cancelled') {
+          throw badRequest('ORDER_CANCELLED', 'Cannot approve a return on a cancelled order')
+        }
         const [item] = await tx
           .select()
           .from(orderItems)
-          .where(eq(orderItems.id, ret.orderItemId))
+          .where(eq(orderItems.id, claimed.orderItemId))
         if (item?.variantId) {
           await this.restockTx(
             tx,
             merchantId,
-            [{ variantId: item.variantId, quantity: ret.quantity }],
+            [{ variantId: item.variantId, quantity: claimed.quantity }],
             'return'
           )
         }
       }
 
-      const [row] = await tx
-        .update(returnsTable)
-        .set({ status: input.status })
-        .where(eq(returnsTable.id, id))
-        .returning()
-      return row
+      return claimed
     })
 
     return ok(updated)
@@ -426,97 +440,55 @@ export class OrdersService {
     merchantId: string,
     input: { orderId: string; returnId?: string; amount: number; method?: string }
   ) {
-    const [order] = await db
-      .select()
-      .from(orders)
-      .where(and(eq(orders.id, input.orderId), eq(orders.merchantId, merchantId)))
-    if (!order) throw notFound('NOT_FOUND', 'Order not found')
-
-    // Only paid orders can be refunded
-    if (!['paid', 'partially_refunded'].includes(order.paymentStatus)) {
-      throw badRequest('BAD_REQUEST', 'Only paid orders can be refunded')
-    }
-
-    // If a return is attached it must belong to this order
-    if (input.returnId) {
-      const [ret] = await db
+    // ── tx1: reservation ────────────────────────────────────────────────
+    // Lock the order, validate the refundable balance and insert a 'pending'
+    // refund row that COUNTS toward the balance. Two concurrent refunds
+    // serialize on the row lock — the second sees the first's reservation and
+    // is rejected instead of over-refunding (P0-05).
+    const reserved = await db.transaction(async (tx) => {
+      const [order] = await tx
         .select()
-        .from(returnsTable)
-        .where(eq(returnsTable.id, input.returnId))
-      if (!ret || ret.orderId !== order.id) {
-        throw badRequest('BAD_REQUEST', 'Return does not belong to this order')
+        .from(orders)
+        .where(and(eq(orders.id, input.orderId), eq(orders.merchantId, merchantId)))
+        .for('update')
+      if (!order) throw notFound('NOT_FOUND', 'Order not found')
+
+      // Only paid orders can be refunded
+      if (!['paid', 'partially_refunded'].includes(order.paymentStatus)) {
+        throw badRequest('BAD_REQUEST', 'Only paid orders can be refunded')
       }
-    }
 
-    const existing = await db
-      .select({ sum: sql<number>`coalesce(sum(${refunds.amount}), 0)` })
-      .from(refunds)
-      .where(eq(refunds.orderId, order.id))
+      // If a return is attached it must belong to this order
+      if (input.returnId) {
+        const [ret] = await tx
+          .select()
+          .from(returnsTable)
+          .where(eq(returnsTable.id, input.returnId))
+        if (!ret || ret.orderId !== order.id) {
+          throw badRequest('BAD_REQUEST', 'Return does not belong to this order')
+        }
+      }
 
-    const already = Number(existing[0]?.sum ?? 0)
-    if (already + input.amount > order.total + 0.001) {
-      throw badRequest(
-        'BAD_REQUEST',
-        `Refund exceeds order balance (${(order.total - already).toFixed(2)} remaining)`
-      )
-    }
-
-    // Gateway refund first (method 'original' + a captured provider transaction) —
-    // the local refund row is only written when the provider accepts it.
-    let gatewayRef: string | null = null
-    if ((input.method ?? 'original') === 'original' && order.paymentProvider) {
-      const [txn] = await db
-        .select()
-        .from(paymentTransactions)
+      const existing = await tx
+        .select({ sum: sql<number>`coalesce(sum(${refunds.amount}), 0)` })
+        .from(refunds)
         .where(
           and(
-            eq(paymentTransactions.orderId, order.id),
-            eq(paymentTransactions.provider, order.paymentProvider)
+            eq(refunds.orderId, order.id),
+            // Failed attempts release their balance; pending rows hold it.
+            sql`${refunds.status} != 'failed'`
           )
         )
-        .orderBy(desc(paymentTransactions.createdAt))
-        .limit(1)
 
-      const adapter =
-        txn?.providerRef && ['paid', 'authorized'].includes(txn.status)
-          ? getProvider(order.paymentProvider)
-          : null
-
-      if (adapter && txn) {
-        const [configRow] = await db
-          .select()
-          .from(paymentProviderConfigs)
-          .where(
-            and(
-              eq(paymentProviderConfigs.merchantId, merchantId),
-              eq(paymentProviderConfigs.provider, order.paymentProvider)
-            )
-          )
-        if (!configRow) {
-          throw badRequest(
-            'REFUND_FAILED',
-            `Provider "${order.paymentProvider}" is no longer configured`
-          )
-        }
-        const config = {
-          providerId: order.paymentProvider,
-          enabled: configRow.enabled,
-          mode: (configRow.mode === 'live' ? 'live' : 'test') as 'test' | 'live',
-          country: configRow.country ?? null,
-          credentials: decryptJson<Record<string, string>>(configRow.credentials)
-        }
-        const result = await adapter.refund(config, {
-          providerRef: txn.providerRef!,
-          amount: input.amount,
-          currency: order.currency,
-          comment: `Refund for ${order.orderNumber}`
-        })
-        gatewayRef = result.ref
+      const already = Number(existing[0]?.sum ?? 0)
+      if (already + input.amount > order.total + 0.001) {
+        throw badRequest(
+          'BAD_REQUEST',
+          `Refund exceeds order balance (${(order.total - already).toFixed(2)} remaining)`
+        )
       }
-    }
 
-    const refund = await db.transaction(async (tx) => {
-      const [row] = await tx
+      const [refundRow] = await tx
         .insert(refunds)
         .values({
           merchantId,
@@ -524,24 +496,109 @@ export class OrdersService {
           returnId: input.returnId ?? null,
           amount: input.amount,
           method: input.method ?? 'original',
-          providerRef: gatewayRef,
-          status: 'completed'
+          providerRef: null,
+          status: 'pending'
         })
         .returning()
 
-      const totalRefunded = already + input.amount
-      const fullyRefunded = totalRefunded >= order.total - 0.001
+      return { order, refundRow }
+    })
+
+    // ── gateway call (outside any transaction) ──────────────────────────
+    let gatewayRef: string | null = null
+    let failureMessage: string | null = null
+    try {
+      if ((input.method ?? 'original') === 'original' && reserved.order.paymentProvider) {
+        const [txn] = await db
+          .select()
+          .from(paymentTransactions)
+          .where(
+            and(
+              eq(paymentTransactions.orderId, reserved.order.id),
+              eq(paymentTransactions.provider, reserved.order.paymentProvider)
+            )
+          )
+          .orderBy(desc(paymentTransactions.createdAt))
+          .limit(1)
+
+        const adapter =
+          txn?.providerRef && ['paid', 'authorized'].includes(txn.status)
+            ? getProvider(reserved.order.paymentProvider)
+            : null
+
+        if (adapter && txn) {
+          const [configRow] = await db
+            .select()
+            .from(paymentProviderConfigs)
+            .where(
+              and(
+                eq(paymentProviderConfigs.merchantId, merchantId),
+                eq(paymentProviderConfigs.provider, reserved.order.paymentProvider)
+              )
+            )
+          if (!configRow) {
+            throw new Error(
+              `Provider "${reserved.order.paymentProvider}" is no longer configured`
+            )
+          }
+          const config = {
+            providerId: reserved.order.paymentProvider,
+            enabled: configRow.enabled,
+            mode: (configRow.mode === 'live' ? 'live' : 'test') as 'test' | 'live',
+            country: configRow.country ?? null,
+            credentials: decryptJson<Record<string, string>>(configRow.credentials)
+          }
+          const result = await adapter.refund(config, {
+            providerRef: txn.providerRef!,
+            amount: input.amount,
+            currency: reserved.order.currency,
+            comment: `Refund for ${reserved.order.orderNumber}`
+          })
+          gatewayRef = result.ref
+        }
+      }
+    } catch (e) {
+      failureMessage =
+        e instanceof Error ? e.message : `Gateway refund failed for ${reserved.order.orderNumber}`
+    }
+
+    // ── tx2: resolution ─────────────────────────────────────────────────
+    if (failureMessage) {
+      await db
+        .update(refunds)
+        .set({ status: 'failed' })
+        .where(eq(refunds.id, reserved.refundRow.id))
+      throw badRequest('REFUND_FAILED', failureMessage)
+    }
+
+    const refund = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(refunds)
+        .set({ status: 'completed', providerRef: gatewayRef })
+        .where(eq(refunds.id, reserved.refundRow.id))
+        .returning()
+
+      // Completed refunds define the order's payment state — pending/failed
+      // reservations never move money.
+      const [sumRow] = await tx
+        .select({ sum: sql<number>`coalesce(sum(${refunds.amount}), 0)` })
+        .from(refunds)
+        .where(and(eq(refunds.orderId, reserved.order.id), eq(refunds.status, 'completed')))
+      const totalCompleted = Number(sumRow?.sum ?? 0)
+      const fullyRefunded = totalCompleted >= reserved.order.total - 0.001
       await tx
         .update(orders)
         .set({
           paymentStatus: fullyRefunded ? 'refunded' : 'partially_refunded',
-          ...(fullyRefunded && order.status === 'delivered' ? { status: 'refunded' } : {})
+          ...(fullyRefunded && reserved.order.status === 'delivered'
+            ? { status: 'refunded' }
+            : {})
         })
-        .where(eq(orders.id, order.id))
+        .where(eq(orders.id, reserved.order.id))
       return row
     })
 
-    void EmailsService.refundProcessed(merchantId, order.id, input.amount)
+    void EmailsService.refundProcessed(merchantId, reserved.order.id, input.amount)
 
     return ok(refund)
   }

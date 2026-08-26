@@ -25,6 +25,7 @@ import { DiscountsService } from '../discounts/service'
 import { EmailsService } from '../emails/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { markOrderPaidEffects } from '../../shared/order-payments'
+import { runCancelPendingOrder } from '../../shared/order-cancel'
 import { roundForCurrency } from '../../shared/currency'
 import { productSearchCondition, productSearchRank } from '../../shared/product-search'
 import { getProvider, listProviders } from '../../payments/registry'
@@ -644,7 +645,12 @@ export class StorefrontService {
   ): Promise<CheckoutLine[]> {
     const productIds = [...new Set(items.map((i) => i.productId))]
     const variantIds = [...new Set(items.map((i) => i.variantId))]
-    const productRows = await db.select().from(products).where(inArray(products.id, productIds))
+    // Tenant isolation: only this store's products may enter a checkout. A
+    // foreign productId resolves to "not found" — never another merchant's stock.
+    const productRows = await db
+      .select()
+      .from(products)
+      .where(and(inArray(products.id, productIds), eq(products.merchantId, merchantId)))
     const variantRows = await db
       .select()
       .from(productVariants)
@@ -901,13 +907,23 @@ export class StorefrontService {
           total: item.total
         })
         if (item.trackInventory) {
-          const [variant] = await tx
-            .select()
+          // Defence-in-depth: the lock joins the product so a variant can never
+          // decrement stock belonging to another merchant, even if callers change.
+          const [locked] = await tx
+            .select({
+              id: productVariants.id,
+              inventory: productVariants.inventory,
+              merchantId: products.merchantId
+            })
             .from(productVariants)
+            .innerJoin(products, eq(productVariants.productId, products.id))
             .where(eq(productVariants.id, item.variantId))
             .for('update')
-          if (variant) {
-            const before = variant.inventory
+          if (locked && locked.merchantId !== store.merchant.id) {
+            throw badRequest('TENANT_MISMATCH', 'Item does not belong to this store')
+          }
+          if (locked) {
+            const before = locked.inventory
             const after = before - item.quantity
             if (after < 0) throw badRequest('OUT_OF_STOCK', `Not enough stock for ${item.name}`)
             await tx
@@ -1171,58 +1187,11 @@ export class StorefrontService {
     return { orderUpdated, orderId: txn.orderId }
   }
 
-  /** Cancel a pending unpaid provider order inside a tx: restock + restore coupon quota.
+  /** Cancel a pending unpaid provider order — delegates to the authoritative
+   *  shared cancellation (claim + restock + coupon restore).
    *  Returns false when another path (webhook, sweep, sync) already resolved the order. */
   private static async cancelPendingOrder(order: typeof orders.$inferSelect): Promise<boolean> {
-    return db.transaction(async (tx) => {
-      const [claimed] = await tx
-        .update(orders)
-        .set({ status: 'cancelled', paymentStatus: 'failed', expiresAt: null, updatedAt: new Date() })
-        .where(
-          and(
-            eq(orders.id, order.id),
-            eq(orders.status, 'pending'),
-            eq(orders.paymentStatus, 'unpaid')
-          )
-        )
-        .returning({ id: orders.id })
-      // Someone else (sweep / webhook / another request) already resolved it.
-      if (!claimed) return false
-
-      const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, order.id))
-      for (const item of items) {
-        if (!item.variantId) continue
-        const [variant] = await tx
-          .select()
-          .from(productVariants)
-          .where(eq(productVariants.id, item.variantId))
-          .for('update')
-        if (!variant) continue
-        const afterValue = variant.inventory + item.quantity
-        await tx
-          .update(productVariants)
-          .set({ inventory: afterValue })
-          .where(eq(productVariants.id, variant.id))
-        await tx.insert(inventoryLogs).values({
-          merchantId: order.merchantId,
-          variantId: variant.id,
-          change: item.quantity,
-          beforeValue: variant.inventory,
-          afterValue,
-          reason: 'cancel',
-          reference: order.orderNumber
-        })
-      }
-
-      if (order.couponCode) {
-        await tx
-          .update(coupons)
-          .set({ usedCount: sql`greatest(${coupons.usedCount} - 1, 0)` })
-          .where(and(eq(coupons.merchantId, order.merchantId), eq(coupons.code, order.couponCode)))
-      }
-
-      return true
-    })
+    return runCancelPendingOrder(order)
   }
 
   /** Server-side re-verification used by the storefront return page. */
