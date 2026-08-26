@@ -24,7 +24,7 @@
 
 	let refundOpen = $state(false)
 	let refundAmount = $state('')
-	let refundMethod = $state<'original' | 'credit' | 'store_credit'>('original')
+	let refundMethod = $state<'original'>('original')
 	let refundReturnId = $state('')
 
 	const canWrite = () => session.can('orders:write')
@@ -435,9 +435,7 @@
 			<div>
 				<label class="mb-1 block text-sm font-medium text-gray-700">Method</label>
 				<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={refundMethod}>
-					<option value="original">Original</option>
-					<option value="credit">Credit</option>
-					<option value="store_credit">Store credit</option>
+					<option value="original">Original payment method</option>
 				</select>
 			</div>
 			<div class="flex justify-end gap-2 pt-2">

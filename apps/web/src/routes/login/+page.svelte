@@ -7,7 +7,6 @@
 	let email = $state('')
 	let password = $state('')
 	let merchantSlug = $state('')
-	let showSlug = $state(false)
 	let loading = $state(false)
 	let fieldErrors = $state<Record<string, string>>({})
 
@@ -15,7 +14,7 @@
 		loading = true
 		fieldErrors = {}
 		try {
-			await session.login({ email, password, ...(showSlug && merchantSlug ? { merchantSlug } : {}) })
+			await session.login({ email, password, ...(merchantSlug ? { merchantSlug } : {}) })
 			toast.success('Signed in successfully')
 			goto('/dashboard')
 		} catch (e) {
@@ -79,25 +78,22 @@
 				</div>
 
 				<div>
-					<div class="flex items-center justify-between">
-						<label class="text-sm font-medium text-gray-700" for="merchantSlug">Merchant slug</label>
-						<button
-							type="button"
-							class="text-xs font-medium text-indigo-600 hover:text-indigo-700"
-							onclick={() => (showSlug = !showSlug)}
-						>
-							{showSlug ? 'Hide' : 'Optional'}
-						</button>
-					</div>
-					{#if showSlug}
-						<input
-							id="merchantSlug"
-							type="text"
-							bind:value={merchantSlug}
-							class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-							placeholder="acme-store"
-						/>
-						<p class="mt-1 text-xs text-gray-500">Required when multiple stores exist.</p>
+					<label class="mb-1 block text-sm font-medium text-gray-700" for="merchantSlug">
+						Merchant slug <span class="font-normal text-gray-400">(optional)</span>
+					</label>
+					<input
+						id="merchantSlug"
+						type="text"
+						bind:value={merchantSlug}
+						class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+						placeholder="acme-store"
+						aria-describedby="merchantSlug-hint"
+					/>
+					<p id="merchantSlug-hint" class="mt-1 text-xs text-gray-500">
+						Required when multiple stores exist.
+					</p>
+					{#if fieldErrors.merchantSlug}
+						<p class="mt-1 text-xs text-red-600">{fieldErrors.merchantSlug}</p>
 					{/if}
 				</div>
 			</div>
