@@ -105,6 +105,9 @@ export const products = pgTable(
   },
   (t) => [
     uniqueIndex('products_merchant_sku_idx').on(t.merchantId, t.sku),
+    // DB-level backstop for app-level uniqueSlug() — tenant-scoped slug
+    // collisions become impossible even under racing inserts.
+    uniqueIndex('products_merchant_slug_idx').on(t.merchantId, t.slug),
     index('products_merchant_idx').on(t.merchantId),
     index('products_search_idx').using('gin', t.searchVector)
   ]

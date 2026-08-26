@@ -6,7 +6,7 @@ import type { Elysia } from 'elysia'
  */
 
 interface Rule {
-  test: (pathname: string) => boolean
+  test: (pathname: string, method: string) => boolean
   max: number
 }
 
@@ -18,6 +18,9 @@ const RULES: Rule[] = [
   { test: (p) => p === '/api/auth/refresh' || p === '/api/auth/logout', max: 60 },
   { test: (p) => /^\/api\/store\/[^/]+\/auth\/(register|login|password)$/.test(p), max: 10 },
   { test: (p) => p.startsWith('/api/auth'), max: 30 },
+  // Public order lookup leaks order/shipment details with only the order
+  // number as proof — throttle enumeration harder than checkout itself.
+  { test: (p, m) => m === 'GET' && /^\/api\/store\/[^/]+\/orders\/[^/]+$/.test(p), max: 10 },
   { test: (p) => p.endsWith('/checkout') || p.endsWith('/checkout/pay') || p.endsWith('/checkout/preview'), max: 30 },
   { test: (p) => p.endsWith('/orders') && p.includes('/checkout'), max: 30 },
   { test: (p) => p.endsWith('/sync', ), max: 30 },
@@ -47,7 +50,8 @@ export const rateLimiter = (app: Elysia) =>
     if (process.env.NODE_ENV === 'test') return
 
     const { pathname } = new URL(request.url)
-    const rule = RULES.find((r) => r.test(pathname))
+    const method = request.method
+    const rule = RULES.find((r) => r.test(pathname, method))
     if (!rule) return
 
     const now = Date.now()

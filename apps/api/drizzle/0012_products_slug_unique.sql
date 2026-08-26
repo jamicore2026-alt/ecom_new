@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "products_merchant_slug_idx" ON "products" USING btree ("merchant_id","slug");

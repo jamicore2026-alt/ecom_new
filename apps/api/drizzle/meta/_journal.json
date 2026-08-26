@@ -85,6 +85,13 @@
       "when": 1787576805323,
       "tag": "0011_variant_clock_timestamp",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787720292775,
+      "tag": "0012_products_slug_unique",
+      "breakpoints": true
     }
   ]
 }

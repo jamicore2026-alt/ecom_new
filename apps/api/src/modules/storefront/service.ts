@@ -1340,7 +1340,9 @@ export class StorefrontService {
       total: number(order.total),
       currency: order.currency,
       // Public endpoint — billing details stay internal; the confirmation page
-      // only renders shipping info. Order numbers are CSPRNG-suffixed.
+      // renders shipping info plus the customer's OWN checkout note (there are
+      // no merchant-internal notes in the schema). Order numbers are
+      // CSPRNG-suffixed and the lookup route is rate-limited.
       shippingAddress: order.shippingAddress,
       notes: order.notes,
       createdAt: order.createdAt,

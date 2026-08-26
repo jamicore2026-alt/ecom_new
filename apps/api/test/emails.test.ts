@@ -138,7 +138,7 @@ describe('transactional emails', () => {
 
     const log = await waitForLog(order.id, 'order_placed')
     expect(log).not.toBeNull()
-    expect(log!.status).toBe('sent')
+    expect(log!.status).toBe('skipped')
     expect(log!.toEmail).toBe('mail-order@example.com')
     expect(log!.subject).toContain(order.orderNumber)
   })
@@ -171,7 +171,7 @@ describe('transactional emails', () => {
     await EmailsService.orderPaid(order.merchantId, order.id)
     const log = await waitForLog(order.id, 'order_paid')
     expect(log).not.toBeNull()
-    expect(log!.status).toBe('sent')
+    expect(log!.status).toBe('skipped')
     expect(log!.toEmail).toBe('mail-cod@example.com')
   })
 
@@ -185,7 +185,7 @@ describe('transactional emails', () => {
 
     const log = await waitForLog(order.id, 'refund_processed')
     expect(log).not.toBeNull()
-    expect(log!.status).toBe('sent')
+    expect(log!.status).toBe('skipped')
     expect(log!.toEmail).toBe('mail-refund@example.com')
   })
 

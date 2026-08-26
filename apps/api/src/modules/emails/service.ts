@@ -104,9 +104,12 @@ export class EmailsService {
       await db
         .update(emailLogs)
         .set(
-          result.ok
-            ? { status: 'sent', providerRef: result.id ?? null, sentAt: new Date() }
-            : { status: 'failed', error: result.error ?? 'Unknown mailer error' }
+          result.ok && result.id === 'noop'
+            ? // No real provider configured — never claim a delivery that didn't happen.
+              { status: 'skipped', providerRef: 'noop' }
+            : result.ok
+              ? { status: 'sent', providerRef: result.id ?? null, sentAt: new Date() }
+              : { status: 'failed', error: result.error ?? 'Unknown mailer error' }
         )
         .where(eq(emailLogs.id, logId))
     } catch (e) {
