@@ -180,8 +180,7 @@ describe('transactional emails', () => {
 
     await OrdersService.createRefund(order.merchantId, {
       orderId: order.id,
-      amount: Number(order.total),
-      method: 'manual'
+      amount: Number(order.total)
     })
 
     const log = await waitForLog(order.id, 'refund_processed')

@@ -25,7 +25,9 @@ export type PromotionType = (typeof PROMOTION_TYPES)[number]
 export const RETURN_STATUSES = ['pending', 'approved', 'rejected', 'restocked'] as const
 export type ReturnStatus = (typeof RETURN_STATUSES)[number]
 
-export const REFUND_METHODS = ['original', 'credit', 'store_credit'] as const
+/** Only gateway/original refunds exist today — wallet/store-credit needs a
+ *  credit ledger that is not implemented yet. Revisit when a wallet ships. */
+export const REFUND_METHODS = ['original'] as const
 export type RefundMethod = (typeof REFUND_METHODS)[number]
 
 export const REFUND_STATUSES = ['pending', 'completed'] as const

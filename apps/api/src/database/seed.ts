@@ -536,7 +536,11 @@ async function main() {
     zones: [
       { name: 'United States', countries: ['US'], rate: 10, freeAbove: 100 },
       { name: 'Canada', countries: ['CA'], rate: 18, freeAbove: 150 },
-      { name: 'Europe', countries: ['GB', 'DE', 'FR'], rate: 25, freeAbove: 200 }
+      { name: 'Europe', countries: ['GB', 'DE', 'FR'], rate: 25, freeAbove: 200 },
+      // Explicit wildcard default — an empty country list applies everywhere.
+      // Without it, destinations outside the listed zones are rejected at
+      // checkout instead of silently receiving the first zone's rate.
+      { name: 'Rest of world', countries: [], rate: 35 }
     ],
     freeShippingThreshold: 100
   })

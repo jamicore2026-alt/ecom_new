@@ -453,6 +453,11 @@ export class OrdersService {
         .for('update')
       if (!order) throw notFound('NOT_FOUND', 'Order not found')
 
+      // Wallet/store-credit methods need a credit ledger that doesn't exist yet.
+      if (input.method && input.method !== 'original') {
+        throw badRequest('REFUND_METHOD_UNAVAILABLE', `Refund method "${input.method}" is not supported`)
+      }
+
       // Only paid orders can be refunded
       if (!['paid', 'partially_refunded'].includes(order.paymentStatus)) {
         throw badRequest('BAD_REQUEST', 'Only paid orders can be refunded')

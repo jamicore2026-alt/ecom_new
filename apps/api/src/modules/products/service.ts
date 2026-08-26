@@ -3,6 +3,7 @@ import { db } from '../../database/client'
 import { categories, inventoryLogs, productImages, products, productVariants } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { productSearchCondition } from '../../shared/product-search'
+import { setVariantInventoryTx } from '../../shared/inventory'
 import { parseCsv, toCsv } from '../../shared/csv'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
@@ -446,26 +447,18 @@ export class ProductsService {
       case 'set_inventory': {
         const value = Math.max(0, Math.floor(Number(input.value) || 0))
         await db.transaction(async (tx) => {
+          // Locked read inside the tx — a concurrent sale between read and
+          // write would otherwise be silently overwritten (P1-05).
           const variants = await tx
             .select()
             .from(productVariants)
             .where(inArray(productVariants.productId, ids))
-          await tx
-            .update(productVariants)
-            .set({ inventory: value })
-            .where(inArray(productVariants.productId, ids))
-          if (variants.length) {
-            await tx.insert(inventoryLogs).values(
-              variants.map((v) => ({
-                merchantId,
-                variantId: v.id,
-                change: value - v.inventory,
-                beforeValue: v.inventory,
-                afterValue: value,
-                reason: 'adjustment',
-                reference: 'bulk-edit'
-              }))
-            )
+            .for('update')
+          for (const v of variants) {
+            await setVariantInventoryTx(tx, merchantId, v.id, value, {
+              reason: 'adjustment',
+              reference: 'bulk-edit'
+            })
           }
         })
         break
@@ -902,6 +895,9 @@ export class ProductsService {
             .where(and(eq(products.merchantId, merchantId), eq(products.sku, sku)))
         }
 
+        // One transaction per product block: the product upsert AND all its
+        // variant writes commit or roll back together — a mid-block failure can
+        // no longer leave a half-imported product (P1-04).
         const productId = await db.transaction(async (tx) => {
           if (existing) {
             const patch: Partial<typeof products.$inferInsert> = {}
@@ -977,23 +973,29 @@ export class ProductsService {
 
             const match = vSku ? bySku.get(vSku) : undefined
             if (match) {
-              const patch: Partial<typeof productVariants.$inferInsert> = {}
-              if (vPrice !== null) patch.price = vPrice
-              if (optionValues !== undefined) patch.optionValues = optionValues
-              if (inventory !== undefined && inventory !== match.inventory) {
-                patch.inventory = inventory
-                await db.insert(inventoryLogs).values({
-                  merchantId,
-                  variantId: match.id,
-                  change: inventory - match.inventory,
-                  beforeValue: match.inventory,
-                  afterValue: inventory,
-                  reason: 'import',
-                  reference: 'csv-import'
+              const pricePatch: Partial<typeof productVariants.$inferInsert> = {}
+              if (vPrice !== null) pricePatch.price = vPrice
+              if (optionValues !== undefined) pricePatch.optionValues = optionValues
+              const inventoryChanged =
+                inventory !== undefined && inventory !== match.inventory
+              if (inventoryChanged || Object.keys(pricePatch).length > 0) {
+                // Absolute inventory goes through the locked helper so a
+                // concurrent sale between the earlier read and this write is
+                // never lost; price/option updates ride the same transaction.
+                await db.transaction(async (tx) => {
+                  if (pricePatch.price !== undefined || pricePatch.optionValues !== undefined) {
+                    await tx
+                      .update(productVariants)
+                      .set(pricePatch)
+                      .where(eq(productVariants.id, match.id))
+                  }
+                  if (inventoryChanged) {
+                    await setVariantInventoryTx(tx, merchantId, match.id, inventory!, {
+                      reason: 'import',
+                      reference: 'csv-import'
+                    })
+                  }
                 })
-              }
-              if (Object.keys(patch).length > 0) {
-                await db.update(productVariants).set(patch).where(eq(productVariants.id, match.id))
               }
             } else {
               await db.insert(productVariants).values({

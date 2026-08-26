@@ -30,9 +30,7 @@ export const returnStatusSchema = t.Enum({
 })
 
 export const refundMethodSchema = t.Enum({
-  original: 'original',
-  credit: 'credit',
-  store_credit: 'store_credit'
+  original: 'original'
 })
 
 export const updateStatusBody = t.Object({

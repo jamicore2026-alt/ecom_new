@@ -692,25 +692,50 @@ export class StorefrontService {
     if (freeAt > 0 && subtotal >= freeAt) return { method: 'Free shipping', rate: 0 }
     const zones = store.shipping.zones
     if (!zones.length) return { method: 'Flat rate', rate: 0 }
+    // A zone with no country restriction applies everywhere (wildcard); a
+    // listed zone only matches its countries. An unmatched country is rejected
+    // instead of silently charging the first zone's rate (P1-10).
     const zone =
-      zones.find((z) => !!country && (z.countries ?? []).includes(country)) ?? zones[0]
+      zones.find(
+        (z) => !z.countries?.length || (!!country && z.countries.includes(country))
+      ) ?? null
+    if (!zone) {
+      throw badRequest('UNSUPPORTED_COUNTRY', `We don't ship to ${country ?? 'this country'}`)
+    }
     if (zone.freeAbove && subtotal >= zone.freeAbove) return { method: zone.name, rate: 0 }
     return { method: zone.name, rate: number(zone.rate) }
   }
 
-  private static taxFor(store: StorePayload, taxable: number, currency: string) {
+  private static taxFor(
+    store: StorePayload,
+    taxable: number,
+    currency: string,
+    location?: { country?: string; state?: string }
+  ) {
     if (!store.taxes.autoCalculate) return 0
     const rates = store.taxes.rates
     if (!rates.length) return 0
-    return roundForCurrency(taxable * (number(rates[0].rate) / 100), currency)
+    // Region resolution (P1-11): most specific configured match wins —
+    // "US-NY" style combos, then bare state, then bare country, then an
+    // empty-region default row. Case-insensitive because merchants type
+    // regions free-form ("us", "US").
+    const norm = (v?: string) => v?.trim().toLowerCase() ?? ''
+    const c = norm(location?.country)
+    const s = norm(location?.state)
+    const row =
+      (c && s && rates.find((r) => norm(r.region) === `${c}-${s}`)) ??
+      (s ? rates.find((r) => norm(r.region) === s) : undefined) ??
+      (c ? rates.find((r) => norm(r.region) === c) : undefined) ??
+      rates.find((r) => !r.region?.trim())
+    if (!row) return 0
+    return roundForCurrency(taxable * (number(row.rate) / 100), currency)
   }
 
   private static async buildSummary(
     slug: string,
     body: CheckoutPreviewInput,
     country?: string
-  ) {
-    const store = await this.resolveStore(slug)
+  ) {    const store = await this.resolveStore(slug)
     const currency = store.merchant.currency
     const items = await this.resolveItems(store.merchant.id, body.items, currency)
     const subtotal = roundForCurrency(items.reduce((sum, i) => sum + i.total, 0), currency)
@@ -743,7 +768,16 @@ export class StorefrontService {
     const shipping = coupon?.freeShipping
       ? { method: 'Free shipping', rate: 0 }
       : this.shippingRate(store, subtotal, country)
-    const taxTotal = this.taxFor(store, subtotal - discountTotal + shipping.rate, currency)
+    const address = body.shippingAddress as { country?: unknown; state?: unknown } | undefined
+    const taxTotal = this.taxFor(
+      store,
+      subtotal - discountTotal + shipping.rate,
+      currency,
+      {
+        country: typeof address?.country === 'string' ? address.country : undefined,
+        state: typeof address?.state === 'string' ? address.state : undefined
+      }
+    )
     const total = roundForCurrency(subtotal + shipping.rate - discountTotal + taxTotal, currency)
 
     return { store, items, subtotal, discountTotal, shipping, taxTotal, total, coupon }

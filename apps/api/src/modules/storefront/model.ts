@@ -31,11 +31,6 @@ const checkoutItem = t.Object({
   quantity: t.Integer({ minimum: 1, maximum: 99 })
 })
 
-export const checkoutPreviewBody = t.Object({
-  items: t.Array(checkoutItem, { minItems: 1, maxItems: 50 }),
-  couponCode: t.Optional(t.String({ minLength: 1, maxLength: 100 }))
-})
-
 export const addressBody = t.Object({
   name: t.Optional(t.String({ maxLength: 255 })),
   line1: t.Optional(t.String({ maxLength: 255 })),
@@ -45,6 +40,14 @@ export const addressBody = t.Object({
   postalCode: t.Optional(t.String({ maxLength: 20 })),
   country: t.Optional(t.String({ maxLength: 2 })),
   phone: t.Optional(t.String({ maxLength: 30 }))
+})
+
+export const checkoutPreviewBody = t.Object({
+  items: t.Array(checkoutItem, { minItems: 1, maxItems: 50 }),
+  couponCode: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
+  // Declared so the preview contract matches final checkout — the storefront
+  // re-previews on country change to quote shipping/tax for the real destination.
+  shippingAddress: t.Optional(addressBody)
 })
 
 export const checkoutBody = t.Object({
