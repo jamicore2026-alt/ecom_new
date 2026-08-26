@@ -17,6 +17,13 @@ const assertCouponValue = (type: string, value: number) => {
   }
 }
 
+export interface PromoLine {
+  productId: string
+  categoryId: string | null
+  price: number
+  quantity: number
+}
+
 export class DiscountsService {
   /* -------------------------------- coupons -------------------------------- */
 
@@ -149,6 +156,66 @@ export class DiscountsService {
 
   /* ------------------------------ promotions ------------------------------- */
 
+  /**
+   * Resolve the single best active promotion for a cart (P0-05).
+   * Deterministic: highest computed discount wins; ties break on creation order.
+   * Never trusts client-supplied discount totals — everything is recomputed here.
+   */
+  static async resolvePromotion(
+    merchantId: string,
+    currency: string,
+    lines: PromoLine[]
+  ): Promise<{ promotion: typeof promotions.$inferSelect; discount: number } | null> {
+    const now = new Date()
+    const rows = await db
+      .select()
+      .from(promotions)
+      .where(and(eq(promotions.merchantId, merchantId), eq(promotions.status, 'active')))
+
+    let best: { promotion: typeof promotions.$inferSelect; discount: number } | null = null
+    for (const promotion of rows) {
+      if (promotion.startsAt && promotion.startsAt > now) continue // future
+      if (promotion.endsAt && promotion.endsAt < now) continue // expired
+      if (promotion.usageLimit != null && promotion.usedCount >= promotion.usageLimit) continue // exhausted
+
+      const matched = lines.filter((l) => {
+        const scope = promotion.appliesTo ?? { scope: 'all' as const }
+        if (scope.scope === 'products') return scope.productIds?.includes(l.productId) ?? false
+        if (scope.scope === 'category')
+          return !!scope.categoryId && scope.categoryId === l.categoryId
+        return true
+      })
+      if (!matched.length) continue
+
+      const subtotal = matched.reduce((s, l) => s + roundForCurrency(l.price * l.quantity, currency), 0)
+      if (subtotal <= 0) continue
+
+      let discount = 0
+      if (promotion.type === 'buy_x_get_y') {
+        // Every (buyQty+getQty)-th unit across matched lines gets discountPercent
+        // off — cheapest units are discounted first so the merchant's intent
+        // ("buy 2 get 1 half price") is applied deterministically.
+        const groupSize = Math.max(2, promotion.buyQty + Math.max(1, promotion.getQty))
+        const unitPrices: number[] = []
+        for (const l of matched) {
+          for (let i = 0; i < l.quantity; i++) unitPrices.push(roundForCurrency(l.price, currency))
+        }
+        unitPrices.sort((a, b) => a - b)
+        const freeUnits = Math.floor(unitPrices.length / groupSize) * Math.max(1, promotion.getQty)
+        discount = unitPrices
+          .slice(0, freeUnits)
+          .reduce((s, p) => s + roundForCurrency(p * (promotion.discountPercent / 100), currency), 0)
+      } else {
+        // discount_on_products — percentage off the matched lines' subtotal.
+        discount = subtotal * (promotion.discountPercent / 100)
+      }
+
+      discount = Math.min(Math.max(0, roundForCurrency(discount, currency)), subtotal)
+      if (!best || discount > best.discount) best = { promotion, discount }
+    }
+    return best
+  }
+
   static async listPromotions(merchantId: string, q: { page?: string; limit?: string; status?: string }) {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [eq(promotions.merchantId, merchantId)]
@@ -182,12 +249,18 @@ export class DiscountsService {
       name: string
       type: string
       discountPercent: number
+      buyQty?: number
+      getQty?: number
       appliesTo?: { scope: PromotionScope; productIds?: string[]; categoryId?: string }
       startsAt?: string
       endsAt?: string
+      usageLimit?: number | null
       status?: string
     }
   ) {
+    if (input.discountPercent <= 0 || input.discountPercent > 100) {
+      throw badRequest('BAD_REQUEST', 'Discount percent must be between 1 and 100')
+    }
     const [created] = await db
       .insert(promotions)
       .values({
@@ -195,9 +268,12 @@ export class DiscountsService {
         name: input.name,
         type: input.type,
         discountPercent: input.discountPercent,
+        buyQty: Math.max(1, Math.floor(input.buyQty ?? 2)),
+        getQty: Math.max(1, Math.floor(input.getQty ?? 1)),
         appliesTo: input.appliesTo ?? ({ scope: 'all' } as const),
         startsAt: toDate(input.startsAt),
         endsAt: toDate(input.endsAt),
+        usageLimit: input.usageLimit ?? null,
         status: input.status ?? 'active'
       })
       .returning()
@@ -211,9 +287,12 @@ export class DiscountsService {
       name?: string
       type?: string
       discountPercent?: number
+      buyQty?: number
+      getQty?: number
       appliesTo?: { scope: PromotionScope; productIds?: string[]; categoryId?: string }
       startsAt?: string
       endsAt?: string
+      usageLimit?: number | null
       status?: string
     }
   ) {
@@ -223,10 +302,17 @@ export class DiscountsService {
       .where(and(eq(promotions.id, id), eq(promotions.merchantId, merchantId)))
     if (!promotion) throw notFound('NOT_FOUND', 'Promotion not found')
 
+    if (input.discountPercent !== undefined && (input.discountPercent <= 0 || input.discountPercent > 100)) {
+      throw badRequest('BAD_REQUEST', 'Discount percent must be between 1 and 100')
+    }
+
     const values: Record<string, unknown> = {}
     for (const key of ['name', 'type', 'discountPercent', 'appliesTo', 'status'] as const) {
       if (input[key] !== undefined) values[key] = input[key]
     }
+    if (input.buyQty !== undefined) values.buyQty = Math.max(1, Math.floor(input.buyQty))
+    if (input.getQty !== undefined) values.getQty = Math.max(1, Math.floor(input.getQty))
+    if (input.usageLimit !== undefined) values.usageLimit = input.usageLimit
     if (input.startsAt !== undefined) values.startsAt = toDate(input.startsAt)
     if (input.endsAt !== undefined) values.endsAt = toDate(input.endsAt)
 

@@ -54,7 +54,9 @@ export const createRefundBody = t.Object({
   orderId: t.String({ minLength: 1 }),
   returnId: t.Optional(t.String()),
   amount: t.Number({ minimum: 0.01 }),
-  method: t.Optional(refundMethodSchema)
+  method: t.Optional(refundMethodSchema),
+  // Client-supplied key for safe retries — same key never double-refunds.
+  idempotencyKey: t.Optional(t.String({ maxLength: 80 }))
 })
 
 export const orderQuery = t.Object({

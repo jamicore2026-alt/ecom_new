@@ -243,6 +243,9 @@ export const orders = pgTable(
     paymentProvider: varchar('payment_provider', { length: 30 }),
     /** Coupon applied at purchase time — lets cancellations restore the usage quota. */
     couponCode: varchar('coupon_code', { length: 100 }),
+    promotionId: varchar('promotion_id', { length: 30 }).references(() => promotions.id, {
+      onDelete: 'set null'
+    }),
     /** Marketing attribution captured at checkout (funnel `paid` metric). */
     attributionChannel: varchar('attribution_channel', { length: 20 }),
     expiresAt: timestamp('expires_at'),
@@ -356,9 +359,16 @@ export const refunds = pgTable(
     method: varchar('method', { length: 30 }).notNull().default('original'),
     providerRef: varchar('provider_ref', { length: 255 }),
     status: varchar('status', { length: 20 }).notNull().default('pending'),
+    // Idempotent retries: the same key can never create a second external refund.
+    idempotencyKey: varchar('idempotency_key', { length: 80 }),
+    attemptCount: integer('attempt_count').notNull().default(1),
+    lastError: text('last_error'),
     createdAt: timestamp('created_at').defaultNow().notNull()
   },
-  (t) => [index('refunds_merchant_idx').on(t.merchantId, t.orderId)]
+  (t) => [
+    index('refunds_merchant_idx').on(t.merchantId, t.orderId),
+    index('refunds_idempotency_idx').on(t.idempotencyKey)
+  ]
 )
 
 /* -------------------------------- discounts ------------------------------- */
@@ -390,12 +400,17 @@ export const promotions = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     type: varchar('type', { length: 30 }).notNull().default('discount_on_products'),
     discountPercent: money('discount_percent').notNull().default(0),
+    // buy_x_get_y semantics: every (buyQty+getQty)-th unit gets discountPercent off.
+    buyQty: integer('buy_qty').notNull().default(2),
+    getQty: integer('get_qty').notNull().default(1),
     appliesTo: jsonb('applies_to')
       .$type<{ scope: 'all' | 'products' | 'category'; productIds?: string[]; categoryId?: string }>()
       .notNull()
       .default({ scope: 'all' }),
     startsAt: timestamp('starts_at'),
     endsAt: timestamp('ends_at'),
+    usageLimit: integer('usage_limit'),
+    usedCount: integer('used_count').notNull().default(0),
     status: varchar('status', { length: 20 }).notNull().default('active'),
     createdAt: timestamp('created_at').defaultNow().notNull()
   },

@@ -15,6 +15,7 @@ import {
   productImages,
   products,
   productVariants,
+  promotions,
   reviews,
   shippingSettings,
   storeSettings,
@@ -88,6 +89,7 @@ interface CheckoutLine {
   sku: string | null
   price: number
   image: string | null
+  categoryId: string | null
   optionValues: Record<string, string>
   trackInventory: boolean
   quantity: number
@@ -679,6 +681,7 @@ export class StorefrontService {
         sku: variant.sku ?? product.sku,
         price,
         image: variant.image ?? null,
+        categoryId: product.categoryId ?? null,
         optionValues: variant.optionValues,
         trackInventory: product.trackInventory,
         quantity: item.quantity,
@@ -765,6 +768,27 @@ export class StorefrontService {
       discountTotal = roundForCurrency(data.discount, currency)
     }
 
+    // Server-side promotion resolution (P0-05) — the best active promotion is
+    // applied automatically, before coupons, and never trusts client totals.
+    const promo = await DiscountsService.resolvePromotion(
+      store.merchant.id,
+      currency,
+      items.map((l) => ({
+        productId: l.productId,
+        categoryId: l.categoryId,
+        price: l.price,
+        quantity: l.quantity
+      }))
+    )
+    let promotionDiscount = 0
+    if (promo && promo.discount > 0) {
+      promotionDiscount = promo.discount
+      discountTotal = roundForCurrency(
+        Math.min(promotionDiscount + discountTotal, subtotal), // combined discounts can never invert the cart
+        currency
+      )
+    }
+
     const shipping = coupon?.freeShipping
       ? { method: 'Free shipping', rate: 0 }
       : this.shippingRate(store, subtotal, country)
@@ -780,22 +804,33 @@ export class StorefrontService {
     )
     const total = roundForCurrency(subtotal + shipping.rate - discountTotal + taxTotal, currency)
 
-    return { store, items, subtotal, discountTotal, shipping, taxTotal, total, coupon }
-  }
-
-  static async preview(slug: string, body: CheckoutPreviewInput) {
-    const { store, items, subtotal, discountTotal, shipping, taxTotal, total, coupon } =
-      await this.buildSummary(slug, body, body.shippingAddress?.country)
-    return ok({
+    return {
+      store,
       items,
       subtotal,
       discountTotal,
-      shippingTotal: shipping.rate,
+      promotionDiscount,
+      promotion: promo ? { id: promo.promotion.id, name: promo.promotion.name } : null,
+      shipping,
       taxTotal,
       total,
-      coupon,
-      shipping: { method: shipping.method, rate: shipping.rate },
-      currency: store.merchant.currency
+      coupon
+    }
+  }
+
+  static async preview(slug: string, body: CheckoutPreviewInput) {
+    const summary = await this.buildSummary(slug, body, body.shippingAddress?.country)
+    return ok({
+      items: summary.items,
+      subtotal: summary.subtotal,
+      discountTotal: summary.discountTotal,
+      promotion: summary.promotion,
+      shippingTotal: summary.shipping.rate,
+      taxTotal: summary.taxTotal,
+      total: summary.total,
+      coupon: summary.coupon,
+      shipping: { method: summary.shipping.method, rate: summary.shipping.rate },
+      currency: summary.store.merchant.currency
     })
   }
 
@@ -847,6 +882,7 @@ export class StorefrontService {
       taxTotal: number
       total: number
       coupon: { code: string } | null
+      promotionId?: string | null
     },
     opts: { paymentStatus: 'unpaid' | 'paid'; provider?: string; expiresAt?: Date | null }
   ) {
@@ -856,6 +892,29 @@ export class StorefrontService {
     const orderNumber = `#W${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`
 
     return db.transaction(async (tx) => {
+      // Acquire ALL variant locks FIRST — before customer/order/quota writes —
+      // so every checkout transaction takes row locks in one global order.
+      // Concurrent checkouts then queue on the variant instead of deadlocking
+      // across mixed resource orders.
+      const lockedVariants = new Map<string, number>()
+      for (const item of summary.items.filter((i) => i.trackInventory)) {
+        const [locked] = await tx
+          .select({
+            id: productVariants.id,
+            inventory: productVariants.inventory,
+            merchantId: products.merchantId
+          })
+          .from(productVariants)
+          .innerJoin(products, eq(productVariants.productId, products.id))
+          .where(eq(productVariants.id, item.variantId))
+          .for('update')
+        if (!locked) continue
+        if (locked.merchantId !== store.merchant.id) {
+          throw badRequest('TENANT_MISMATCH', 'Item does not belong to this store')
+        }
+        lockedVariants.set(locked.id, locked.inventory)
+      }
+
       const email = body.email.trim().toLowerCase()
       let customerId: string | null = null
       const [existing] = await tx
@@ -924,59 +983,15 @@ export class StorefrontService {
           paymentMethod: body.paymentMethod,
           paymentProvider: opts.provider ?? null,
           couponCode: summary.coupon?.code ?? null,
+          promotionId: summary.promotionId ?? null,
           attributionChannel: 'direct',
           expiresAt: opts.expiresAt ?? null
         })
         .returning()
 
-      for (const item of summary.items) {
-        await tx.insert(orderItems).values({
-          orderId: order.id,
-          productId: item.productId,
-          variantId: item.variantId,
-          name: item.name,
-          sku: item.sku,
-          price: item.price,
-          quantity: item.quantity,
-          total: item.total
-        })
-        if (item.trackInventory) {
-          // Defence-in-depth: the lock joins the product so a variant can never
-          // decrement stock belonging to another merchant, even if callers change.
-          const [locked] = await tx
-            .select({
-              id: productVariants.id,
-              inventory: productVariants.inventory,
-              merchantId: products.merchantId
-            })
-            .from(productVariants)
-            .innerJoin(products, eq(productVariants.productId, products.id))
-            .where(eq(productVariants.id, item.variantId))
-            .for('update')
-          if (locked && locked.merchantId !== store.merchant.id) {
-            throw badRequest('TENANT_MISMATCH', 'Item does not belong to this store')
-          }
-          if (locked) {
-            const before = locked.inventory
-            const after = before - item.quantity
-            if (after < 0) throw badRequest('OUT_OF_STOCK', `Not enough stock for ${item.name}`)
-            await tx
-              .update(productVariants)
-              .set({ inventory: after })
-              .where(eq(productVariants.id, item.variantId))
-            await tx.insert(inventoryLogs).values({
-              merchantId: store.merchant.id,
-              variantId: item.variantId,
-              change: -item.quantity,
-              beforeValue: before,
-              afterValue: after,
-              reason: 'sale',
-              reference: orderNumber
-            })
-          }
-        }
-      }
-
+      // Coupon + promotion quota claims come BEFORE the variant locks so every
+      // transaction acquires row locks in the same order (quota rows → variant
+      // rows). Mixed acquisition orders deadlocked under concurrent checkouts.
       if (summary.coupon) {
         // Conditional increment — a concurrent checkout can't push usedCount past usageLimit.
         const claimed = await tx
@@ -998,6 +1013,61 @@ export class StorefrontService {
         }
       }
 
+      if (summary.promotionId) {
+        // Same race-safe claim for promotion usage — the whole order rolls
+        // back if the limit was hit between pricing and commit.
+        const [claimedPromo] = await tx
+          .update(promotions)
+          .set({ usedCount: sql`${promotions.usedCount} + 1` })
+          .where(
+            and(
+              eq(promotions.id, summary.promotionId),
+              eq(promotions.merchantId, store.merchant.id),
+              or(
+                isNull(promotions.usageLimit),
+                lt(promotions.usedCount, promotions.usageLimit)
+              )
+            )
+          )
+          .returning({ id: promotions.id })
+        if (!claimedPromo) {
+          throw badRequest('PROMOTION_USAGE_LIMIT', 'Promotion usage limit reached')
+        }
+      }
+
+      for (const item of summary.items) {
+        await tx.insert(orderItems).values({
+          orderId: order.id,
+          productId: item.productId,
+          variantId: item.variantId,
+          name: item.name,
+          sku: item.sku,
+          price: item.price,
+          quantity: item.quantity,
+          total: item.total
+        })
+        if (item.trackInventory) {
+          // Already locked at the top of the transaction — reuse that snapshot.
+          const before = lockedVariants.get(item.variantId)
+          if (before === undefined) continue
+          const after = before - item.quantity
+          if (after < 0) throw badRequest('OUT_OF_STOCK', `Not enough stock for ${item.name}`)
+          await tx
+            .update(productVariants)
+            .set({ inventory: after })
+            .where(eq(productVariants.id, item.variantId))
+          await tx.insert(inventoryLogs).values({
+            merchantId: store.merchant.id,
+            variantId: item.variantId,
+            change: -item.quantity,
+            beforeValue: before,
+            afterValue: after,
+            reason: 'sale',
+            reference: orderNumber
+          })
+        }
+      }
+
       return order
     })
   }
@@ -1014,19 +1084,19 @@ export class StorefrontService {
       )
     }
 
-    const { store, items, subtotal, discountTotal, shipping, taxTotal, total, coupon } =
-      await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
+    const summary = await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
 
     // Legacy "card" demo method is treated as paid-on-place; everything else waits for payment.
     const paymentStatus = body.paymentMethod === 'card' ? 'paid' : 'unpaid'
-    const result = await this.createOrderTx(store, body, {
-      items,
-      subtotal,
-      discountTotal,
-      shipping,
-      taxTotal,
-      total,
-      coupon
+    const result = await this.createOrderTx(summary.store, body, {
+      items: summary.items,
+      subtotal: summary.subtotal,
+      discountTotal: summary.discountTotal,
+      shipping: summary.shipping,
+      taxTotal: summary.taxTotal,
+      total: summary.total,
+      coupon: summary.coupon,
+      promotionId: summary.promotion?.id ?? null
     }, { paymentStatus })
 
     void EmailsService.orderPlaced(result)
@@ -1081,7 +1151,8 @@ export class StorefrontService {
       shipping: summary.shipping,
       taxTotal: summary.taxTotal,
       total: summary.total,
-      coupon: summary.coupon
+      coupon: summary.coupon,
+      promotionId: summary.promotion?.id ?? null
     }, {
       paymentStatus: 'unpaid',
       provider: providerId,

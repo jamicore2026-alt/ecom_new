@@ -1,4 +1,5 @@
 import { and, count, desc, eq, gte, ilike, lte, or, sql } from 'drizzle-orm'
+import { createId } from '@paralleldrive/cuid2'
 import { db } from '../../database/client'
 import {
   customers,
@@ -183,6 +184,16 @@ export class OrdersService {
       .from(orders)
       .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Order not found')
+
+    // Cancellation is a domain operation (restock + coupon restore + payment
+    // validation), never a plain status write. Route it through the
+    // authoritative service so the generic endpoint cannot bypass side effects.
+    if (input.status === 'cancelled' && order.status !== 'cancelled') {
+      if (input.paymentStatus && input.paymentStatus !== order.paymentStatus) {
+        throw badRequest('INVALID_TRANSITION', 'Cannot combine cancellation with a payment change')
+      }
+      return this.cancel(merchantId, id)
+    }
 
     if (input.status && input.status !== order.status) {
       const allowed = TRANSITIONS[order.status as OrderStatus]
@@ -438,8 +449,23 @@ export class OrdersService {
 
   static async createRefund(
     merchantId: string,
-    input: { orderId: string; returnId?: string; amount: number; method?: string }
+    input: { orderId: string; returnId?: string; amount: number; method?: string; idempotencyKey?: string }
   ) {
+    // Idempotent replay: a client retrying with the same key gets the original
+    // refund back instead of creating a second external refund (P0-02).
+    if (input.idempotencyKey) {
+      const [existing] = await db
+        .select()
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.merchantId, merchantId),
+            eq(refunds.idempotencyKey, input.idempotencyKey)
+          )
+        )
+      if (existing) return ok(existing)
+    }
+
     // ── tx1: reservation ────────────────────────────────────────────────
     // Lock the order, validate the refundable balance and insert a 'pending'
     // refund row that COUNTS toward the balance. Two concurrent refunds
@@ -502,7 +528,9 @@ export class OrdersService {
           amount: input.amount,
           method: input.method ?? 'original',
           providerRef: null,
-          status: 'pending'
+          status: 'pending',
+          idempotencyKey: input.idempotencyKey ?? createId(),
+          attemptCount: 1
         })
         .returning()
 
@@ -571,7 +599,7 @@ export class OrdersService {
     if (failureMessage) {
       await db
         .update(refunds)
-        .set({ status: 'failed' })
+        .set({ status: 'failed', lastError: failureMessage })
         .where(eq(refunds.id, reserved.refundRow.id))
       throw badRequest('REFUND_FAILED', failureMessage)
     }
@@ -606,6 +634,144 @@ export class OrdersService {
     void EmailsService.refundProcessed(merchantId, reserved.order.id, input.amount)
 
     return ok(refund)
+  }
+
+  /**
+   * Re-attempt a failed (or crashed-pending) refund through the gateway using
+   * the SAME idempotency key, so a provider that saw the first attempt dedupes
+   * instead of paying out twice. Attempt count is tracked for auditability.
+   */
+  static async retryRefund(merchantId: string, refundId: string) {
+    const [refund] = await db
+      .select()
+      .from(refunds)
+      .where(and(eq(refunds.id, refundId), eq(refunds.merchantId, merchantId)))
+    if (!refund) throw notFound('NOT_FOUND', 'Refund not found')
+    if (refund.status === 'completed') return ok(refund)
+    if (refund.status !== 'failed' && refund.status !== 'pending') {
+      throw badRequest('BAD_REQUEST', `Cannot retry a ${refund.status} refund`)
+    }
+
+    const [order] = await db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.id, refund.orderId), eq(orders.merchantId, merchantId)))
+    if (!order) throw notFound('NOT_FOUND', 'Order not found')
+
+    let gatewayRef: string | null = null
+    let failureMessage: string | null = null
+    try {
+      if (order.paymentProvider) {
+        const [txn] = await db
+          .select()
+          .from(paymentTransactions)
+          .where(
+            and(
+              eq(paymentTransactions.orderId, order.id),
+              eq(paymentTransactions.provider, order.paymentProvider)
+            )
+          )
+          .orderBy(desc(paymentTransactions.createdAt))
+          .limit(1)
+
+        const adapter =
+          txn?.providerRef && ['paid', 'authorized'].includes(txn.status)
+            ? getProvider(order.paymentProvider)
+            : null
+
+        if (adapter && txn) {
+          const [configRow] = await db
+            .select()
+            .from(paymentProviderConfigs)
+            .where(
+              and(
+                eq(paymentProviderConfigs.merchantId, merchantId),
+                eq(paymentProviderConfigs.provider, order.paymentProvider)
+              )
+            )
+          if (!configRow) throw new Error(`Provider "${order.paymentProvider}" is no longer configured`)
+          const config = {
+            providerId: order.paymentProvider,
+            enabled: configRow.enabled,
+            mode: (configRow.mode === 'live' ? 'live' : 'test') as 'test' | 'live',
+            country: configRow.country ?? null,
+            credentials: decryptJson<Record<string, string>>(configRow.credentials)
+          }
+          const result = await adapter.refund(config, {
+            providerRef: txn.providerRef!,
+            amount: Number(refund.amount),
+            currency: order.currency,
+            comment: `Retry refund for ${order.orderNumber}`
+          })
+          gatewayRef = result.ref
+        }
+      }
+    } catch (e) {
+      failureMessage = e instanceof Error ? e.message : 'Gateway refund retry failed'
+    }
+
+    if (failureMessage) {
+      const [row] = await db
+        .update(refunds)
+        .set({
+          status: 'failed',
+          lastError: failureMessage,
+          attemptCount: sql`${refunds.attemptCount} + 1`
+        })
+        .where(eq(refunds.id, refund.id))
+        .returning()
+      throw badRequest('REFUND_FAILED', `${failureMessage} (attempt ${row.attemptCount})`)
+    }
+
+    // Completed — recompute the order aggregate exactly like a fresh refund.
+    return db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(refunds)
+        .set({
+          status: 'completed',
+          providerRef: gatewayRef,
+          lastError: null,
+          attemptCount: sql`${refunds.attemptCount} + 1`
+        })
+        .where(eq(refunds.id, refund.id))
+        .returning()
+
+      const [sumRow] = await tx
+        .select({ sum: sql<number>`coalesce(sum(${refunds.amount}), 0)` })
+        .from(refunds)
+        .where(and(eq(refunds.orderId, order.id), eq(refunds.status, 'completed')))
+      const totalCompleted = Number(sumRow?.sum ?? 0)
+      const fullyRefunded = totalCompleted >= order.total - 0.001
+      await tx
+        .update(orders)
+        .set({
+          paymentStatus: fullyRefunded ? 'refunded' : 'partially_refunded',
+          ...(fullyRefunded && order.status === 'delivered' ? { status: 'refunded' } : {})
+        })
+        .where(eq(orders.id, order.id))
+
+      void EmailsService.refundProcessed(merchantId, order.id, Number(refund.amount))
+      return ok(row)
+    })
+  }
+
+  /**
+   * Crash-reconciliation sweep: a refund stuck in 'pending' long past any
+   * plausible gateway timeout means the process died between the reservation
+   * and the resolution transaction. Release the reservation (mark failed) so
+   * the balance becomes refundable again — the retry endpoint can still push
+   * it through with the same idempotency key.
+   */
+  static async reconcileStaleRefunds() {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const released = await db
+      .update(refunds)
+      .set({ status: 'failed', lastError: 'reconciliation timeout — pending for over 24h' })
+      .where(and(eq(refunds.status, 'pending'), lte(refunds.createdAt, cutoff)))
+      .returning({ id: refunds.id })
+    if (released.length > 0) {
+      console.log(`[refunds] reconciliation released ${released.length} stale pending refund(s)`)
+    }
   }
 
   static async listRefunds(merchantId: string, orderId?: string) {

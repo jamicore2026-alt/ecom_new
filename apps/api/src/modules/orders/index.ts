@@ -37,3 +37,6 @@ export const ordersModule = new Elysia({ prefix: '/api' })
   .post('/refunds', async ({ body, auth }) => OrdersService.createRefund(auth.merchant.id, body), {
     body: createRefundBody
   })
+  .post('/refunds/:id/retry', async ({ params, auth }) =>
+    OrdersService.retryRefund(auth.merchant.id, params.id)
+  )

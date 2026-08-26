@@ -24,6 +24,8 @@ export const promotionBody = t.Object({
   name: t.String({ minLength: 1, maxLength: 255 }),
   type: t.Enum({ discount_on_products: 'discount_on_products', buy_x_get_y: 'buy_x_get_y' }),
   discountPercent: t.Number({ minimum: 0, maximum: 100 }),
+  buyQty: t.Optional(t.Integer({ minimum: 1 })),
+  getQty: t.Optional(t.Integer({ minimum: 1 })),
   appliesTo: t.Optional(
     t.Object({
       scope: t.Enum({ all: 'all', products: 'products', category: 'category' }),
@@ -33,6 +35,7 @@ export const promotionBody = t.Object({
   ),
   startsAt: t.Optional(t.String()),
   endsAt: t.Optional(t.String()),
+  usageLimit: t.Optional(t.Union([t.Integer({ minimum: 1 }), t.Null()])),
   status: t.Optional(t.Enum({ active: 'active', disabled: 'disabled' }))
 })
 

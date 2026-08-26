@@ -507,9 +507,12 @@ async function main() {
   ])
 
   await db.insert(promotions).values([
-    { merchantId: merchant.id, name: 'Summer Sale', type: 'discount_on_products', discountPercent: 20, appliesTo: { scope: 'all' }, status: 'active', startsAt: daysAgo(30), endsAt: daysAgo(-14) },
-    { merchantId: merchant.id, name: 'Buy 2 Tees Get 1 Half Price', type: 'buy_x_get_y', discountPercent: 50, appliesTo: { scope: 'products', productIds: [] }, status: 'active', startsAt: daysAgo(15), endsAt: daysAgo(-15) },
-    { merchantId: merchant.id, name: 'Electronics Week', type: 'discount_on_products', discountPercent: 15, appliesTo: { scope: 'category', categoryId: catMap.get('Electronics'), productIds: [] }, status: 'active', startsAt: daysAgo(7), endsAt: daysAgo(-7) }
+    // Demo promotions are deliberately NOT active right now — an auto-applied
+    // promotion would silently change every seeded checkout total. Summer Sale
+    // has ended, Electronics Week is disabled, and Buy2Get1 starts next month.
+    { merchantId: merchant.id, name: 'Summer Sale', type: 'discount_on_products', discountPercent: 20, appliesTo: { scope: 'all' }, status: 'active', startsAt: daysAgo(30), endsAt: daysAgo(14) },
+    { merchantId: merchant.id, name: 'Buy 2 Tees Get 1 Half Price', type: 'buy_x_get_y', discountPercent: 50, appliesTo: { scope: 'products', productIds: [] }, status: 'active', startsAt: daysAgo(-15), endsAt: null },
+    { merchantId: merchant.id, name: 'Electronics Week', type: 'discount_on_products', discountPercent: 15, appliesTo: { scope: 'category', categoryId: catMap.get('Electronics'), productIds: [] }, status: 'disabled', startsAt: daysAgo(7), endsAt: daysAgo(-7) }
   ])
 
   /* settings */
