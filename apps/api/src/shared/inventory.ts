@@ -1,7 +1,8 @@
 import { eq } from 'drizzle-orm'
+import { db } from '../database/client'
 import { inventoryLogs, productVariants } from '../database/schema'
 
-type Tx = Parameters<Parameters<import('../database/client').db.transaction>[0]>[0]
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 /**
  * Concurrency-safe absolute inventory mutation, inside the caller's transaction.

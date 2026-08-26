@@ -126,7 +126,7 @@ describe('Order/checkout state machine hardening', () => {
         name: 'Rival Item',
         slug: `rival-item-${createId().slice(0, 8)}`,
         sku: 'RIVAL-1',
-        price: '99.00',
+        price: 99,
         status: 'active',
         trackInventory: true
       })
@@ -136,7 +136,7 @@ describe('Order/checkout state machine hardening', () => {
       productId: rivalProductId,
       optionValues: {},
       sku: 'RIVAL-1-D',
-      price: '99.00',
+      price: 99,
       inventory: 50
     })
   })
