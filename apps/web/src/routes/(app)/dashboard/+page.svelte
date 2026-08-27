@@ -39,6 +39,32 @@
 		return { max, pts, chartW, chartH, pad }
 	})
 
+	let chartTicks = $derived.by(() => {
+		if (!chart || !data || data.salesChart.length === 0) return null
+		const { max, pad, chartW, chartH } = chart
+
+		const yTicks = Array.from({ length: 5 }, (_, i) => {
+			const val = (max / 4) * i
+			const y = chartH - pad - (val / max) * (chartH - pad * 2)
+			return { label: currency(val, currencyCode), y }
+		})
+
+		const xTicks = data.salesChart.map((p, i) => {
+			const d = new Date(p.date)
+			return {
+				label: `${d.getMonth() + 1}/${d.getDate()}`,
+				x: chart.pts[i].x
+			}
+		})
+
+		return { yTicks, xTicks }
+	})
+
+	function formatOrderNumber(num: string) {
+		if (num.length <= 12) return num
+		return num.slice(0, 6) + '\u2026' + num.slice(-4)
+	}
+
 	const stats = [
 		{ label: 'Today\'s sales', key: 'todaySales' as const },
 		{ label: 'Orders today', key: 'ordersToday' as const },
@@ -60,6 +86,7 @@
 	</div>
 {:else if data}
 	<div class="space-y-6">
+		<h1 class="sr-only">Dashboard</h1>
 		<!-- Stat cards -->
 		<div class="grid grid-cols-2 gap-4 lg:grid-cols-6">
 			{#each stats as s}
@@ -88,30 +115,45 @@
 							{@const chartW = chart?.chartW ?? 600}
 							{@const chartH = chart?.chartH ?? 200}
 							{@const pad = chart?.pad ?? 10}
-							<svg viewBox="0 0 600 240" class="h-full w-full" preserveAspectRatio="none">
+							<svg viewBox="0 0 680 280" class="h-full w-full" preserveAspectRatio="none">
 								<defs>
 									<linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
 										<stop offset="0%" stop-color="#6366f1" stop-opacity="0.25" />
 										<stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
 									</linearGradient>
 								</defs>
-								<polygon
-									points={`${pts[0].x},${chartH - pad} ${pts.map((p) => `${p.x},${p.y}`).join(' ')} ${pts[pts.length - 1].x},${chartH - pad}`}
-									fill="url(#area)"
-								/>
-								<polyline
-									points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
-									fill="none"
-									stroke="#6366f1"
-									stroke-width="2.5"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/>
-								{#each pts as p, i (i)}
-									<circle cx={p.x} cy={p.y} r="3" fill="#6366f1">
-										<title>{currency(data.salesChart[i].revenue, currencyCode)} — {data.salesChart[i].date}</title>
-									</circle>
-								{/each}
+								{#if chartTicks}
+									{#each chartTicks.yTicks as t}
+										<text x="70" y={t.y + 4} text-anchor="end" class="fill-gray-400" font-size="10">{t.label}</text>
+										<line x1="72" y1={t.y} x2={chartW + 60} y2={t.y} class="stroke-gray-100" />
+									{/each}
+								{/if}
+								<g transform="translate(70,0)">
+									<polygon
+										points={`${pts[0].x},${chartH - pad} ${pts.map((p) => `${p.x},${p.y}`).join(' ')} ${pts[pts.length - 1].x},${chartH - pad}`}
+										fill="url(#area)"
+									/>
+									<polyline
+										points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
+										fill="none"
+										stroke="#6366f1"
+										stroke-width="2.5"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+									{#each pts as p, i (i)}
+										<circle cx={p.x} cy={p.y} r="3" fill="#6366f1">
+											<title>{currency(data.salesChart[i].revenue, currencyCode)} — {data.salesChart[i].date}</title>
+										</circle>
+									{/each}
+								</g>
+								{#if chartTicks}
+									{#each chartTicks.xTicks as t, i}
+										{#if i % 3 === 0 || i === chartTicks.xTicks.length - 1}
+											<text x={t.x + 70} y={chartH - pad + 18} text-anchor="middle" class="fill-gray-400" font-size="10">{t.label}</text>
+										{/if}
+									{/each}
+								{/if}
 							</svg>
 						{/if}
 					</div>
@@ -126,10 +168,13 @@
 						{#each data.topProducts as p (p.productId)}
 							<li class="flex items-center justify-between gap-3">
 								<div class="min-w-0">
-									<p class="truncate text-sm font-medium text-gray-900">{p.name}</p>
+									<a href="/products/{p.productId}" class="group block truncate text-sm font-medium text-indigo-600 hover:text-indigo-800 hover:underline">{p.name}</a>
 									<p class="text-xs text-gray-500">{number(p.quantity)} sold</p>
 								</div>
-								<span class="text-sm font-semibold text-gray-900">{currency(p.revenue, currencyCode)}</span>
+								<div class="flex items-center gap-2">
+									<span class="text-sm font-semibold text-gray-900">{currency(p.revenue, currencyCode)}</span>
+									<svg class="h-4 w-4 shrink-0 text-gray-300 group-hover:text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg>
+								</div>
 							</li>
 						{/each}
 					</ul>
@@ -157,9 +202,9 @@
 						<tbody>
 							{#each data.recentOrders as o (o.id)}
 								<tr class="border-b border-gray-50 hover:bg-gray-50/60">
-									<td class="px-5 py-3 font-medium text-indigo-600">
-										<a href="/orders/{o.id}">#{o.orderNumber}</a>
-									</td>
+								<td class="px-5 py-3 font-medium text-indigo-600">
+									<a href="/orders/{o.id}" class="lowercase" title={o.orderNumber}>#{formatOrderNumber(o.orderNumber)}</a>
+								</td>
 									<td class="px-5 py-3 text-gray-700">{o.customerName}</td>
 									<td class="px-5 py-3"><Badge label={o.status} /></td>
 									<td class="px-5 py-3"><Badge label={o.paymentStatus} /></td>
