@@ -200,7 +200,7 @@
 
 			const order = await storefrontApi.checkout(fetch, slug, payload)
 			cart.clear()
-			await goto(`/${slug}/orders/${order.orderNumber}`)
+			await goto(`/${slug}/orders/${encodeURIComponent(order.orderNumber)}`)
 		} catch (e) {
 			orderError = e instanceof ApiError ? e.message : 'Something went wrong placing your order'
 			await refreshPreview()
