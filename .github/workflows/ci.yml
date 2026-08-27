@@ -61,7 +61,9 @@ jobs:
       - name: Deploy to Coolify
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_URL }}" \
+          
+          curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_URL_MERCHANT }}" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
+          
           
  
