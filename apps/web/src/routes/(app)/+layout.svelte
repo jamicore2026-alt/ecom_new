@@ -97,6 +97,7 @@
 					{#each nav as item}
 						<a
 							href={item.href}
+							onclick={() => (sidebarOpen = false)}
 							class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
 							class:bg-indigo-50={active === item.href || active.startsWith(item.href + '/')}
 							class:text-indigo-700={active === item.href || active.startsWith(item.href + '/')}
