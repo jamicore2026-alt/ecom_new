@@ -21,6 +21,18 @@ const STRIP_RESPONSE_HEADERS = new Set([
  * request first-party (no CORS, refresh cookies stay SameSite=Lax) without
  * touching any rendering code.
  */
+/**
+ * SvelteKit URL-decodes `[...path]` params, so a `#` in an order number becomes
+ * a raw `#` here. Re-encoding each segment keeps it `%23` in the upstream URL —
+ * otherwise fetch truncates it as a fragment and the API 404s.
+ */
+const encodePath = (upstreamPath: string) =>
+	upstreamPath
+		.split('/')
+		.map(encodeURIComponent)
+		.join('/')
+		.replace(/%2F/gi, '/')
+
 export async function proxyToApi(request: Request, upstreamPath: string, search: string): Promise<Response> {
 	const headers = new Headers()
 	for (const [key, value] of request.headers) {
@@ -32,7 +44,7 @@ export async function proxyToApi(request: Request, upstreamPath: string, search:
 
 	let upstream: Response
 	try {
-		upstream = await fetch(`${API_ORIGIN}${upstreamPath}${search}`, {
+		upstream = await fetch(`${API_ORIGIN}${encodePath(upstreamPath)}${search}`, {
 			method: request.method,
 			headers,
 			body,
