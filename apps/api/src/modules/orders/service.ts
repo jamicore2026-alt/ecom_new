@@ -17,6 +17,7 @@ import { getProvider } from '../../payments/registry'
 import { decryptJson } from '../../shared/crypto'
 import { applyManualMarkPaid } from '../../shared/order-payments'
 import { cancelPendingOrderTx } from '../../shared/order-cancel'
+import { emit } from '../../shared/event-dispatch'
 import { EmailsService } from '../emails/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
@@ -258,6 +259,8 @@ export class OrdersService {
       .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
       .returning()
 
+    this.dispatchOrderEvents(merchantId, updated)
+
     return ok(updated)
   }
 
@@ -291,7 +294,17 @@ export class OrdersService {
       .select()
       .from(orders)
       .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
+    emit(merchantId, 'order.cancelled', { orderId: id, orderNumber: updated.orderNumber })
     return ok(updated)
+  }
+
+  private static dispatchOrderEvents(merchantId: string, order: Order) {
+    if (order.status === 'shipped') {
+      emit(merchantId, 'order.shipped', { orderId: order.id, orderNumber: order.orderNumber })
+    }
+    if (order.status === 'delivered') {
+      emit(merchantId, 'order.delivered', { orderId: order.id, orderNumber: order.orderNumber })
+    }
   }
 
   /* ------------------------- returns / refunds ---------------------------- */
@@ -358,6 +371,12 @@ export class OrdersService {
       return row
     })
 
+    emit(merchantId, 'return.created', {
+      returnId: created.id,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: created.status
+    })
     return ok(created)
   }
 
@@ -632,6 +651,12 @@ export class OrdersService {
     })
 
     void EmailsService.refundProcessed(merchantId, reserved.order.id, input.amount)
+    emit(merchantId, 'refund.completed', {
+      refundId: refund.id,
+      orderId: reserved.order.id,
+      orderNumber: reserved.order.orderNumber,
+      amount: refund.amount
+    })
 
     return ok(refund)
   }

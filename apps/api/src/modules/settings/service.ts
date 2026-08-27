@@ -2,6 +2,9 @@ import { hash } from 'bcryptjs'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../database/client'
 import {
+  carriers,
+  checkoutSettings,
+  codRules,
   merchants,
   notificationSettings,
   paymentProviderConfigs,
@@ -481,4 +484,198 @@ export class SettingsService {
 
     return ok(updated)
   }
+  /* ----------------------------- COD rules ----------------------------- */
+
+  static async getCodRules(merchantId: string) {
+    const [row] = await db.select().from(codRules).where(eq(codRules.merchantId, merchantId))
+    return ok(
+      row ?? {
+        merchantId,
+        serviceablePincodes: [],
+        blacklistPincodes: [],
+        minOrderValue: 0,
+        maxOrderValue: null,
+        codFee: 0,
+        enabled: true
+      }
+    )
+  }
+
+  static async updateCodRules(
+    merchantId: string,
+    input: {
+      serviceablePincodes?: string[]
+      blacklistPincodes?: string[]
+      minOrderValue?: number
+      maxOrderValue?: number
+      codFee?: number
+      enabled?: boolean
+    }
+  ) {
+    const current = await this.getCodRules(merchantId)
+
+    await upsert(codRules, merchantId, {
+      serviceablePincodes:
+        input.serviceablePincodes ?? current.data.serviceablePincodes ?? [],
+      blacklistPincodes: input.blacklistPincodes ?? current.data.blacklistPincodes ?? [],
+      minOrderValue: input.minOrderValue ?? current.data.minOrderValue ?? 0,
+      maxOrderValue:
+        input.maxOrderValue !== undefined ? input.maxOrderValue : current.data.maxOrderValue,
+      codFee: input.codFee ?? current.data.codFee ?? 0,
+      enabled: input.enabled ?? current.data.enabled ?? true
+    })
+    return this.getCodRules(merchantId)
+  }
+
+  /* --------------------------- checkout settings --------------------------- */
+
+  static async getCheckoutSettings(merchantId: string) {
+    const [row] = await db
+      .select()
+      .from(checkoutSettings)
+      .where(eq(checkoutSettings.merchantId, merchantId))
+    return ok(
+      row ?? {
+        merchantId,
+        codEnabled: true,
+        codMinValue: 0,
+        codMaxValue: null,
+        codFee: 0,
+        serviceablePincodes: [],
+        defaultShippingDays: 5
+      }
+    )
+  }
+
+  static async updateCheckoutSettings(
+    merchantId: string,
+    input: {
+      codEnabled?: boolean
+      codMinValue?: number
+      codMaxValue?: number
+      codFee?: number
+      serviceablePincodes?: string[]
+      defaultShippingDays?: number
+    }
+  ) {
+    const current = await this.getCheckoutSettings(merchantId)
+
+    await upsert(checkoutSettings, merchantId, {
+      codEnabled: input.codEnabled ?? current.data.codEnabled ?? true,
+      codMinValue: input.codMinValue ?? current.data.codMinValue ?? 0,
+      codMaxValue:
+        input.codMaxValue !== undefined ? input.codMaxValue : current.data.codMaxValue,
+      codFee: input.codFee ?? current.data.codFee ?? 0,
+      serviceablePincodes:
+        input.serviceablePincodes ?? current.data.serviceablePincodes ?? [],
+      defaultShippingDays: input.defaultShippingDays ?? current.data.defaultShippingDays ?? 5
+    })
+    return this.getCheckoutSettings(merchantId)
+  }
+
+  /* --------------------------- serviceability --------------------------- */
+
+  /**
+   * Resolve whether a pincode is serviceable and COD availability.
+   * This is the ServiceabilityProvider seam — swap in a real provider later.
+   */
+  static async checkServiceability(merchantId: string, pincode: string) {
+    const [checkout] = await db
+      .select()
+      .from(checkoutSettings)
+      .where(eq(checkoutSettings.merchantId, merchantId))
+    const [cod] = await db.select().from(codRules).where(eq(codRules.merchantId, merchantId))
+
+    const serviceablePincodes = checkout?.serviceablePincodes ?? []
+    const codServiceablePincodes = cod?.serviceablePincodes ?? []
+    const codBlacklist = cod?.blacklistPincodes ?? []
+
+    // If no pincodes are configured, everything is serviceable by default.
+    const serviceable = serviceablePincodes.length === 0 || serviceablePincodes.includes(pincode)
+    const codAvailable =
+      serviceable &&
+      (codServiceablePincodes.length === 0 || codServiceablePincodes.includes(pincode)) &&
+      !codBlacklist.includes(pincode) &&
+      (cod?.enabled ?? true)
+
+    return ok({
+      pincode,
+      serviceable,
+      codAvailable,
+      estimatedDeliveryDays: checkout?.defaultShippingDays ?? 5,
+      shippingFee: serviceable ? (checkout?.codFee ?? 0) : null
+    })
+  }
+
+  /* ------------------------------ carriers ------------------------------ */
+
+  static async listCarriers(merchantId: string) {
+    return db.select().from(carriers).where(eq(carriers.merchantId, merchantId))
+  }
+
+  static async createCarrier(
+    merchantId: string,
+    input: {
+      name: string
+      code: string
+      enabled?: boolean
+      credentials?: Record<string, unknown>
+      config?: Record<string, unknown>
+    }
+  ) {
+    const [row] = await db
+      .insert(carriers)
+      .values({
+        merchantId,
+        name: input.name,
+        code: input.code,
+        enabled: input.enabled ?? true,
+        credentials: input.credentials ?? {},
+        config: input.config ?? {}
+      })
+      .returning()
+    return ok(row)
+  }
+
+  static async updateCarrier(
+    merchantId: string,
+    id: string,
+    input: {
+      name?: string
+      code?: string
+      enabled?: boolean
+      credentials?: Record<string, unknown>
+      config?: Record<string, unknown>
+    }
+  ) {
+    await this.assertCarrierOwned(merchantId, id)
+    const [row] = await db
+      .update(carriers)
+      .set({
+        ...(input.name !== undefined && { name: input.name }),
+        ...(input.code !== undefined && { code: input.code }),
+        ...(input.enabled !== undefined && { enabled: input.enabled }),
+        ...(input.credentials !== undefined && { credentials: input.credentials }),
+        ...(input.config !== undefined && { config: input.config })
+      })
+      .where(and(eq(carriers.id, id), eq(carriers.merchantId, merchantId)))
+      .returning()
+    return ok(row)
+  }
+
+  static async deleteCarrier(merchantId: string, id: string) {
+    await this.assertCarrierOwned(merchantId, id)
+    await db.delete(carriers).where(and(eq(carriers.id, id), eq(carriers.merchantId, merchantId)))
+    return ok({ deleted: true })
+  }
+
+  private static async assertCarrierOwned(merchantId: string, id: string) {
+    const [row] = await db
+      .select({ id: carriers.id })
+      .from(carriers)
+      .where(and(eq(carriers.id, id), eq(carriers.merchantId, merchantId)))
+    if (!row) throw notFound('CARRIER_NOT_FOUND', 'Carrier not found')
+    return row
+  }
+
 }

@@ -1,4 +1,4 @@
-import { Elysia } from 'elysia'
+import { Elysia, t } from 'elysia'
 import jwt from '@elysiajs/jwt'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../database/client'
@@ -7,12 +7,17 @@ import { ACCESS_SECRET } from '../../plugins/auth'
 import { unauthorized } from '../../shared/errors'
 import { CustomerAuthService, type ShopperContext } from './service'
 import {
+  addressBody,
+  addressParams,
   changePasswordBody,
+  forgotPasswordBody,
   loginBody,
   registerBody,
+  resetPasswordBody,
   shopperOrdersQuery,
   storeParams,
   submitReviewBody,
+  verifyEmailParams,
   wishlistBody,
   wishlistParams
 } from './model'
@@ -169,5 +174,86 @@ export const customerAuthModule = new Elysia({ prefix: '/api/store' })
     {
       params: wishlistParams,
       detail: { tags: ['Storefront'], summary: 'Remove a product from the wishlist' }
+    }
+  )
+
+  /* ------------------- password reset (public, no auth needed) ------------------ */
+  .post(
+    '/:slug/auth/forgot-password',
+    ({ params, body }) => CustomerAuthService.requestPasswordReset(params.slug, body.email),
+    {
+      params: storeParams,
+      body: forgotPasswordBody,
+      detail: { tags: ['Storefront'], summary: 'Request a password reset email' }
+    }
+  )
+  .post(
+    '/:slug/auth/reset-password',
+    ({ params, body }) => CustomerAuthService.resetPassword(params.slug, body.token, body.password),
+    {
+      params: storeParams,
+      body: resetPasswordBody,
+      detail: { tags: ['Storefront'], summary: 'Complete a password reset (single-use token)' }
+    }
+  )
+
+  /* ---------------------------- email verification ---------------------------- */
+  .post(
+    '/:slug/auth/resend-verification',
+    ({ params, body, shopper }) =>
+      CustomerAuthService.requestEmailVerification(params.slug, shopper),
+    {
+      params: storeParams,
+      detail: { tags: ['Storefront'], summary: 'Resend the email-verification email' }
+    }
+  )
+  .get(
+    '/:slug/auth/verify-email/:token',
+    ({ params }) => CustomerAuthService.verifyEmail(params.slug, params.token),
+    {
+      params: verifyEmailParams,
+      detail: { tags: ['Storefront'], summary: 'Verify an email address via token' }
+    }
+  )
+
+  /* ------------------------------ address book ------------------------------ */
+  .get(
+    '/:slug/auth/addresses',
+    ({ params, shopper }) => CustomerAuthService.listAddresses(params.slug, shopper),
+    { params: storeParams, detail: { tags: ['Storefront'], summary: 'List shopper addresses' } }
+  )
+  .post(
+    '/:slug/auth/addresses',
+    ({ params, body, shopper }) => CustomerAuthService.createAddress(params.slug, shopper, body),
+    {
+      params: storeParams,
+      body: addressBody,
+      detail: { tags: ['Storefront'], summary: 'Add a billing/shipping address' }
+    }
+  )
+  .put(
+    '/:slug/auth/addresses/:id',
+    ({ params, body, shopper }) => CustomerAuthService.updateAddress(params.slug, shopper, params.id, body),
+    {
+      params: addressParams,
+      body: addressBody,
+      detail: { tags: ['Storefront'], summary: 'Update an address' }
+    }
+  )
+  .delete(
+    '/:slug/auth/addresses/:id',
+    ({ params, shopper }) => CustomerAuthService.deleteAddress(params.slug, shopper, params.id),
+    {
+      params: addressParams,
+      detail: { tags: ['Storefront'], summary: 'Delete an address' }
+    }
+  )
+  .post(
+    '/:slug/auth/addresses/:id/default/:type',
+    ({ params, shopper }) =>
+      CustomerAuthService.setDefaultAddress(params.slug, shopper, params.id, params.type as 'shipping' | 'billing'),
+    {
+      params: t.Object({ slug: t.String(), id: t.String(), type: t.Union([t.Literal('shipping'), t.Literal('billing')]) }),
+      detail: { tags: ['Storefront'], summary: 'Set an address as the default shipping or billing address' }
     }
   )

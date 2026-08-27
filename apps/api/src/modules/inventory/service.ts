@@ -3,6 +3,7 @@ import { db } from '../../database/client'
 import { categories, inventoryLogs, products, productVariants } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
+import { emit } from '../../shared/event-dispatch'
 import { badRequest, notFound } from '../../shared/errors'
 
 const variantWithProduct = {
@@ -186,6 +187,12 @@ export class InventoryService {
       return { updated, log }
     })
 
+    emit(merchantId, 'inventory.updated', {
+      variantId,
+      change: input.change,
+      afterValue: result.updated.inventory,
+      reason: input.reason
+    })
     return ok({ variant: result.updated, log: result.log })
   }
 }

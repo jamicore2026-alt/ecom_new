@@ -91,3 +91,33 @@ export const staffUpdateBody = t.Object({
   permissions: t.Optional(t.Array(t.String())),
   status: t.Optional(t.Enum({ active: 'active', disabled: 'disabled' }))
 })
+
+export const codRulesBody = t.Object({
+  serviceablePincodes: t.Optional(t.Array(t.String())),
+  blacklistPincodes: t.Optional(t.Array(t.String())),
+  minOrderValue: t.Optional(t.Number({ minimum: 0 })),
+  maxOrderValue: t.Optional(t.Number({ minimum: 0 })),
+  codFee: t.Optional(t.Number({ minimum: 0 })),
+  enabled: t.Optional(t.Boolean())
+})
+
+export const checkoutBody = t.Object({
+  codEnabled: t.Optional(t.Boolean()),
+  codMinValue: t.Optional(t.Number({ minimum: 0 })),
+  codMaxValue: t.Optional(t.Number({ minimum: 0 })),
+  codFee: t.Optional(t.Number({ minimum: 0 })),
+  serviceablePincodes: t.Optional(t.Array(t.String())),
+  defaultShippingDays: t.Optional(t.Number({ minimum: 0 }))
+})
+
+export const serviceabilityBody = t.Object({
+  pincode: t.String({ minLength: 3, maxLength: 10 })
+})
+
+export const carrierBody = t.Object({
+  name: t.String({ minLength: 1 }),
+  code: t.String({ minLength: 1 }),
+  enabled: t.Optional(t.Boolean()),
+  credentials: t.Optional(t.Record(t.String(), t.Any())),
+  config: t.Optional(t.Record(t.String(), t.Any()))
+})

@@ -2,10 +2,14 @@ import { Elysia } from 'elysia'
 import { authPlugin, isAdmin } from '../../plugins/auth'
 import { SettingsService } from './service'
 import {
+  carrierBody,
+  checkoutBody,
+  codRulesBody,
   notificationsBody,
   paymentBody,
   providerBody,
   providerParams,
+  serviceabilityBody,
   shippingBody,
   staffCreateBody,
   staffUpdateBody,
@@ -57,6 +61,27 @@ export const settingsModule = new Elysia({ prefix: '/api' })
       .put('/taxes', async ({ body, auth }) => SettingsService.updateTaxes(auth.merchant.id, body), {
         body: taxBody
       })
+      .get('/cod', async ({ auth }) => SettingsService.getCodRules(auth.merchant.id))
+      .put('/cod', async ({ body, auth }) => SettingsService.updateCodRules(auth.merchant.id, body), {
+        body: codRulesBody
+      })
+      .get('/checkout', async ({ auth }) => SettingsService.getCheckoutSettings(auth.merchant.id))
+      .put('/checkout', async ({ body, auth }) => SettingsService.updateCheckoutSettings(auth.merchant.id, body), {
+        body: checkoutBody
+      })
+      .get('/serviceability/:pincode', async ({ auth, params }) =>
+        SettingsService.checkServiceability(auth.merchant.id, params.pincode)
+      )
+      .get('/carriers', async ({ auth }) => SettingsService.listCarriers(auth.merchant.id))
+      .post('/carriers', async ({ body, auth }) => SettingsService.createCarrier(auth.merchant.id, body), {
+        body: carrierBody
+      })
+      .put('/carriers/:id', async ({ params, body, auth }) =>
+        SettingsService.updateCarrier(auth.merchant.id, params.id, body), { body: carrierBody }
+      )
+      .delete('/carriers/:id', async ({ params, auth }) =>
+        SettingsService.deleteCarrier(auth.merchant.id, params.id)
+      )
       .get('/notifications', async ({ auth }) =>
         SettingsService.getNotifications(auth.merchant.id)
       )

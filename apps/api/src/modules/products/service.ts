@@ -4,6 +4,7 @@ import { categories, inventoryLogs, productImages, products, productVariants } f
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { productSearchCondition } from '../../shared/product-search'
 import { setVariantInventoryTx } from '../../shared/inventory'
+import { emit } from '../../shared/event-dispatch'
 import { parseCsv, toCsv } from '../../shared/csv'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
@@ -254,6 +255,7 @@ export class ProductsService {
     })
 
     const stock = result.variants.reduce((s: number, v: { inventory: number }) => s + v.inventory, 0)
+    emit(merchantId, 'product.created', { productId: result.product.id, name: result.product.name })
     return ok({
       ...result.product,
       variants: result.variants,
@@ -373,6 +375,7 @@ export class ProductsService {
       .from(productVariants)
       .where(eq(productVariants.productId, id))
 
+    emit(merchantId, 'product.updated', { productId: id, name: updated.name })
     return ok({
       ...updated,
       variants,
@@ -394,6 +397,7 @@ export class ProductsService {
       .where(and(eq(products.id, id), eq(products.merchantId, merchantId)))
       .returning()
 
+    emit(merchantId, 'product.archived', { productId: id, name: updated.name })
     return ok(updated)
   }
 

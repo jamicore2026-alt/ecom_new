@@ -16,6 +16,21 @@ import { settingsModule } from './modules/settings'
 import { storefrontModule } from './modules/storefront'
 import { customerAuthModule } from './modules/customer-auth'
 import { webhooksModule } from './modules/webhooks'
+import { outboundWebhooksModule } from './modules/outbound-webhooks'
+import { fulfillmentsModule } from './modules/fulfillments'
+import { cartsModule } from './modules/carts'
+import { invoicesModule } from './modules/invoices'
+import { warehousesModule } from './modules/warehouses'
+import { apiKeysModule } from './modules/api-keys'
+import { loyaltyModule } from './modules/loyalty'
+import { affiliatesModule } from './modules/affiliates'
+import { segmentsModule } from './modules/segments'
+import { contentModule } from './modules/content'
+import { themeModule } from './modules/theme'
+import { campaignsModule } from './modules/campaigns'
+import { profitModule } from './modules/profit'
+import { customerTagsModule } from './modules/customer-tags'
+
 import { uploadsModule } from './modules/uploads'
 
 const corsOrigins = (process.env.CORS_ORIGINS ?? '')
@@ -87,6 +102,20 @@ export const app = new Elysia({
   .use(storefrontModule)
   .use(customerAuthModule)
   .use(webhooksModule)
+  .use(outboundWebhooksModule)
+  .use(fulfillmentsModule)
+  .use(cartsModule)
+  .use(invoicesModule)
+  .use(warehousesModule)
+  .use(apiKeysModule)
+  .use(loyaltyModule)
+  .use(affiliatesModule)
+  .use(segmentsModule)
+  .use(contentModule)
+  .use(themeModule)
+  .use(campaignsModule)
+  .use(profitModule)
+  .use(customerTagsModule)
   .use(uploadsModule)
 
 export type App = typeof app

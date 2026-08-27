@@ -71,3 +71,79 @@ export const PERMISSIONS: Permission[] = [
 ]
 
 export const revenueStatuses: OrderStatus[] = ['pending', 'processing', 'shipped', 'delivered']
+
+/* --------------------------- fulfillment --------------------------- */
+
+export const FULFILLMENT_STATUSES = ['unfulfilled', 'processing', 'packed', 'shipped', 'delivered', 'failed', 'returned', 'cancelled'] as const
+export type FulfillmentStatus = (typeof FULFILLMENT_STATUSES)[number]
+
+/* --------------------------- outbound webhooks --------------------------- */
+
+export const OUTBOUND_WEBHOOK_EVENTS = [
+  'order.created',
+  'order.paid',
+  'order.cancelled',
+  'order.shipped',
+  'order.delivered',
+  'refund.created',
+  'refund.completed',
+  'return.created',
+  'return.approved',
+  'product.created',
+  'product.updated',
+  'inventory.updated',
+  'customer.created',
+  'fulfillment.created',
+  'fulfillment.updated'
+] as const
+export type OutboundWebhookEvent = (typeof OUTBOUND_WEBHOOK_EVENTS)[number]
+
+export const WEBHOOK_DELIVERY_STATUSES = ['pending', 'processing', 'completed', 'failed', 'skipped'] as const
+export type WebhookDeliveryStatus = (typeof WEBHOOK_DELIVERY_STATUSES)[number]
+
+/* --------------------------- jobs --------------------------- */
+
+export const JOB_TYPES = ['email', 'webhook_delivery', 'abandoned_cart', 'reconcile', 'cleanup', 'invoice_generation', 'stock_alert'] as const
+export type JobType = (typeof JOB_TYPES)[number]
+
+export const JOB_STATUSES = ['pending', 'processing', 'completed', 'failed', 'cancelled'] as const
+export type JobStatus = (typeof JOB_STATUSES)[number]
+
+/* --------------------------- addresses --------------------------- */
+
+export const ADDRESS_TYPES = ['shipping', 'billing', 'both'] as const
+export type AddressType = (typeof ADDRESS_TYPES)[number]
+
+/* --------------------------- warehouses --------------------------- */
+
+export const WAREHOUSE_STATUSES = ['active', 'inactive', 'archived'] as const
+export type WarehouseStatus = (typeof WAREHOUSE_STATUSES)[number]
+
+/* --------------------------- loyalty --------------------------- */
+
+export const LOYALTY_LEDGER_TYPES = ['earn', 'redeem', 'adjust', 'expire', 'refund'] as const
+export type LoyaltyLedgerType = (typeof LOYALTY_LEDGER_TYPES)[number]
+
+/* --------------------------- affiliate --------------------------- */
+
+export const AFFILIATE_STATUSES = ['active', 'suspended', 'archived'] as const
+export type AffiliateStatus = (typeof AFFILIATE_STATUSES)[number]
+
+export const COMMISSION_STATUSES = ['pending', 'approved', 'paid', 'cancelled'] as const
+export type CommissionStatus = (typeof COMMISSION_STATUSES)[number]
+
+/* --------------------------- CMS --------------------------- */
+
+export const CONTENT_STATUSES = ['draft', 'published', 'archived'] as const
+export type ContentStatus = (typeof CONTENT_STATUSES)[number]
+
+/* --------------------------- API keys --------------------------- */
+
+export const API_KEY_SCOPES = [
+  'products:read', 'products:write',
+  'orders:read', 'orders:write',
+  'customers:read', 'customers:write',
+  'inventory:read', 'inventory:write',
+  'webhooks:read', 'webhooks:write'
+] as const
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number]

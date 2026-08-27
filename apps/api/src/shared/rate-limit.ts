@@ -17,6 +17,8 @@ const RULES: Rule[] = [
   { test: (p) => p === '/api/auth/login', max: 10 },
   { test: (p) => p === '/api/auth/refresh' || p === '/api/auth/logout', max: 60 },
   { test: (p) => /^\/api\/store\/[^/]+\/auth\/(register|login|password)$/.test(p), max: 10 },
+  // Password reset + email verification — strict (anti enumeration, anti-email-bomb).
+  { test: (p) => /^\/api\/store\/[^/]+\/auth\/(forgot-password|reset-password|resend-verification|verify-email)/.test(p), max: 10 },
   { test: (p) => p.startsWith('/api/auth'), max: 30 },
   // Public order lookup leaks order/shipment details with only the order
   // number as proof — throttle enumeration harder than checkout itself.

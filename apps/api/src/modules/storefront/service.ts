@@ -3,6 +3,8 @@ import type { SQL } from 'drizzle-orm'
 import { db } from '../../database/client'
 import {
   categories,
+  checkoutSettings,
+  codRules,
   coupons,
   customers,
   inventoryLogs,
@@ -27,6 +29,7 @@ import { EmailsService } from '../emails/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { markOrderPaidEffects } from '../../shared/order-payments'
 import { runCancelPendingOrder } from '../../shared/order-cancel'
+import { emit } from '../../shared/event-dispatch'
 import { roundForCurrency } from '../../shared/currency'
 import { productSearchCondition, productSearchRank } from '../../shared/product-search'
 import { getProvider, listProviders } from '../../payments/registry'
@@ -859,6 +862,64 @@ export class StorefrontService {
     throw badRequest('PAYMENT_METHOD_UNAVAILABLE', `Payment method "${method}" is not available`)
   }
 
+  /**
+   * Enforce COD rules + pincode serviceability at checkout when the chosen
+   * method is a manual COD method. Non-COD methods pass through untouched.
+   */
+  private static async assertCodAvailable(
+    merchantId: string,
+    method: string,
+    total: number,
+    shippingAddress: { country?: string; postalCode?: string }
+  ) {
+    const [payments] = await db
+      .select()
+      .from(paymentSettings)
+      .where(eq(paymentSettings.merchantId, merchantId))
+    const manualMethod = (payments?.methods ?? []).find((m) => m.enabled && m.id === method)
+    // Only constrain cash-on-delivery style methods.
+    if (!manualMethod || !['cod', 'cash_on_delivery', 'posta', 'postinbjudan'].includes(method)) {
+      return
+    }
+
+    const [checkout] = await db
+      .select()
+      .from(checkoutSettings)
+      .where(eq(checkoutSettings.merchantId, merchantId))
+    const [rules] = await db
+      .select()
+      .from(codRules)
+      .where(eq(codRules.merchantId, merchantId))
+
+    // COD enabled flag (checkout settings takes precedence).
+    const codEnabled = checkout?.codEnabled ?? rules?.enabled ?? true
+    if (!codEnabled) {
+      throw badRequest('COD_UNAVAILABLE', 'Cash on delivery is currently unavailable')
+    }
+
+    // Order value range check.
+    const min = checkout?.codMinValue ?? rules?.minOrderValue ?? 0
+    const max = checkout?.codMaxValue !== undefined ? checkout?.codMaxValue : rules?.maxOrderValue
+    if (total < Number(min)) {
+      throw badRequest('COD_MIN_VALUE', `Cash on delivery requires a minimum order of ${min}`)
+    }
+    if (max !== null && max !== undefined && total > Number(max)) {
+      throw badRequest('COD_MAX_VALUE', 'Order is above the cash-on-delivery maximum')
+    }
+
+    // Pincode serviceability — if any pincodes are configured, the shipping
+    // pincode must be in the serviceable list and not blacklisted.
+    const pincode = (shippingAddress?.postalCode ?? '').trim()
+    const serviceable = checkout?.serviceablePincodes ?? []
+    const blacklist = rules?.blacklistPincodes ?? []
+    if (serviceable.length > 0 && !serviceable.includes(pincode)) {
+      throw badRequest('PINCODE_NOT_SERVICEABLE', 'Cash on delivery is not available to this pincode')
+    }
+    if (blacklist.includes(pincode)) {
+      throw badRequest('PINCODE_NOT_SERVICEABLE', 'Cash on delivery is not available to this pincode')
+    }
+  }
+
   private static orderUrls(slug: string, providerId: string, orderNumber: string) {
     const storefrontBase = process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'
     const apiBase =
@@ -946,6 +1007,7 @@ export class StorefrontService {
             })
             .returning()
           customerId = created.id
+          emit(store.merchant.id, 'customer.created', { customerId: created.id, email: created.email })
         } catch (err) {
           // Concurrent first checkout with the same email — reuse the winner's row.
           if ((err as { code?: string }).code !== '23505') throw err
@@ -1086,6 +1148,13 @@ export class StorefrontService {
 
     const summary = await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
 
+    await this.assertCodAvailable(
+      summary.store.merchant.id,
+      body.paymentMethod,
+      summary.total,
+      body.shippingAddress as { country?: string; postalCode?: string }
+    )
+
     // Legacy "card" demo method is treated as paid-on-place; everything else waits for payment.
     const paymentStatus = body.paymentMethod === 'card' ? 'paid' : 'unpaid'
     const result = await this.createOrderTx(summary.store, body, {
@@ -1100,6 +1169,12 @@ export class StorefrontService {
     }, { paymentStatus })
 
     void EmailsService.orderPlaced(result)
+    emit(summary.store.merchant.id, 'order.created', {
+      orderId: result.id,
+      orderNumber: result.orderNumber,
+      status: result.status,
+      paymentStatus: result.paymentStatus
+    })
 
     return ok({
       id: result.id,
@@ -1160,6 +1235,12 @@ export class StorefrontService {
     })
 
     void EmailsService.orderPlaced(order)
+    emit(store.merchant.id, 'order.created', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      paymentStatus: order.paymentStatus
+    })
 
     const urls = this.orderUrls(slug, providerId, order.orderNumber)
     let session
@@ -1287,7 +1368,14 @@ export class StorefrontService {
       await markOrderPaidEffects(tx, merchantId, flipped[0])
     })
 
-    if (paidOrderId) void EmailsService.orderPaid(merchantId, paidOrderId)
+    if (paidOrderId) {
+      void EmailsService.orderPaid(merchantId, paidOrderId)
+      const [order] = await db
+        .select({ orderNumber: orders.orderNumber })
+        .from(orders)
+        .where(eq(orders.id, paidOrderId))
+      emit(merchantId, 'order.paid', { orderId: paidOrderId, orderNumber: order?.orderNumber })
+    }
 
     return { orderUpdated, orderId: txn.orderId }
   }

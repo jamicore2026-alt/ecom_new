@@ -191,6 +191,8 @@ export const customers = pgTable(
     lastOrderAt: timestamp('last_order_at'),
     /** Bumped on password change — invalidates previously issued shopper JWTs. */
     tokenVersion: integer('token_version').notNull().default(0),
+    emailVerified: boolean('email_verified').notNull().default(false),
+    emailVerifiedAt: timestamp('email_verified_at'),
     createdAt: timestamp('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('customers_merchant_email_idx').on(t.merchantId, t.email)]
@@ -211,6 +213,8 @@ export const publicCustomerColumns = {
   totalSpent: customers.totalSpent,
   ordersCount: customers.ordersCount,
   lastOrderAt: customers.lastOrderAt,
+  emailVerified: customers.emailVerified,
+  emailVerifiedAt: customers.emailVerifiedAt,
   createdAt: customers.createdAt
 }
 
@@ -602,6 +606,536 @@ export const tokenBlacklist = pgTable(
   (t) => [uniqueIndex('token_blacklist_jti_idx').on(t.jti), index('token_blacklist_user_idx').on(t.userId)]
 )
 
+
+/* ----------------------------- outbound webhooks ---------------------------- */
+
+export const webhookEndpoints = pgTable(
+  'webhook_endpoints',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 255 }).notNull(),
+    url: varchar('url', { length: 1024 }).notNull(),
+    secret: varchar('secret', { length: 255 }).notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    events: jsonb('events').$type<string[]>().notNull().default([]),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date()),
+    lastDeliveryAt: timestamp('last_delivery_at')
+  },
+  (t) => [index('webhook_endpoints_merchant_idx').on(t.merchantId)]
+)
+
+export const webhookDeliveries = pgTable(
+  'webhook_deliveries',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    endpointId: varchar('endpoint_id', { length: 30 })
+      .notNull()
+      .references(() => webhookEndpoints.id, { onDelete: 'cascade' }),
+    event: varchar('event', { length: 50 }).notNull(),
+    payload: jsonb('payload').notNull().default({}),
+    signature: varchar('signature', { length: 255 }),
+    attempts: integer('attempts').notNull().default(0),
+    status: varchar('status', { length: 20 }).notNull().default('pending'),
+    responseCode: integer('response_code'),
+    responseBody: text('response_body'),
+    lastError: text('last_error'),
+    nextRetryAt: timestamp('next_retry_at'),
+    sentAt: timestamp('sent_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    index('webhook_deliveries_merchant_status_idx').on(t.merchantId, t.status),
+    index('webhook_deliveries_endpoint_idx').on(t.endpointId),
+    index('webhook_deliveries_retry_idx').on(t.nextRetryAt)
+  ]
+)
+
+/* ----------------------------- background jobs ----------------------------- */
+
+export const backgroundJobs = pgTable(
+  'background_jobs',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    type: varchar('type', { length: 50 }).notNull(),
+    payload: jsonb('payload').notNull().default({}),
+    status: varchar('status', { length: 20 }).notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(5),
+    lastError: text('last_error'),
+    nextRetryAt: timestamp('next_retry_at'),
+    lockedUntil: timestamp('locked_until'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    completedAt: timestamp('completed_at'),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    index('background_jobs_merchant_type_idx').on(t.merchantId, t.type),
+    index('background_jobs_status_retry_idx').on(t.status, t.nextRetryAt),
+    index('background_jobs_locked_idx').on(t.lockedUntil)
+  ]
+)
+
+/* --------------------------- fulfillment / shipment --------------------------- */
+
+export const fulfillments = pgTable(
+  'fulfillments',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    orderId: varchar('order_id', { length: 30 })
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    status: varchar('status', { length: 20 }).notNull().default('unfulfilled'),
+    carrier: varchar('carrier', { length: 100 }),
+    courierProvider: varchar('courier_provider', { length: 50 }),
+    trackingNumber: varchar('tracking_number', { length: 255 }),
+    trackingUrl: varchar('tracking_url', { length: 1024 }),
+    labelUrl: varchar('label_url', { length: 1024 }),
+    shippedAt: timestamp('shipped_at'),
+    deliveredAt: timestamp('delivered_at'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    index('fulfillments_merchant_order_idx').on(t.merchantId, t.orderId),
+    index('fulfillments_status_idx').on(t.status)
+  ]
+)
+
+/* --------------------------- customer addresses --------------------------- */
+
+export const customerAddresses = pgTable(
+  'customer_addresses',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    customerId: varchar('customer_id', { length: 30 })
+      .notNull()
+      .references(() => customers.id, { onDelete: 'cascade' }),
+    addressType: varchar('address_type', { length: 20 }).notNull().default('both'),
+    label: varchar('label', { length: 100 }).notNull().default('default'),
+    name: varchar('name', { length: 255 }),
+    company: varchar('company', { length: 255 }),
+    line1: varchar('line1', { length: 255 }).notNull().default(''),
+    line2: varchar('line2', { length: 255 }),
+    city: varchar('city', { length: 100 }),
+    state: varchar('state', { length: 100 }),
+    postalCode: varchar('postal_code', { length: 20 }),
+    country: varchar('country', { length: 3 }).notNull().default(''),
+    phone: varchar('phone', { length: 50 }),
+    isDefaultShipping: boolean('is_default_shipping').notNull().default(false),
+    isDefaultBilling: boolean('is_default_billing').notNull().default(false),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    index('customer_addresses_merchant_customer_idx').on(t.merchantId, t.customerId),
+    index('customer_addresses_customer_idx').on(t.customerId)
+  ]
+)
+
+/* --------------------------- abandoned carts --------------------------- */
+
+export const carts = pgTable(
+  'carts',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    customerId: varchar('customer_id', { length: 30 }).references(() => customers.id, {
+      onDelete: 'set null'
+    }),
+    items: jsonb('items').notNull().default([]),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    recoveryCode: varchar('recovery_code', { length: 100 }),
+    abandonedAt: timestamp('abandoned_at'),
+    recoveredOrderId: varchar('recovered_order_id', { length: 30 }).references(() => orders.id, {
+      onDelete: 'set null'
+    }),
+    recoverySentAt: timestamp('recovery_sent_at'),
+    lastActivityAt: timestamp('last_activity_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    index('carts_merchant_status_idx').on(t.merchantId, t.status),
+    index('carts_customer_idx').on(t.customerId),
+    index('carts_abandoned_idx').on(t.abandonedAt)
+  ]
+)
+
+/* ------------------------------- invoices ------------------------------- */
+
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    orderId: varchar('order_id', { length: 30 })
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    invoiceNumber: varchar('invoice_number', { length: 50 }).notNull(),
+    invoiceType: varchar('invoice_type', { length: 20 }).notNull().default('invoice'),
+    status: varchar('status', { length: 20 }).notNull().default('issued'),
+    subtotal: money('subtotal').notNull().default(0),
+    discountTotal: money('discount_total').notNull().default(0),
+    shippingTotal: money('shipping_total').notNull().default(0),
+    taxTotal: money('tax_total').notNull().default(0),
+    total: money('total').notNull().default(0),
+    gstin: varchar('gstin', { length: 50 }),
+    hsnCodes: jsonb('hsn_codes').notNull().default({}),
+    billingAddress: jsonb('billing_address').notNull().default({}),
+    shippingAddress: jsonb('shipping_address').notNull().default({}),
+    pdfUrl: varchar('pdf_url', { length: 1024 }),
+    invoiceDate: timestamp('invoice_date').defaultNow().notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('invoices_merchant_number_idx').on(t.merchantId, t.invoiceNumber),
+    index('invoices_merchant_idx').on(t.merchantId),
+    index('invoices_order_idx').on(t.orderId)
+  ]
+)
+
+/* ------------------------------ warehouses ------------------------------ */
+
+export const warehouses = pgTable(
+  'warehouses',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 255 }).notNull(),
+    code: varchar('code', { length: 50 }).notNull(),
+    address: jsonb('address').$type<Address>().notNull().default({}),
+    isDefault: boolean('is_default').notNull().default(false),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('warehouses_merchant_code_idx').on(t.merchantId, t.code),
+    index('warehouses_merchant_idx').on(t.merchantId)
+  ]
+)
+
+export const warehouseInventory = pgTable(
+  'warehouse_inventory',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    warehouseId: varchar('warehouse_id', { length: 30 })
+      .notNull()
+      .references(() => warehouses.id, { onDelete: 'cascade' }),
+    variantId: varchar('variant_id', { length: 30 })
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    quantity: integer('quantity').notNull().default(0),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('warehouse_inventory_warehouse_variant_idx').on(t.warehouseId, t.variantId),
+    index('warehouse_inventory_merchant_idx').on(t.merchantId)
+  ]
+)
+
+export const stockTransfers = pgTable(
+  'stock_transfers',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    fromWarehouseId: varchar('from_warehouse_id', { length: 30 })
+      .notNull()
+      .references(() => warehouses.id, { onDelete: 'set null' }),
+    toWarehouseId: varchar('to_warehouse_id', { length: 30 })
+      .notNull()
+      .references(() => warehouses.id, { onDelete: 'set null' }),
+    variantId: varchar('variant_id', { length: 30 })
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    quantity: integer('quantity').notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('pending'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    completedAt: timestamp('completed_at')
+  },
+  (t) => [index('stock_transfers_merchant_idx').on(t.merchantId)]
+)
+
+/* --------------------------- customer segments --------------------------- */
+
+export const customerSegments = pgTable(
+  'customer_segments',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 255 }).notNull(),
+    definition: jsonb('definition').notNull().default({}),
+    customerCount: integer('customer_count').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [index('customer_segments_merchant_idx').on(t.merchantId)]
+)
+
+/* ------------------------------ loyalty ------------------------------ */
+
+export const loyaltyAccounts = pgTable(
+  'loyalty_accounts',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    customerId: varchar('customer_id', { length: 30 })
+      .notNull()
+      .references(() => customers.id, { onDelete: 'cascade' }),
+    points: integer('points').notNull().default(0),
+    lifetimePoints: integer('lifetime_points').notNull().default(0),
+    tier: varchar('tier', { length: 30 }).notNull().default('standard'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [uniqueIndex('loyalty_accounts_merchant_customer_idx').on(t.merchantId, t.customerId)]
+)
+
+export const loyaltyLedger = pgTable(
+  'loyalty_ledger',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    customerId: varchar('customer_id', { length: 30 })
+      .notNull()
+      .references(() => customers.id, { onDelete: 'cascade' }),
+    type: varchar('type', { length: 20 }).notNull(),
+    points: integer('points').notNull(),
+    balanceAfter: integer('balance_after').notNull(),
+    reference: varchar('reference', { length: 255 }),
+    meta: jsonb('meta').notNull().default({}),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    index('loyalty_ledger_merchant_customer_idx').on(t.merchantId, t.customerId),
+    index('loyalty_ledger_customer_idx').on(t.customerId)
+  ]
+)
+
+/* ------------------------------ affiliates ------------------------------ */
+
+export const affiliates = pgTable(
+  'affiliates',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 255 }).notNull(),
+    email: varchar('email', { length: 255 }).notNull(),
+    referralCode: varchar('referral_code', { length: 50 }).notNull(),
+    commissionRate: numeric('commission_rate', { precision: 5, scale: 2 }).notNull().default(sql`0`),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [uniqueIndex('affiliates_merchant_code_idx').on(t.merchantId, t.referralCode)]
+)
+
+export const referrals = pgTable(
+  'referrals',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    affiliateId: varchar('affiliate_id', { length: 30 })
+      .notNull()
+      .references(() => affiliates.id, { onDelete: 'cascade' }),
+    customerId: varchar('customer_id', { length: 30 }).references(() => customers.id, {
+      onDelete: 'set null'
+    }),
+    orderId: varchar('order_id', { length: 30 }).references(() => orders.id, {
+      onDelete: 'set null'
+    }),
+    conversionStatus: varchar('conversion_status', { length: 20 }).notNull().default('clicked'),
+    commissionAmount: money('commission_amount').notNull().default(0),
+    commissionStatus: varchar('commission_status', { length: 20 }).notNull().default('pending'),
+    source: varchar('source', { length: 20 }).notNull().default('click'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [index('referrals_merchant_affiliate_idx').on(t.merchantId, t.affiliateId)]
+)
+
+/* ------------------------------- content pages ------------------------------- */
+
+export const contentPages = pgTable(
+  'content_pages',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    title: varchar('title', { length: 255 }).notNull(),
+    slug: varchar('slug', { length: 255 }).notNull(),
+    content: text('content').notNull().default(''),
+    status: varchar('status', { length: 20 }).notNull().default('draft'),
+    metaTitle: varchar('meta_title', { length: 255 }),
+    metaDescription: varchar('meta_description', { length: 500 }),
+    publishedAt: timestamp('published_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [uniqueIndex('content_pages_merchant_slug_idx').on(t.merchantId, t.slug)]
+)
+
+/* ------------------------------ API keys ------------------------------ */
+
+export const apiKeys = pgTable(
+  'api_keys',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 255 }).notNull(),
+    keyPrefix: varchar('key_prefix', { length: 20 }).notNull(),
+    secretHash: varchar('secret_hash', { length: 255 }).notNull(),
+    scopes: jsonb('scopes').$type<string[]>().notNull().default([]),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    lastUsedAt: timestamp('last_used_at'),
+    expiresAt: timestamp('expires_at'),
+    revokedAt: timestamp('revoked_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [index('api_keys_merchant_idx').on(t.merchantId)]
+)
+
+/* --------------------------- password reset / verification --------------------------- */
+
+export const passwordResetTokens = pgTable(
+  'password_reset_tokens',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    customerId: varchar('customer_id', { length: 30 })
+      .notNull()
+      .references(() => customers.id, { onDelete: 'cascade' }),
+    tokenHash: varchar('token_hash', { length: 255 }).notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    usedAt: timestamp('used_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [index('password_reset_tokens_merchant_customer_idx').on(t.merchantId, t.customerId)]
+)
+
+export const verificationTokens = pgTable(
+  'verification_tokens',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    customerId: varchar('customer_id', { length: 30 })
+      .notNull()
+      .references(() => customers.id, { onDelete: 'cascade' }),
+    tokenHash: varchar('token_hash', { length: 255 }).notNull(),
+    type: varchar('type', { length: 30 }).notNull().default('email_verification'),
+    expiresAt: timestamp('expires_at').notNull(),
+    usedAt: timestamp('used_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [index('verification_tokens_merchant_customer_idx').on(t.merchantId, t.customerId)]
+)
+
+/* ------------------------------ settings additions ------------------------------ */
+
+export const checkoutSettings = pgTable('checkout_settings', {
+  merchantId: varchar('merchant_id', { length: 30 })
+    .primaryKey()
+    .references(() => merchants.id, { onDelete: 'cascade' }),
+  codEnabled: boolean('cod_enabled').notNull().default(true),
+  codMinValue: money('cod_min_value').notNull().default(0),
+  codMaxValue: money('cod_max_value'),
+  codFee: money('cod_fee').notNull().default(0),
+  serviceablePincodes: jsonb('serviceable_pincodes').$type<string[]>().notNull().default([]),
+  defaultShippingDays: integer('default_shipping_days').notNull().default(5),
+  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+})
+
+export const themeConfigs = pgTable('theme_configs', {
+  merchantId: varchar('merchant_id', { length: 30 })
+    .primaryKey()
+    .references(() => merchants.id, { onDelete: 'cascade' }),
+  primaryColor: varchar('primary_color', { length: 20 }).notNull().default('#4f46e5'),
+  secondaryColor: varchar('secondary_color', { length: 20 }).notNull().default('#6b7280'),
+  accentColor: varchar('accent_color', { length: 20 }).notNull().default('#f59e0b'),
+  logo: varchar('logo', { length: 1024 }),
+  typography: jsonb('typography').notNull().default({}),
+  header: jsonb('header').notNull().default({}),
+  footer: jsonb('footer').notNull().default({}),
+  config: jsonb('config').notNull().default({}),
+  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+})
+
+export const codRules = pgTable('cod_rules', {
+  merchantId: varchar('merchant_id', { length: 30 })
+    .primaryKey()
+    .references(() => merchants.id, { onDelete: 'cascade' }),
+  serviceablePincodes: jsonb('serviceable_pincodes').$type<string[]>().notNull().default([]),
+  blacklistPincodes: jsonb('blacklist_pincodes').$type<string[]>().notNull().default([]),
+  minOrderValue: money('min_order_value').notNull().default(0),
+  maxOrderValue: money('max_order_value'),
+  codFee: money('cod_fee').notNull().default(0),
+  enabled: boolean('enabled').notNull().default(true),
+  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+})
+
+export const carriers = pgTable(
+  'carriers',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 255 }).notNull(),
+    code: varchar('code', { length: 50 }).notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    credentials: jsonb('credentials').notNull().default({}),
+    config: jsonb('config').notNull().default({}),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [uniqueIndex('carriers_merchant_code_idx').on(t.merchantId, t.code)]
+)
+
+export const campaigns = pgTable(
+  'campaigns',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 255 }).notNull(),
+    type: varchar('type', { length: 50 }).notNull().default('email'),
+    audience: jsonb('audience').notNull().default({}),
+    subject: varchar('subject', { length: 255 }),
+    content: text('content'),
+    triggerType: varchar('trigger_type', { length: 50 }),
+    triggerDelayHours: integer('trigger_delay_hours').notNull().default(0),
+    status: varchar('status', { length: 20 }).notNull().default('draft'),
+    sentCount: integer('sent_count').notNull().default(0),
+    openedCount: integer('opened_count').notNull().default(0),
+    clickedCount: integer('clicked_count').notNull().default(0),
+    convertedCount: integer('converted_count').notNull().default(0),
+    scheduledAt: timestamp('scheduled_at'),
+    sentAt: timestamp('sent_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [index('campaigns_merchant_status_idx').on(t.merchantId, t.status)]
+)
+
+export const customerTags = pgTable(
+  'customer_tags',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    customerId: varchar('customer_id', { length: 30 })
+      .notNull()
+      .references(() => customers.id, { onDelete: 'cascade' }),
+    tag: varchar('tag', { length: 100 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('customer_tags_merchant_customer_tag_idx').on(t.merchantId, t.customerId, t.tag)
+  ]
+)
+
 /* --------------------------------- exports -------------------------------- */
 
 export const table = {
@@ -631,7 +1165,32 @@ export const table = {
   notificationSettings,
   emailLogs,
   visits,
-  tokenBlacklist
+  tokenBlacklist,
+  webhookEndpoints,
+  webhookDeliveries,
+  backgroundJobs,
+  fulfillments,
+  customerAddresses,
+  carts,
+  invoices,
+  warehouses,
+  warehouseInventory,
+  stockTransfers,
+  customerSegments,
+  loyaltyAccounts,
+  loyaltyLedger,
+  affiliates,
+  referrals,
+  contentPages,
+  apiKeys,
+  passwordResetTokens,
+  verificationTokens,
+  checkoutSettings,
+  themeConfigs,
+  codRules,
+  carriers,
+  campaigns,
+  customerTags
 } as const
 
 export type Table = typeof table
@@ -676,3 +1235,51 @@ export type EmailLog = typeof emailLogs.$inferSelect
 export type Visit = typeof visits.$inferSelect
 export type TokenBlacklist = typeof tokenBlacklist.$inferSelect
 export type NewTokenBlacklist = typeof tokenBlacklist.$inferInsert
+
+export type WebhookEndpoint = typeof webhookEndpoints.$inferSelect
+export type NewWebhookEndpoint = typeof webhookEndpoints.$inferInsert
+export type WebhookDelivery = typeof webhookDeliveries.$inferSelect
+export type NewWebhookDelivery = typeof webhookDeliveries.$inferInsert
+export type BackgroundJob = typeof backgroundJobs.$inferSelect
+export type NewBackgroundJob = typeof backgroundJobs.$inferInsert
+export type Fulfillment = typeof fulfillments.$inferSelect
+export type NewFulfillment = typeof fulfillments.$inferInsert
+export type CustomerAddress = typeof customerAddresses.$inferSelect
+export type NewCustomerAddress = typeof customerAddresses.$inferInsert
+export type Cart = typeof carts.$inferSelect
+export type NewCart = typeof carts.$inferInsert
+export type Invoice = typeof invoices.$inferSelect
+export type NewInvoice = typeof invoices.$inferInsert
+export type Warehouse = typeof warehouses.$inferSelect
+export type NewWarehouse = typeof warehouses.$inferInsert
+export type WarehouseInventory = typeof warehouseInventory.$inferSelect
+export type NewWarehouseInventory = typeof warehouseInventory.$inferInsert
+export type StockTransfer = typeof stockTransfers.$inferSelect
+export type NewStockTransfer = typeof stockTransfers.$inferInsert
+export type CustomerSegment = typeof customerSegments.$inferSelect
+export type NewCustomerSegment = typeof customerSegments.$inferInsert
+export type LoyaltyAccount = typeof loyaltyAccounts.$inferSelect
+export type NewLoyaltyAccount = typeof loyaltyAccounts.$inferInsert
+export type LoyaltyEntry = typeof loyaltyLedger.$inferSelect
+export type NewLoyaltyEntry = typeof loyaltyLedger.$inferInsert
+export type Affiliate = typeof affiliates.$inferSelect
+export type NewAffiliate = typeof affiliates.$inferInsert
+export type Referral = typeof referrals.$inferSelect
+export type NewReferral = typeof referrals.$inferInsert
+export type ContentPage = typeof contentPages.$inferSelect
+export type NewContentPage = typeof contentPages.$inferInsert
+export type ApiKey = typeof apiKeys.$inferSelect
+export type NewApiKey = typeof apiKeys.$inferInsert
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect
+export type NewPasswordResetToken = typeof passwordResetTokens.$inferInsert
+export type VerificationToken = typeof verificationTokens.$inferSelect
+export type NewVerificationToken = typeof verificationTokens.$inferInsert
+export type CheckoutSettings = typeof checkoutSettings.$inferSelect
+export type ThemeConfig = typeof themeConfigs.$inferSelect
+export type CodRules = typeof codRules.$inferSelect
+export type Carrier = typeof carriers.$inferSelect
+export type NewCarrier = typeof carriers.$inferInsert
+export type Campaign = typeof campaigns.$inferSelect
+export type NewCampaign = typeof campaigns.$inferInsert
+export type CustomerTag = typeof customerTags.$inferSelect
+export type NewCustomerTag = typeof customerTags.$inferInsert
