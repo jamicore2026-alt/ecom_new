@@ -62,8 +62,13 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           
+          curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_URL }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
+          sleep 20
+          curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_URL_MERCHANT }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"  
+          sleep 20
           curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_URL_STORE }}" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
-          
           
  
