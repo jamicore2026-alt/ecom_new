@@ -4,6 +4,7 @@ import { db } from '../../database/client'
 import { merchants, users, storeSettings } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { unauthorized, forbidden, badRequest } from '../../shared/errors'
+import { loginAttempts } from './login-attempts'
 import type { Merchant, User } from '../../database/schema'
 
 /** Burn a bcrypt round for unknown emails so timing doesn't leak account existence. */
@@ -30,7 +31,15 @@ const publicMerchant = (merchant: Merchant) => ({
 
 export class AuthService {
   static async login(input: { email: string; password: string; merchantSlug?: string }) {
-    const email = input.email.toLowerCase()
+    const email = input.email.trim().toLowerCase()
+
+    // Account-level lockout is independent of IP so rotating source IPs cannot
+    // bypass the password-guessing threshold. Keep the dummy bcrypt compare on
+    // the locked path so the lock itself does not become an account oracle.
+    if (await loginAttempts.get(email)) {
+      await alwaysCompare(input.password)
+      throw unauthorized('Invalid email or password')
+    }
 
     if (input.merchantSlug) {
       const [merchant] = await db
@@ -39,6 +48,7 @@ export class AuthService {
         .where(eq(merchants.slug, input.merchantSlug))
       if (!merchant) {
         await alwaysCompare(input.password)
+        await loginAttempts.increment(email)
         throw unauthorized('Invalid email or password')
       }
 
@@ -46,12 +56,13 @@ export class AuthService {
         .select()
         .from(users)
         .where(and(eq(users.email, email), eq(users.merchantId, merchant.id)))
-      return this.validateLogin(user, input.password, merchant)
+      return this.validateLogin(user, input.password, merchant, email)
     }
 
     const matches = await db.select().from(users).where(eq(users.email, email))
     if (matches.length === 0) {
       await alwaysCompare(input.password)
+      await loginAttempts.increment(email)
       throw unauthorized('Invalid email or password')
     }
 
@@ -74,18 +85,25 @@ export class AuthService {
         .select()
         .from(merchants)
         .where(eq(merchants.id, candidates[0].merchantId))
-      return this.validateLogin(candidates[0], input.password, merchant)
+      return this.validateLogin(candidates[0], input.password, merchant, email)
     }
 
+    await loginAttempts.increment(email)
     throw unauthorized('Invalid email or password')
   }
 
   private static async validateLogin(
     user: User | undefined,
     password: string,
-    merchant: Merchant | undefined
+    merchant: Merchant | undefined,
+    email: string
   ) {
-    if (!user || !(await compare(password, user.passwordHash))) {
+    const passwordMatches = user
+      ? await compare(password, user.passwordHash)
+      : await alwaysCompare(password).then(() => false)
+
+    if (!user || !passwordMatches) {
+      await loginAttempts.increment(email)
       throw unauthorized('Invalid email or password')
     }
     if (user.status !== 'active') {
@@ -95,6 +113,7 @@ export class AuthService {
       throw forbidden('This store is not active')
     }
 
+    await loginAttempts.reset(email)
     return ok({ user: publicUser(user), merchant: publicMerchant(merchant) })
   }
 

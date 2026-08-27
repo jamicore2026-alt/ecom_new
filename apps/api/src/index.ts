@@ -4,6 +4,7 @@ import { StorefrontService } from './modules/storefront/service'
 import { OrdersService } from './modules/orders/service'
 import { runJobWorker } from './shared/jobs-worker'
 import { CartsService } from './modules/carts/service'
+import { closeRateLimitStore } from './shared/rate-limit'
 
 const port = Number(process.env.PORT ?? 3005)
 
@@ -52,3 +53,12 @@ app.listen(port, () => {
   // Run once at boot to clear anything queued during a downtime window.
   runWorkers()
 })
+
+// Close the rate-limit counter store (Redis RESP socket) cleanly on shutdown so
+// hot-reloads / Coolify redeploys don't leave dangling connections behind.
+const shutdown = async () => {
+  await closeRateLimitStore()
+  process.exit(0)
+}
+process.once('SIGTERM', shutdown)
+process.once('SIGINT', shutdown)

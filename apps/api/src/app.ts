@@ -2,7 +2,7 @@ import { Elysia } from 'elysia'
 import { cors } from '@elysiajs/cors'
 import { swagger } from '@elysiajs/swagger'
 import { errorHandler } from './plugins/errors'
-import { rateLimiter } from './shared/rate-limit'
+import { rateLimiter, initializeRateLimitStore } from './shared/rate-limit'
 import { authModule } from './modules/auth'
 import { overviewModule } from './modules/overview'
 import { productsModule } from './modules/products'
@@ -33,6 +33,8 @@ import { customerTagsModule } from './modules/customer-tags'
 
 import { uploadsModule } from './modules/uploads'
 
+await initializeRateLimitStore()
+
 const corsOrigins = (process.env.CORS_ORIGINS ?? '')
   .split(',')
   .map((o) => o.trim())
@@ -44,6 +46,19 @@ export const app = new Elysia({
   // Cap request bodies (uploads are separately limited to 5MB by the upload model).
   serve: { maxRequestBodySize: 8 * 1024 * 1024 }
 })
+  .onAfterHandle(({ request, set }) => {
+    set.headers['X-Frame-Options'] = 'DENY'
+    set.headers['X-Content-Type-Options'] = 'nosniff'
+    set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    if (process.env.NODE_ENV === 'production') {
+      set.headers['Strict-Transport-Security'] = 'max-age=63072000; includeSubDomains'
+    }
+    const pathname = new URL(request.url).pathname
+    const isDocs = pathname === '/docs' || pathname.startsWith('/docs/')
+    set.headers['Content-Security-Policy'] = isDocs && process.env.NODE_ENV !== 'production'
+    ? "default-src 'self'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+    : "default-src 'self'; frame-ancestors 'none'"
+  })
   .onError(errorHandler)
   .use(rateLimiter)
   .use(
