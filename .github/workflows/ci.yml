@@ -60,15 +60,32 @@ jobs:
 
       - name: Deploy to Coolify
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
         run: |
+          # Trigger a Coolify deploy webhook with retries + exponential backoff.
+          # A single transient 503 (Coolify busy/queuing) must not block the
+          # remaining service webhooks, so all three are always attempted and
+          # the step only fails if a webhook still fails after all retries.
+          deploy_webhook() {
+            local url="$1"
+            local attempts=5
+            for i in $(seq 1 "$attempts"); do
+              if curl -fsS -X POST "$url" \
+                -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"; then
+                echo "::notice:: Deploy triggered OK: $url"
+                return 0
+              fi
+              local code=$?
+              echo "attempt $i of $attempts failed (curl exit $code): $url; retrying in $((i*5))s"
+              sleep "$((i*5))"
+            done
+            echo "::error:: Deploy webhook failing after $attempts attempts: $url"
+            return 1
+          }
+
+          fail=0
+          deploy_webhook "${{ secrets.COOLIFY_WEBHOOK_URL }}" || fail=1
+          deploy_webhook "${{ secrets.COOLIFY_WEBHOOK_URL_MERCHANT }}" || fail=1
+          deploy_webhook "${{ secrets.COOLIFY_WEBHOOK_URL_STORE }}" || fail=1
+          exit "$fail"
           
-          curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_URL }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
-          sleep 20
-          curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_URL_MERCHANT }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"  
-          sleep 20
-          curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_URL_STORE }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
-          
- 
