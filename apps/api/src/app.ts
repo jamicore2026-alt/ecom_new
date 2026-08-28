@@ -30,6 +30,7 @@ import { themeModule } from './modules/theme'
 import { campaignsModule } from './modules/campaigns'
 import { profitModule } from './modules/profit'
 import { customerTagsModule } from './modules/customer-tags'
+import { auditLogsModule } from './modules/audit-logs'
 
 import { uploadsModule } from './modules/uploads'
 
@@ -90,6 +91,7 @@ export const app = new Elysia({
           { name: 'Customers', description: 'Customer directory and order history' },
           { name: 'Discounts', description: 'Coupons and promotions' },
           { name: 'Reviews', description: 'Product review moderation' },
+          { name: 'Audit Logs', description: 'Merchant activity trail and audit history' },
           { name: 'Analytics', description: 'Sales, products, customers and conversion analytics' },
         { name: 'Settings', description: 'Store, payments, shipping, taxes and staff' },
         { name: 'Storefront', description: 'Public storefront endpoints (no auth required)' },
@@ -131,6 +133,7 @@ export const app = new Elysia({
   .use(campaignsModule)
   .use(profitModule)
   .use(customerTagsModule)
+  .use(auditLogsModule)
   .use(uploadsModule)
 
 export type App = typeof app

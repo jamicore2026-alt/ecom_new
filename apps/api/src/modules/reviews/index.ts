@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 import { authPlugin, requirePermission } from '../../plugins/auth'
+import { auditFromRequest } from '../audit-logs'
 import { ReviewsService } from './service'
 import { reviewParams, reviewQuery, reviewUpdateBody } from './model'
 
@@ -13,7 +14,16 @@ export const reviewsModule = new Elysia({ prefix: '/api' })
   .use(requirePermission('products:write'))
   .patch(
     '/reviews/:id',
-    ({ params, body, auth }) => ReviewsService.update(auth.merchant.id, params.id, body),
+    async ({ params, body, auth, request }) => {
+      const result = await ReviewsService.update(auth.merchant.id, params.id, body)
+      auditFromRequest(auth, request, {
+        action: 'review.moderate',
+        entityType: 'review',
+        entityId: params.id,
+        metadata: { status: body.status }
+      })
+      return result
+    },
     {
       params: reviewParams,
       body: reviewUpdateBody,

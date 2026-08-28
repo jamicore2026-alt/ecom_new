@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 import { authPlugin, isAdmin } from '../../plugins/auth'
+import { auditFromRequest } from '../audit-logs'
 import { SettingsService } from './service'
 import {
   carrierBody,
@@ -91,13 +92,33 @@ export const settingsModule = new Elysia({ prefix: '/api' })
         { body: notificationsBody }
       )
       .get('/staff', async ({ auth }) => SettingsService.listStaff(auth.merchant.id))
-      .post('/staff', async ({ body, auth }) => SettingsService.createStaff(auth.merchant.id, body), {
+      .post('/staff', async ({ body, auth, request }) => {
+        const result = await SettingsService.createStaff(auth.merchant.id, body)
+        auditFromRequest(auth, request, {
+          action: 'staff.create',
+          entityType: 'staff',
+          entityId: result.data.id
+        })
+        return result
+      }, {
         body: staffCreateBody
       })
-      .put('/staff/:id', async ({ params, body, auth }) =>
-        SettingsService.updateStaff(auth.merchant.id, params.id, body, auth.user), { body: staffUpdateBody }
-      )
-      .delete('/staff/:id', async ({ params, auth }) =>
-        SettingsService.deleteStaff(auth.merchant.id, params.id, auth.user)
-      )
+      .put('/staff/:id', async ({ params, body, auth, request }) => {
+        const result = await SettingsService.updateStaff(auth.merchant.id, params.id, body, auth.user)
+        auditFromRequest(auth, request, {
+          action: 'staff.update',
+          entityType: 'staff',
+          entityId: params.id
+        })
+        return result
+      }, { body: staffUpdateBody })
+      .delete('/staff/:id', async ({ params, auth, request }) => {
+        const result = await SettingsService.deleteStaff(auth.merchant.id, params.id, auth.user)
+        auditFromRequest(auth, request, {
+          action: 'staff.delete',
+          entityType: 'staff',
+          entityId: params.id
+        })
+        return result
+      })
   )

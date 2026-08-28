@@ -1,9 +1,11 @@
 import { Elysia, t } from 'elysia'
 import { accessJwt, refreshJwt, authPlugin, claimRefreshToken, revokeToken } from '../../plugins/auth'
+import type { AuthContext } from '../../plugins/auth'
 import { AuthService } from './service'
 import { loginBody, refreshBody, logoutBody, tokenPair, meResponse } from './model'
 import { unauthorized } from '../../shared/errors'
 import { createId } from '@paralleldrive/cuid2'
+import { auditFromRequest } from '../audit-logs'
 
 export const ACCESS_TOKEN_TTL = 60 * 60 // 1 hour
 export const REFRESH_TOKEN_TTL = 60 * 60 * 24 * 7 // 7 days
@@ -37,9 +39,14 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
   .use(refreshJwt)
   .post(
     '/login',
-    async ({ body, accessJwt, refreshJwt, cookie }) => {
+    async ({ body, accessJwt, refreshJwt, cookie, request }) => {
       const result = await AuthService.login(body)
       const { user, merchant } = result.data
+      auditFromRequest({ user, merchant } as AuthContext, request, {
+        action: 'auth.login',
+        entityType: 'auth',
+        entityId: user.id
+      })
 
       const jti = createId()
       const accessToken = await accessJwt.sign({

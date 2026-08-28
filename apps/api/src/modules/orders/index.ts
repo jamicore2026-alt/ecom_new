@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 import { authPlugin, requirePermission } from '../../plugins/auth'
+import { auditFromRequest } from '../audit-logs'
 import { OrdersService } from './service'
 import {
   createRefundBody,
@@ -24,7 +25,16 @@ export const ordersModule = new Elysia({ prefix: '/api' })
   .use(requirePermission('orders:write'))
   .patch(
     '/orders/:id/status',
-    async ({ params, body, auth }) => OrdersService.updateStatus(auth.merchant.id, params.id, body),
+    async ({ params, body, auth, request }) => {
+      const result = await OrdersService.updateStatus(auth.merchant.id, params.id, body)
+      auditFromRequest(auth, request, {
+        action: 'order.status_change',
+        entityType: 'order',
+        entityId: params.id,
+        metadata: { status: body.status }
+      })
+      return result
+    },
     { body: updateStatusBody }
   )
   .post('/orders/:id/cancel', async ({ params, auth }) => OrdersService.cancel(auth.merchant.id, params.id))

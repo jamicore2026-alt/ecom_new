@@ -329,6 +329,29 @@ export const reviews = pgTable(
   ]
 )
 
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    actorUserId: varchar('actor_user_id', { length: 30 }).references(() => users.id, {
+      onDelete: 'set null'
+    }),
+    actorName: varchar('actor_name', { length: 255 }),
+    action: varchar('action', { length: 100 }).notNull(),
+    entityType: varchar('entity_type', { length: 50 }),
+    entityId: varchar('entity_id', { length: 30 }),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    ipAddress: varchar('ip_address', { length: 64 }),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    index('audit_logs_merchant_created_idx').on(t.merchantId, t.createdAt),
+    index('audit_logs_merchant_action_idx').on(t.merchantId, t.action),
+    index('audit_logs_entity_idx').on(t.merchantId, t.entityType, t.entityId)
+  ]
+)
+
 export const wishlistItems = pgTable(
   'wishlist_items',
   {
@@ -1152,6 +1175,7 @@ export const table = {
   returnsTable,
   refunds,
   reviews,
+  auditLogs,
   wishlistItems,
   coupons,
   promotions,
@@ -1219,6 +1243,8 @@ export type Refund = typeof refunds.$inferSelect
 export type NewRefund = typeof refunds.$inferInsert
 export type Review = typeof reviews.$inferSelect
 export type NewReview = typeof reviews.$inferInsert
+export type AuditLog = typeof auditLogs.$inferSelect
+export type NewAuditLog = typeof auditLogs.$inferInsert
 export type Coupon = typeof coupons.$inferSelect
 export type NewCoupon = typeof coupons.$inferInsert
 export type Promotion = typeof promotions.$inferSelect

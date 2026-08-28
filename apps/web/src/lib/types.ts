@@ -506,3 +506,16 @@ export interface Review {
 	createdAt: string
 	updatedAt: string
 }
+
+export interface AuditEntry {
+	id: string
+	merchantId: string
+	actorUserId: string | null
+	actorName: string | null
+	action: string
+	entityType: string | null
+	entityId: string | null
+	metadata: Record<string, unknown>
+	ipAddress: string | null
+	createdAt: string
+}

@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 import { authPlugin, requirePermission } from '../../plugins/auth'
+import { auditFromRequest } from '../audit-logs'
 import { ProductsService } from './service'
 import {
   bulkEditBody,
@@ -33,45 +34,121 @@ export const productsModule = new Elysia({ prefix: '/api' })
   )
   .get('/categories', async ({ auth }) => ProductsService.listCategories(auth.merchant.id))
   .use(requirePermission('products:write'))
-  .post('/products', async ({ body, auth }) => ProductsService.create(auth.merchant.id, body), {
+  .post('/products', async ({ body, auth, request }) => {
+    const result = await ProductsService.create(auth.merchant.id, body)
+    auditFromRequest(auth, request, {
+      action: 'product.create',
+      entityType: 'product',
+      entityId: result.data.id,
+      metadata: { name: body.name }
+    })
+    return result
+  }, {
     body: createProductBody
   })
-  .post('/products/bulk', async ({ body, auth }) => ProductsService.bulkEdit(auth.merchant.id, body), {
+  .post('/products/bulk', async ({ body, auth, request }) => {
+    const result = await ProductsService.bulkEdit(auth.merchant.id, body)
+    auditFromRequest(auth, request, {
+      action: 'product.bulk_edit',
+      entityType: 'product',
+      metadata: { count: body.ids?.length ?? 0 }
+    })
+    return result
+  }, {
     body: bulkEditBody
   })
   .post(
     '/products/import',
-    async ({ body, auth }) => {
+    async ({ body, auth, request }) => {
       const text = await body.file.text()
-      return ProductsService.importCsv(auth.merchant.id, text)
+      const result = await ProductsService.importCsv(auth.merchant.id, text)
+      auditFromRequest(auth, request, {
+        action: 'product.import',
+        entityType: 'product',
+        metadata: { created: result.data.created, updated: result.data.updated }
+      })
+      return result
     },
     { body: importCsvBody, detail: { summary: 'Import products from CSV (upsert by SKU)' } }
   )
   .put(
     '/products/:id',
-    async ({ params, body, auth }) => ProductsService.update(auth.merchant.id, params.id, body),
+    async ({ params, body, auth, request }) => {
+      const result = await ProductsService.update(auth.merchant.id, params.id, body)
+      auditFromRequest(auth, request, {
+        action: 'product.update',
+        entityType: 'product',
+        entityId: params.id
+      })
+      return result
+    },
     { body: updateProductBody }
   )
-  .delete('/products/:id', async ({ params, auth }) =>
-    ProductsService.archive(auth.merchant.id, params.id)
-  )
+  .delete('/products/:id', async ({ params, auth, request }) => {
+    const result = await ProductsService.archive(auth.merchant.id, params.id)
+    auditFromRequest(auth, request, {
+      action: 'product.archive',
+      entityType: 'product',
+      entityId: params.id
+    })
+    return result
+  })
   .post(
     '/products/:id/variants',
-    async ({ params, body, auth }) => ProductsService.addVariant(auth.merchant.id, params.id, body),
+    async ({ params, body, auth, request }) => {
+      const result = await ProductsService.addVariant(auth.merchant.id, params.id, body)
+      auditFromRequest(auth, request, {
+        action: 'variant.create',
+        entityType: 'product',
+        entityId: params.id
+      })
+      return result
+    },
     { body: variantInput }
   )
-  .post('/categories', async ({ body, auth }) =>
-    ProductsService.createCategory(auth.merchant.id, body), { body: categoryBody }
-  )
-  .put('/categories/:id', async ({ params, body, auth }) =>
-    ProductsService.updateCategory(auth.merchant.id, params.id, body), { body: categoryBody }
-  )
-  .delete('/categories/:id', async ({ params, auth }) =>
-    ProductsService.deleteCategory(auth.merchant.id, params.id)
-  )
-  .put('/variants/:id', async ({ params, body, auth }) =>
-    ProductsService.updateVariant(auth.merchant.id, params.id, body), { body: variantInput }
-  )
-  .delete('/variants/:id', async ({ params, auth }) =>
-    ProductsService.deleteVariant(auth.merchant.id, params.id)
-  )
+  .post('/categories', async ({ body, auth, request }) => {
+    const result = await ProductsService.createCategory(auth.merchant.id, body)
+    auditFromRequest(auth, request, {
+      action: 'category.create',
+      entityType: 'category',
+      entityId: result.data.id,
+      metadata: { name: body.name }
+    })
+    return result
+  }, { body: categoryBody })
+  .put('/categories/:id', async ({ params, body, auth, request }) => {
+    const result = await ProductsService.updateCategory(auth.merchant.id, params.id, body)
+    auditFromRequest(auth, request, {
+      action: 'category.update',
+      entityType: 'category',
+      entityId: params.id
+    })
+    return result
+  }, { body: categoryBody })
+  .delete('/categories/:id', async ({ params, auth, request }) => {
+    const result = await ProductsService.deleteCategory(auth.merchant.id, params.id)
+    auditFromRequest(auth, request, {
+      action: 'category.delete',
+      entityType: 'category',
+      entityId: params.id
+    })
+    return result
+  })
+  .put('/variants/:id', async ({ params, body, auth, request }) => {
+    const result = await ProductsService.updateVariant(auth.merchant.id, params.id, body)
+    auditFromRequest(auth, request, {
+      action: 'variant.update',
+      entityType: 'product',
+      entityId: params.id
+    })
+    return result
+  }, { body: variantInput })
+  .delete('/variants/:id', async ({ params, auth, request }) => {
+    const result = await ProductsService.deleteVariant(auth.merchant.id, params.id)
+    auditFromRequest(auth, request, {
+      action: 'variant.delete',
+      entityType: 'product',
+      entityId: params.id
+    })
+    return result
+  })
