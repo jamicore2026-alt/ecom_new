@@ -2,6 +2,7 @@ import { browser } from '$app/environment'
 import type { ApiErrorBody, AuthResponse, MeResponse } from './types'
 
 const ACCESS_KEY = 'md.access'
+const OUTLET_KEY = 'md.outlet'
 
 export function getAccessToken(): string | null {
 	if (!browser) return null
@@ -12,6 +13,17 @@ export function setAccessToken(token: string | null) {
 	if (!browser) return
 	if (token) localStorage.setItem(ACCESS_KEY, token)
 	else localStorage.removeItem(ACCESS_KEY)
+}
+
+export function getSelectedOutletId(): string | null {
+	if (!browser) return null
+	return localStorage.getItem(OUTLET_KEY)
+}
+
+export function setSelectedOutletId(outletId: string | null) {
+	if (!browser) return
+	if (outletId) localStorage.setItem(OUTLET_KEY, outletId)
+	else localStorage.removeItem(OUTLET_KEY)
 }
 
 export function clearTokens() {
@@ -61,6 +73,8 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
 	const access = getAccessToken()
 	const headers = new Headers(options.headers)
 	if (access) headers.set('authorization', `Bearer ${access}`)
+	const outletId = getSelectedOutletId()
+	if (outletId) headers.set('x-outlet-id', outletId)
 	if (options.body && !(options.body instanceof FormData) && !headers.has('content-type')) {
 		headers.set('content-type', 'application/json')
 	}

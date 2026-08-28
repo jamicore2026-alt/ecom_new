@@ -14,7 +14,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
-import type { Address, Permission } from '../shared/types'
+import type { Address, ModuleId, OutletStatus, Permission, Scope } from '../shared/types'
 
 // scale 3 supports GCC currencies with 3 decimals (KWD/BHD/OMR)
 const money = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
@@ -56,6 +56,78 @@ export const users = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('users_merchant_email_idx').on(t.merchantId, t.email)]
+)
+
+/* --------------------------------- outlets -------------------------------- */
+
+export const outlets = pgTable(
+  'outlets',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 255 }).notNull(),
+    code: varchar('code', { length: 50 }).notNull(),
+    address: jsonb('address').$type<Address>().notNull().default({}),
+    status: varchar('status', { length: 20 }).$type<OutletStatus>().notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('outlets_merchant_code_idx').on(t.merchantId, t.code),
+    index('outlets_merchant_idx').on(t.merchantId)
+  ]
+)
+
+/* --------------------------- merchant modules --------------------------- */
+
+export const merchantModules = pgTable(
+  'merchant_modules',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    module: varchar('module', { length: 30 }).$type<ModuleId>().notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [uniqueIndex('merchant_modules_merchant_module_idx').on(t.merchantId, t.module)]
+)
+
+/* -------------------------------- roles -------------------------------- */
+
+export const roles = pgTable(
+  'roles',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 50 }).notNull(),
+    isSystem: boolean('is_system').notNull().default(false),
+    permissions: jsonb('permissions').$type<Permission[]>().notNull().default([]),
+    scope: varchar('scope', { length: 20 }).$type<Scope>().notNull().default('MERCHANT'),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [uniqueIndex('roles_merchant_name_idx').on(t.merchantId, t.name)]
+)
+
+/* ----------------------------- user outlets ----------------------------- */
+
+export const userOutlets = pgTable(
+  'user_outlets',
+  {
+    id: id('id').primaryKey(),
+    userId: varchar('user_id', { length: 30 })
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    outletId: varchar('outlet_id', { length: 30 })
+      .notNull()
+      .references(() => outlets.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('user_outlets_user_outlet_idx').on(t.userId, t.outletId),
+    index('user_outlets_outlet_idx').on(t.outletId)
+  ]
 )
 
 /* --------------------------------- catalog -------------------------------- */
@@ -1164,6 +1236,10 @@ export const customerTags = pgTable(
 export const table = {
   merchants,
   users,
+    outlets,
+    merchantModules,
+    roles,
+    userOutlets,
     categories,
     products,
     productVariants,
@@ -1223,6 +1299,14 @@ export type Merchant = typeof merchants.$inferSelect
 export type NewMerchant = typeof merchants.$inferInsert
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
+export type Outlet = typeof outlets.$inferSelect
+export type NewOutlet = typeof outlets.$inferInsert
+export type MerchantModule = typeof merchantModules.$inferSelect
+export type NewMerchantModule = typeof merchantModules.$inferInsert
+export type Role = typeof roles.$inferSelect
+export type NewRole = typeof roles.$inferInsert
+export type UserOutlet = typeof userOutlets.$inferSelect
+export type NewUserOutlet = typeof userOutlets.$inferInsert
 export type Category = typeof categories.$inferSelect
 export type Product = typeof products.$inferSelect
 export type NewProduct = typeof products.$inferInsert

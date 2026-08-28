@@ -6,6 +6,32 @@
 > NOTE: migration `0011_variant_clock_timestamp` switches `product_variants.created_at` default to `clock_timestamp()` — batch-inserted variants previously shared one `now()` stamp, so `ORDER BY created_at` ties were nondeterministic across databases (broke the CSV round-trip test in CI only).
 > NOTE: staff passwords now require ≥10 chars (bcrypt 12); shopper register on a guest email requires a recent order number as proof (`CLAIM_ORDER_REQUIRED` / `CLAIM_ORDER_MISMATCH`). Rate limiting is active per-IP in dev/prod but skipped when NODE_ENV=test.
 > NOTE: migration `0015_audit_logs` added the `audit_logs` table (merchant-scoped activity trail). Run `bun run db:migrate`. Noted 2026-08-28.
+> NOTE: migration `0016_tense_garia` added Phase 1 foundation tables — `outlets`, `merchant_modules`, `roles`, `user_outlets` (normalized, all merchant-scoped, `user_outlets` cascade on user/outlet delete). Run `bun run db:migrate` + `db:seed` (seed is idempotent; reseeding is required for a fresh merchant to get its default outlet/modules/roles). Noted 2026-08-28.
+
+## Phase 1 — Outlets, modules, RBAC foundation (2026-08-28)
+
+- **Shared types** (`src/shared/types.ts`): expanded `Permission` (added granular `orders.*`, `products.*`, `menu.*`, `kitchen.*`, `kds.*`, `tables.*`, `delivery.*`, `drivers.*`, `inventory.*`, `payments.*`, `reports.*`, `staff.*`, `customers.*`, `settings.*`; legacy `products:write` etc. kept for backward compat). Added `SCOPES = GLOBAL|MERCHANT|OUTLET|OWN`, `MODULES` catalog (commerce, restaurant, pos, kitchen, tables, delivery, inventory, marketing, analytics), `DEFAULT_MODULES`, `DEFAULT_ROLES` (12 roles, all `isSystem: true`), `OUTLET_STATUSES`.
+- **Schema** (`src/database/schema.ts`): `outlets` (merchant+code unique), `merchant_modules` (merchant+module unique), `roles` (merchant+name unique, `permissions` jsonb, `scope`, `isSystem`), `user_outlets` (user+outlet unique, cascade deletes). Row types exported.
+- **Merchant context** (`src/shared/merchant-context.ts`): `resolveMerchantContext(userId, merchantId, isAdminUser, requestedOutletId?)` → `{ allowedOutlets, selectedOutlet, enabledModules }`. `allowedOutlets` come ONLY from `user_outlets` join (owner/admin with no explicit assignment default to all merchant outlets); `selectedOutlet` is always re-validated against allowed outlets — browser-supplied outletId is never trusted.
+- **Guard** (`src/plugins/outlet.ts`): `outletGuard({ outletRequired?, permissions?, module? })` composes with `authPlugin` — enforces auth → module enabled (403) → outlet scope (403 if `outletRequired` and none resolves) → `hasPermission`; attaches `merchantContext` to context. `requestedOutletId` derives from `outletId` param, then `x-outlet-id` header, then `outletId` query.
+- **API modules** (registered in `app.ts`): `modules/outlets` (list/my/get/create/update/archive; writes + `staff.manage`), `modules/modules` (list catalog with `enabled`/`locked` flags, toggle `PUT /modules/:module`, `settings.manage`), `modules/roles` (CRUD; system roles immutable → 400 `IMMUTABLE_ROLE`, name conflict → 409; `staff.manage`), `modules/user-outlets` (list + replace assignments `PUT /user-outlets/:userId`, `staff.manage`). Writes fire `auditFromRequest`.
+- **`/me` payload** now includes `allowedOutlets[]`, `selectedOutlet`, `enabledModules` (via `AuthService.session` → `resolveMerchantContext`).
+- **Web** (`apps/web`): `api.ts` reads persisted selected outlet (`md.outlet`) and sends `x-outlet-id` on every authed request; `session.svelte.ts` tracks `allowedOutlets`/`enabledModules`/`selectedOutlet` (validated against server response) + `switchOutlet()`; sidebar adds an outlet selector when a user has >1 outlet.
+- **Seed**: every merchant gets one `Main Outlet` (code MAIN), `DEFAULT_MODULES.commerce` modules, all `DEFAULT_ROLES` as system roles, and owner+admin assigned to the main outlet.
+- **Tests** (`test/outlets.test.ts`): outlets CRUD + dedupe, modules catalog/toggle/unknown, roles CRUD + system-role immutability, user-outlet assignment, and staff 403 guards. **Not run** — Postgres unavailable in this env (see below).
+
+### Phase 1 verification status
+- `bun run typecheck` (api): PASS · `bun run check` (web+storefront): 0 errors (71 pre-existing a11y warnings)
+- DB verified: `db:migrate` + `db:seed` succeeded against local PostgreSQL; seeded 12 system roles, 1 Main Outlet, 4 modules. `bun test`: **123 pass / 0 fail** across 15 files (incl. new `test/outlets.test.ts`).
+- Gotcha found: Elysia dedupes plugins by `name`, so two `.use(outletGuard(...))` with the same name silently drop the second — `plugins/outlet.ts` keys the instance name on options (`outlet-guard:<mods>:<perms>:<outletRequired>`).
+
+## Phase 2 — Dynamic dashboard (2026-08-28)
+
+- **Centralized nav metadata** (`apps/web/src/lib/navigation.ts`): `NAV_ITEMS` (`{ label, route, icon, group, module?, permission? }`) + `NAV_ICONS`. Items are grouped (General/Sell/Insights) and gated by an optional `module` (must be enabled for the merchant) and/or `permission` (single or any-of array). This is the single source for the shell; future phases (restaurant/delivery/kitchen/pos) add entries here keyed to their modules. Mapping of existing routes: Products/Orders/Customers/Reviews → `commerce`; Inventory → `inventory`; Discounts → `marketing`; Analytics → `analytics`; Overview/Audit/Settings → core (no module).
+- **`session.visibleNav`** (`apps/web/src/lib/session.svelte.ts`): reactive `$derived.by` that filters `NAV_ITEMS` by `enabledModules` + permissions (owner/admin bypass via role; others any-of matches). Frontend hiding is UX only — every API route still enforces auth/permission/outlet/module server-side.
+- **`(app)/+layout.svelte`**: sidebar now renders grouped, permission/module-aware navigation from `session.visibleNav` instead of a hardcoded array (outlet selector from Phase 1 retained). Flicker-free: nav derivation is reactive to `enabledModules`/`user`.
+- **Verification**: `bun run check` (web+storefront): 0 errors, 71 pre-existing a11y warnings. `bun run typecheck` (api): PASS. `bun test`: **123 pass / 0 fail** (no API changes in this phase).
+- **Consideration / not done in Phase 2**: true server-side module-gating of every legacy commerce route is intentionally NOT added (would risk audited flows and isn't this phase's deliverable). Disabled-module nav is hidden client-side; authorization remains enforced by the existing `authPlugin`/`requirePermission`/`outletGuard` guards.
 
 ## Audit-hardening batch (2026-08-24) — what changed and why
 

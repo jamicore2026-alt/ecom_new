@@ -56,6 +56,9 @@ export interface MeResponse {
 		user: AuthUser
 		merchant: AuthMerchant
 		settings: StoreSettings | null
+		allowedOutlets: Outlet[]
+		selectedOutlet: Outlet | null
+		enabledModules: ModuleId[]
 	}
 }
 
@@ -83,6 +86,20 @@ export type CouponType = 'percentage' | 'fixed' | 'free_shipping'
 export type PromotionType = 'discount_on_products' | 'buy_x_get_y'
 export type InventoryReason = 'sale' | 'adjustment' | 'purchase' | 'return' | 'cancel'
 export type UserRole = 'owner' | 'admin' | 'staff'
+export type ModuleId = 'commerce' | 'restaurant' | 'pos' | 'kitchen' | 'tables' | 'delivery' | 'inventory' | 'marketing' | 'analytics'
+export type OutletStatus = 'active' | 'inactive' | 'archived'
+
+export interface Outlet {
+	id: string
+	merchantId: string
+	name: string
+	code: string
+	address?: Address
+	status: OutletStatus
+	createdAt?: string
+	updatedAt?: string
+}
+
 export type Permission =
 	| 'products:write'
 	| 'orders:write'
@@ -90,6 +107,39 @@ export type Permission =
 	| 'discounts:write'
 	| 'settings:write'
 	| 'analytics:read'
+	| 'orders.read'
+	| 'orders.create'
+	| 'orders.update'
+	| 'orders.cancel'
+	| 'products.read'
+	| 'products.create'
+	| 'products.update'
+	| 'products.delete'
+	| 'menu.read'
+	| 'menu.manage'
+	| 'kitchen.read'
+	| 'kitchen.manage'
+	| 'kds.read'
+	| 'kds.manage'
+	| 'tables.read'
+	| 'tables.manage'
+	| 'delivery.read'
+	| 'delivery.assign'
+	| 'delivery.manage'
+	| 'drivers.read'
+	| 'drivers.manage'
+	| 'inventory.read'
+	| 'inventory.adjust'
+	| 'inventory.manage'
+	| 'payments.read'
+	| 'payments.create'
+	| 'payments.refund'
+	| 'reports.read'
+	| 'staff.read'
+	| 'staff.manage'
+	| 'customers.read'
+	| 'settings.read'
+	| 'settings.manage'
 
 export interface Product {
 	id: string

@@ -7,20 +7,25 @@ import {
   customers,
   inventoryLogs,
   merchants,
+  merchantModules,
   orderItems,
   orders,
+  outlets,
   paymentSettings,
   productVariants,
   products,
   promotions,
   refunds,
   returnsTable,
+  roles,
   shippingSettings,
   storeSettings,
   taxSettings,
+  userOutlets,
   users,
   visits
 } from './schema'
+import { DEFAULT_MODULES, DEFAULT_ROLES } from '../shared/types'
 
 /* --------------------------------- rng ---------------------------------- */
 
@@ -179,7 +184,8 @@ const pickStatus = () => {
 async function main() {
   console.log('🧹 Clearing existing data...')
   await connection.unsafe(`
-    TRUNCATE TABLE visits, refunds, returns, order_items, orders, inventory_logs,
+    TRUNCATE TABLE user_outlets, roles, merchant_modules, outlets, visits, refunds,
+    returns, order_items, orders, inventory_logs,
     product_variants, products, categories, customers, coupons, promotions,
     store_settings, payment_settings, shipping_settings, tax_settings, users, merchants
     RESTART IDENTITY CASCADE
@@ -210,6 +216,46 @@ async function main() {
       { merchantId: merchant.id, name: 'Riley Staff', email: 'riley@acme.com', passwordHash, role: 'staff', permissions: ['analytics:read'] }
     ])
     .returning()
+
+  /* default outlet + modules + roles (Phase 1 foundation) */
+  const [defaultOutlet] = await db
+    .insert(outlets)
+    .values({
+      merchantId: merchant.id,
+      name: 'Main Outlet',
+      code: 'MAIN',
+      address: { name: 'Acme Store', country: 'US', city: 'New York' },
+      status: 'active'
+    })
+    .returning()
+
+  await db.insert(merchantModules).values(
+    DEFAULT_MODULES.commerce.map((module) => ({ merchantId: merchant.id, module, enabled: true }))
+  )
+
+  const seededRoles = await db
+    .insert(roles)
+    .values(
+      DEFAULT_ROLES.map((r) => ({
+        merchantId: merchant.id,
+        name: r.name,
+        isSystem: true,
+        permissions: r.permissions as never,
+        scope: r.scope as never,
+        status: 'active'
+      }))
+    )
+    .returning()
+
+  // Admin (Sam) scoped to the default outlet; owner implicitly covers all.
+  const [ownerUser] = await db.select().from(users).where(eq(users.email, 'owner@acme.com'))
+  const [adminUser] = await db.select().from(users).where(eq(users.email, 'admin@acme.com'))
+  await db.insert(userOutlets).values([
+    { userId: ownerUser.id, outletId: defaultOutlet.id },
+    { userId: adminUser.id, outletId: defaultOutlet.id }
+  ])
+
+  console.log(`   Seeded ${seededRoles.length} system roles, 1 outlet, ${DEFAULT_MODULES.commerce.length} modules`)
 
   /* categories */
   const catMap = new Map<string, string>()

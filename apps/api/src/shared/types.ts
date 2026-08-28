@@ -7,8 +7,42 @@ export type OrderPaymentStatus = (typeof ORDER_PAYMENT_STATUSES)[number]
 export const ORDER_FULFILLMENT_STATUSES = ['unfulfilled', 'fulfilled'] as const
 export type OrderFulfillmentStatus = (typeof ORDER_FULFILLMENT_STATUSES)[number]
 
-export const USER_ROLES = ['owner', 'admin', 'staff'] as const
+/** Built-in/default roles. `owner`, `admin` and `staff` are the legacy
+ *  values still stored on `users.role` (kept for backward compatibility with
+ *  existing fixtures/tests). The others are the plan's default roles and are
+ *  stored as custom `roles` rows (see `DEFAULT_ROLES`). */
+export const USER_ROLES = [
+  'owner',
+  'admin',
+  'staff',
+  'manager',
+  'cashier',
+  'captain',
+  'kitchen_manager',
+  'kitchen_staff',
+  'inventory_manager',
+  'delivery_manager',
+  'driver',
+  'accountant',
+  'support'
+] as const
 export type UserRole = (typeof USER_ROLES)[number]
+
+/** Roles seeded per merchant when `roles` is (re)initialized. */
+export const DEFAULT_ROLES: Array<{ name: UserRole; permissions: Permission[]; scope: Scope }> = [
+  { name: 'owner', permissions: [], scope: 'GLOBAL' },
+  { name: 'admin', permissions: [], scope: 'GLOBAL' },
+  { name: 'manager', permissions: ['orders.read', 'orders.create', 'orders.update', 'orders.cancel', 'products.read', 'products.update', 'menu.read', 'menu.manage', 'kitchen.read', 'kds.read', 'tables.read', 'tables.manage', 'inventory.read', 'inventory.adjust', 'payments.read', 'payments.create', 'reports.read', 'staff.read', 'settings.read'], scope: 'MERCHANT' },
+  { name: 'cashier', permissions: ['orders.read', 'orders.create', 'orders.update', 'payments.read', 'payments.create', 'tables.read', 'tables.manage'], scope: 'OUTLET' },
+  { name: 'captain', permissions: ['orders.read', 'orders.create', 'orders.update', 'tables.read', 'tables.manage'], scope: 'OUTLET' },
+  { name: 'kitchen_manager', permissions: ['kitchen.read', 'kitchen.manage', 'kds.read', 'kds.manage', 'menu.read'], scope: 'OUTLET' },
+  { name: 'kitchen_staff', permissions: ['kitchen.read', 'kds.read', 'kds.manage'], scope: 'OUTLET' },
+  { name: 'inventory_manager', permissions: ['inventory.read', 'inventory.adjust', 'inventory.manage', 'products.read'], scope: 'OUTLET' },
+  { name: 'delivery_manager', permissions: ['delivery.read', 'delivery.assign', 'delivery.manage', 'drivers.read', 'drivers.manage', 'orders.read'], scope: 'OUTLET' },
+  { name: 'driver', permissions: ['delivery.read', 'orders.read'], scope: 'OWN' },
+  { name: 'accountant', permissions: ['reports.read', 'payments.read', 'inventory.read', 'orders.read'], scope: 'MERCHANT' },
+  { name: 'support', permissions: ['orders.read', 'customers.read'], scope: 'MERCHANT' }
+]
 
 export const USER_STATUSES = ['active', 'invited', 'disabled'] as const
 export type UserStatus = (typeof USER_STATUSES)[number]
@@ -54,12 +88,56 @@ export interface Address {
 }
 
 export type Permission =
+  // legacy (backward compatible)
   | 'products:write'
   | 'orders:write'
   | 'inventory:write'
   | 'discounts:write'
   | 'settings:write'
   | 'analytics:read'
+  // orders
+  | 'orders.read'
+  | 'orders.create'
+  | 'orders.update'
+  | 'orders.cancel'
+  // products
+  | 'products.read'
+  | 'products.create'
+  | 'products.update'
+  | 'products.delete'
+  // menu
+  | 'menu.read'
+  | 'menu.manage'
+  // kitchen / KDS
+  | 'kitchen.read'
+  | 'kitchen.manage'
+  | 'kds.read'
+  | 'kds.manage'
+  // tables
+  | 'tables.read'
+  | 'tables.manage'
+  // delivery / drivers
+  | 'delivery.read'
+  | 'delivery.assign'
+  | 'delivery.manage'
+  | 'drivers.read'
+  | 'drivers.manage'
+  // inventory
+  | 'inventory.read'
+  | 'inventory.adjust'
+  | 'inventory.manage'
+  // payments
+  | 'payments.read'
+  | 'payments.create'
+  | 'payments.refund'
+  // reports
+  | 'reports.read'
+  // staff / customers / settings
+  | 'staff.read'
+  | 'staff.manage'
+  | 'customers.read'
+  | 'settings.read'
+  | 'settings.manage'
 
 export const PERMISSIONS: Permission[] = [
   'products:write',
@@ -67,8 +145,70 @@ export const PERMISSIONS: Permission[] = [
   'inventory:write',
   'discounts:write',
   'settings:write',
-  'analytics:read'
+  'analytics:read',
+  'orders.read',
+  'orders.create',
+  'orders.update',
+  'orders.cancel',
+  'products.read',
+  'products.create',
+  'products.update',
+  'products.delete',
+  'menu.read',
+  'menu.manage',
+  'kitchen.read',
+  'kitchen.manage',
+  'kds.read',
+  'kds.manage',
+  'tables.read',
+  'tables.manage',
+  'delivery.read',
+  'delivery.assign',
+  'delivery.manage',
+  'drivers.read',
+  'drivers.manage',
+  'inventory.read',
+  'inventory.adjust',
+  'inventory.manage',
+  'payments.read',
+  'payments.create',
+  'payments.refund',
+  'reports.read',
+  'staff.read',
+  'staff.manage',
+  'customers.read',
+  'settings.read',
+  'settings.manage'
 ]
+
+/* ------------------------------ scopes ------------------------------ */
+
+/** Authorization scope of a user/role relative to their merchant. */
+export const SCOPES = ['GLOBAL', 'MERCHANT', 'OUTLET', 'OWN'] as const
+export type Scope = (typeof SCOPES)[number]
+
+/* ------------------------------ modules ------------------------------ */
+
+export const MODULES = [
+  'commerce',
+  'restaurant',
+  'pos',
+  'kitchen',
+  'tables',
+  'delivery',
+  'inventory',
+  'marketing',
+  'analytics'
+] as const
+export type ModuleId = (typeof MODULES)[number]
+
+/** Sensible default module sets per merchant kind (seeded on creation). */
+export const DEFAULT_MODULES: Record<'commerce', ModuleId[]> = {
+  commerce: ['commerce', 'inventory', 'marketing', 'analytics']
+}
+
+export const OUTLET_STATUSES = ['active', 'inactive', 'archived'] as const
+export type OutletStatus = (typeof OUTLET_STATUSES)[number]
 
 export const revenueStatuses: OrderStatus[] = ['pending', 'processing', 'shipped', 'delivered']
 

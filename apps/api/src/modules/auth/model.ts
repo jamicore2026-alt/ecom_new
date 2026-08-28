@@ -52,11 +52,25 @@ export const tokenPair = t.Object({
   })
 })
 
+const outletSchema = t.Object({
+  id: t.String(),
+  merchantId: t.String(),
+  name: t.String(),
+  code: t.String(),
+  address: t.Unknown(),
+  status: t.String(),
+  createdAt: t.Unknown(),
+  updatedAt: t.Unknown()
+})
+
 export const meResponse = t.Object({
   success: t.Boolean(),
   data: t.Object({
     user: authUser,
     merchant: authMerchant,
-    settings: t.Union([settings, t.Null()])
+    settings: t.Union([settings, t.Null()]),
+    allowedOutlets: t.Array(outletSchema),
+    selectedOutlet: t.Union([outletSchema, t.Null()]),
+    enabledModules: t.Array(t.String())
   })
 })

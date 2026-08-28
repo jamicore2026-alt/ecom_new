@@ -4,6 +4,7 @@ import { db } from '../../database/client'
 import { merchants, users, storeSettings } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { unauthorized, forbidden, badRequest } from '../../shared/errors'
+import { resolveMerchantContext } from '../../shared/merchant-context'
 import { loginAttempts } from './login-attempts'
 import type { Merchant, User } from '../../database/schema'
 
@@ -131,10 +132,20 @@ export class AuthService {
       .from(storeSettings)
       .where(eq(storeSettings.merchantId, merchant.id))
 
+    const context = await resolveMerchantContext(
+      user.id,
+      merchant.id,
+      user.role === 'owner' || user.role === 'admin',
+      null
+    )
+
     return ok({
       user: publicUser(user),
       merchant: publicMerchant(merchant),
-      settings: settings ?? null
+      settings: settings ?? null,
+      allowedOutlets: context.allowedOutlets,
+      selectedOutlet: context.selectedOutlet,
+      enabledModules: context.enabledModules
     })
   }
 }

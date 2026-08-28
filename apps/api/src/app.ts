@@ -33,6 +33,10 @@ import { customerTagsModule } from './modules/customer-tags'
 import { auditLogsModule } from './modules/audit-logs'
 
 import { uploadsModule } from './modules/uploads'
+import { outletsModule } from './modules/outlets'
+import { modulesModule } from './modules/modules'
+import { rolesModule } from './modules/roles'
+import { userOutletsModule } from './modules/user-outlets'
 
 await initializeRateLimitStore()
 
@@ -135,5 +139,9 @@ export const app = new Elysia({
   .use(customerTagsModule)
   .use(auditLogsModule)
   .use(uploadsModule)
+  .use(outletsModule)
+  .use(modulesModule)
+  .use(rolesModule)
+  .use(userOutletsModule)
 
 export type App = typeof app
