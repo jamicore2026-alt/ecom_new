@@ -569,3 +569,51 @@ export interface AuditEntry {
 	ipAddress: string | null
 	createdAt: string
 }
+
+export interface MenuProductLite {
+	id: string
+	name: string
+	sku: string
+	price: number
+	status: string
+}
+
+export interface MenuModifier {
+	id: string
+	name: string
+	priceAdjustment: number
+	available: boolean
+	status: string
+}
+
+export interface MenuModifierGroup {
+	id: string
+	name: string
+	required: boolean
+	minSelections: number
+	maxSelections: number
+	sortOrder: number
+	status: string
+	modifiers: MenuModifier[]
+}
+
+export interface MenuItem {
+	id: string
+	available: boolean
+	preparationTimeMin: number
+	kitchenStation: string | null
+	dietaryTags: string[]
+	allergens: string[]
+	taxRate: number
+	sortOrder: number
+	status: 'active' | 'inactive' | 'archived'
+	availability: { days: number[]; start: string; end: string }[]
+	product: {
+		id: string
+		name: string
+		sku: string
+		price: number
+		image?: string | null
+	}
+	modifierGroups?: MenuModifierGroup[]
+}

@@ -3,11 +3,15 @@ import { eq } from 'drizzle-orm'
 import { connection, db } from './client'
 import {
   categories,
-  coupons,
-  customers,
+  coupons,  customers,
   inventoryLogs,
   merchants,
   merchantModules,
+  menuItemModifiers,
+  menuItems,
+  menuItemOutlets,
+  modifierGroups,
+  modifiers,
   orderItems,
   orders,
   outlets,
@@ -230,7 +234,7 @@ async function main() {
     .returning()
 
   await db.insert(merchantModules).values(
-    DEFAULT_MODULES.commerce.map((module) => ({ merchantId: merchant.id, module, enabled: true }))
+    [...DEFAULT_MODULES.commerce, 'restaurant'].map((module) => ({ merchantId: merchant.id, module, enabled: true }))
   )
 
   const seededRoles = await db
@@ -345,6 +349,36 @@ async function main() {
       })
     }
   }
+
+  /* food menu (Phase 3) */
+  const [extraGroup] = await db.insert(modifierGroups).values({
+    merchantId: merchant.id, name: 'Add Ons', required: false,
+    minSelections: 0, maxSelections: 3, sortOrder: 0, status: 'active'
+  }).returning()
+  const [sauceGroup] = await db.insert(modifierGroups).values({
+    merchantId: merchant.id, name: 'Dipping Sauce', required: true,
+    minSelections: 1, maxSelections: 1, sortOrder: 1, status: 'active'
+  }).returning()
+  await db.insert(modifiers).values([
+    { merchantId: merchant.id, modifierGroupId: extraGroup.id, name: 'Extra Cheese', priceAdjustment: 1.5, available: true, sortOrder: 0, status: 'active' },
+    { merchantId: merchant.id, modifierGroupId: extraGroup.id, name: 'Extra Sauce', priceAdjustment: 0.75, available: true, sortOrder: 1, status: 'active' },
+    { merchantId: merchant.id, modifierGroupId: sauceGroup.id, name: 'Marinara', priceAdjustment: 0, available: true, sortOrder: 0, status: 'active' },
+    { merchantId: merchant.id, modifierGroupId: sauceGroup.id, name: 'BBQ', priceAdjustment: 0, available: true, sortOrder: 1, status: 'active' }
+  ])
+
+  const menuProducts = await db.select().from(products).where(eq(products.merchantId, merchant.id)).orderBy(products.createdAt).limit(6)
+  for (let i = 0; i < menuProducts.length; i++) {
+    const p = menuProducts[i]
+    const [menuItem] = await db.insert(menuItems).values({
+      merchantId: merchant.id, productId: p.id, available: true,
+      preparationTimeMin: 10 + (i % 3) * 5, kitchenStation: i % 2 === 0 ? 'Grill' : 'Fryer',
+      dietaryTags: i % 2 === 0 ? ['vegan'] : [], allergens: i % 4 === 0 ? ['dairy'] : [],
+      taxRate: 0, sortOrder: i, status: 'active', availability: []
+    }).returning()
+    await db.insert(menuItemModifiers).values({ merchantId: merchant.id, menuItemId: menuItem.id, modifierGroupId: extraGroup.id, sortOrder: 0 })
+    await db.insert(menuItemOutlets).values({ merchantId: merchant.id, menuItemId: menuItem.id, outletId: defaultOutlet.id, available: true, priceAdjustment: 0 })
+  }
+  console.log(`   Seeded ${menuProducts.length} menu items, 2 modifier groups`)
 
   /* customers */
   const customerRows: Array<typeof customers.$inferInsert> = []

@@ -37,6 +37,7 @@ import { outletsModule } from './modules/outlets'
 import { modulesModule } from './modules/modules'
 import { rolesModule } from './modules/roles'
 import { userOutletsModule } from './modules/user-outlets'
+import { menuModule } from './modules/menu'
 
 await initializeRateLimitStore()
 
@@ -143,5 +144,6 @@ export const app = new Elysia({
   .use(modulesModule)
   .use(rolesModule)
   .use(userOutletsModule)
+  .use(menuModule)
 
 export type App = typeof app

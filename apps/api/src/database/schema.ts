@@ -130,6 +130,116 @@ export const userOutlets = pgTable(
   ]
 )
 
+/* ------------------------------- food menu ------------------------------- */
+
+/** Food-specific metadata layered onto an existing catalog product/variant. */
+export const menuItems = pgTable(
+  'menu_items',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    productId: varchar('product_id', { length: 30 })
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    available: boolean('available').notNull().default(true),
+    preparationTimeMin: integer('preparation_time_min').notNull().default(0),
+    kitchenStation: varchar('kitchen_station', { length: 100 }),
+    dietaryTags: jsonb('dietary_tags').$type<string[]>().notNull().default([]),
+    allergens: jsonb('allergens').$type<string[]>().notNull().default([]),
+    taxRate: numeric('tax_rate', { precision: 6, scale: 3, mode: 'number' }).notNull().default(0),
+    sortOrder: integer('sort_order').notNull().default(0),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    /** Time-based availability: [{ days: number[] (0=Sun..6=Sat), start: "09:00", end: "22:00" }]. Empty = always. */
+    availability: jsonb('availability').notNull().default([]),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('menu_items_merchant_product_idx').on(t.merchantId, t.productId),
+    index('menu_items_merchant_idx').on(t.merchantId)
+  ]
+)
+
+export const modifierGroups = pgTable(
+  'modifier_groups',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 120 }).notNull(),
+    required: boolean('required').notNull().default(false),
+    minSelections: integer('min_selections').notNull().default(0),
+    maxSelections: integer('max_selections').notNull().default(1),
+    sortOrder: integer('sort_order').notNull().default(0),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [index('modifier_groups_merchant_idx').on(t.merchantId)]
+)
+
+export const modifiers = pgTable(
+  'modifiers',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    modifierGroupId: varchar('modifier_group_id', { length: 30 })
+      .notNull()
+      .references(() => modifierGroups.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 120 }).notNull(),
+    priceAdjustment: money('price_adjustment').notNull().default(0),
+    available: boolean('available').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    index('modifiers_group_idx').on(t.modifierGroupId),
+    index('modifiers_merchant_idx').on(t.merchantId)
+  ]
+)
+
+/** Which modifier groups are offered on which menu item. */
+export const menuItemModifiers = pgTable(
+  'menu_item_modifiers',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    menuItemId: varchar('menu_item_id', { length: 30 })
+      .notNull()
+      .references(() => menuItems.id, { onDelete: 'cascade' }),
+    modifierGroupId: varchar('modifier_group_id', { length: 30 })
+      .notNull()
+      .references(() => modifierGroups.id, { onDelete: 'cascade' }),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('menu_item_modifiers_item_group_idx').on(t.menuItemId, t.modifierGroupId)
+  ]
+)
+
+/** Per-outlet availability + optional price adjustment for a menu item. */
+export const menuItemOutlets = pgTable(
+  'menu_item_outlets',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    menuItemId: varchar('menu_item_id', { length: 30 })
+      .notNull()
+      .references(() => menuItems.id, { onDelete: 'cascade' }),
+    outletId: varchar('outlet_id', { length: 30 })
+      .notNull()
+      .references(() => outlets.id, { onDelete: 'cascade' }),
+    available: boolean('available').notNull().default(true),
+    priceAdjustment: money('price_adjustment').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('menu_item_outlets_item_outlet_idx').on(t.menuItemId, t.outletId)
+  ]
+)
+
 /* --------------------------------- catalog -------------------------------- */
 
 export const categories = pgTable(
@@ -1240,6 +1350,11 @@ export const table = {
     merchantModules,
     roles,
     userOutlets,
+    menuItems,
+    modifierGroups,
+    modifiers,
+    menuItemModifiers,
+    menuItemOutlets,
     categories,
     products,
     productVariants,
@@ -1307,6 +1422,16 @@ export type Role = typeof roles.$inferSelect
 export type NewRole = typeof roles.$inferInsert
 export type UserOutlet = typeof userOutlets.$inferSelect
 export type NewUserOutlet = typeof userOutlets.$inferInsert
+export type MenuItem = typeof menuItems.$inferSelect
+export type NewMenuItem = typeof menuItems.$inferInsert
+export type ModifierGroup = typeof modifierGroups.$inferSelect
+export type NewModifierGroup = typeof modifierGroups.$inferInsert
+export type Modifier = typeof modifiers.$inferSelect
+export type NewModifier = typeof modifiers.$inferInsert
+export type MenuItemModifier = typeof menuItemModifiers.$inferSelect
+export type NewMenuItemModifier = typeof menuItemModifiers.$inferInsert
+export type MenuItemOutlet = typeof menuItemOutlets.$inferSelect
+export type NewMenuItemOutlet = typeof menuItemOutlets.$inferInsert
 export type Category = typeof categories.$inferSelect
 export type Product = typeof products.$inferSelect
 export type NewProduct = typeof products.$inferInsert

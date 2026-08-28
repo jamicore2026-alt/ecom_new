@@ -33,6 +33,20 @@
 - **Verification**: `bun run check` (web+storefront): 0 errors, 71 pre-existing a11y warnings. `bun run typecheck` (api): PASS. `bun test`: **123 pass / 0 fail** (no API changes in this phase).
 - **Consideration / not done in Phase 2**: true server-side module-gating of every legacy commerce route is intentionally NOT added (would risk audited flows and isn't this phase's deliverable). Disabled-module nav is hidden client-side; authorization remains enforced by the existing `authPlugin`/`requirePermission`/`outletGuard` guards.
 
+## Phase 3 — Food menu (2026-08-28)
+
+- **Schema** (migration `0017_cheerful_stellaris`): 5 tables layered over the existing catalog (categories/products/variants are reused, NOT duplicated):
+  - `menu_items` — food metadata for a bound product: `productId` (cascade FK, unique per merchant+product), `available`, `preparationTimeMin`, `kitchenStation`, `dietaryTags` jsonb, `allergens` jsonb, `taxRate` numeric(6,3), `sortOrder`, `status`, `availability` jsonb (weekly time windows `[{days:[0-6],start:"09:00",end:"22:00"}]`, empty=always), timestamps.
+  - `modifier_groups` — `name`, `required`, `minSelections`, `maxSelections`, `sortOrder`, `status`.
+  - `modifiers` — `modifierGroupId` (cascade), `name`, `priceAdjustment` money(12,3), `available`, `sortOrder`, `status`.
+  - `menu_item_modifiers` — bind a modifier group to a menu item (unique item+group).
+  - `menu_item_outlets` — per-outlet rule: `outletId` (cascade), `available`, `priceAdjustment`; unique item+outlet.
+- **API module** (`modules/menu/{index,service,model}.ts`, registered in `app.ts`): reads gated by `outletGuard({ module:'restaurant', permissions:['menu.read'] })`; writes by `module:'restaurant'` + `permissions:['menu.manage']` (disabled module → 403). Routes: GET `/menu` (list, search on product name, join product), GET `/menu/:id` (detail w/ modifierGroups + outletRules), POST/PUT/DELETE `/menu` (+ archive on delete), POST `/menu/:id/modifiers` (bind group), DELETE `/menu/:id/modifiers/:groupId` (unbind), POST `/menu/:id/outlets` (upsert outlet rule), CRUD `/modifier-groups` + `/modifier-groups/:id/modifiers` + `/modifiers/:id`. Writes fire `auditFromRequest`.
+- **Seed**: now also enables the `restaurant` module; seeds 6 menu items (from first products), 2 modifier groups (Add Ons optional / Dipping Sauce required) w/ modifiers, item→group bindings, and a Main-Outlet rule.
+- **Dashboard**: `Menu` nav item (utensils icon, new `Restaurant` group) gated `module:'restaurant'`+`menu.read`; `/menu` page lists items/price/station/prep/tags/availability, Actions add-from-product modal, show/hide, remove; modifier-groups grid. Added `/menu` to `hooks.server.ts` PROTECTED_PREFIXES. New `MenuItem`/`MenuModifierGroup`/`MenuProductLite` types in `web/src/lib/types.ts`.
+- **Verification**: `bun run typecheck` (api) PASS · `bun run check` (web+storefront): 0 errors, 71 pre-existing a11y warnings · `db:migrate` applied `0017` · `db:seed` seeds 6 menu items + 2 groups · `bun test`: **130 pass / 0 fail** across 16 files (new `test/menu.test.ts`, 7 tests).
+- **Test gotcha**: menu_test creates + archives a menu item but the row lingers (unique merchant+product holds even when archived). `GET /api/menu` returns archived items, so a re-run with a dirty DB still picks an unlisted product. Reseed before running to avoid stale `MENU_ITEM_EXISTS` 409s in CI/scripts.
+
 ## Audit-hardening batch (2026-08-24) — what changed and why
 
 **Security**
