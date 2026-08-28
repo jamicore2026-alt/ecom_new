@@ -234,7 +234,14 @@ export const getRateLimitStore = (): CounterStore => {
     if (useRedis) {
       const url = process.env.REDIS_URL
       if (!url) throw new Error('REDIS_URL must be set to use the Redis rate-limit store')
-      store = new RedisCounterStore(url)
+      try {
+        store = new RedisCounterStore(url)
+      } catch (err) {
+        // A malformed REDIS_URL (wrong protocol, empty, etc.) must never take
+        // the API down — degrade to the in-memory store with a warning.
+        console.warn(`[rate-limit] invalid REDIS_URL; falling back to in-memory store.`, err)
+        store = new MemoryCounterStore()
+      }
     } else {
       store = new MemoryCounterStore()
     }
