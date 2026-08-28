@@ -1086,7 +1086,7 @@ Tests:
 ### Phase 3 — Food Menu ✅
 Categories, items, variants, modifiers, availability, outlet rules.
 
-### Phase 4 — Unified Food Orders
+### Phase 4 — Unified Food Orders ✅
 Order types and validated state machine.
 
 ### Phase 5 — Tables + QR

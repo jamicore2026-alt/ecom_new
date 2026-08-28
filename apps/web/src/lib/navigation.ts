@@ -28,6 +28,7 @@ export const NAV_ITEMS: NavItem[] = [
 	{ label: 'Customers', route: '/customers', icon: 'users', group: 'General', module: 'commerce', permission: 'customers.read' },
 	{ label: 'Products', route: '/products', icon: 'box', group: 'Sell', module: 'commerce', permission: ['products.read', 'products:write'] },
 	{ label: 'Menu', route: '/menu', icon: 'utensils', group: 'Restaurant', module: 'restaurant', permission: 'menu.read' },
+	{ label: 'Food Orders', route: '/food-orders', icon: 'receipt', group: 'Restaurant', module: 'restaurant', permission: ['orders.read', 'orders.create'] },
 	{ label: 'Inventory', route: '/inventory', icon: 'layers', group: 'Sell', module: 'inventory', permission: ['inventory.read', 'inventory:write'] },
 	{ label: 'Discounts', route: '/discounts', icon: 'tag', group: 'Sell', module: 'marketing', permission: 'discounts:write' },
 	{ label: 'Reviews', route: '/reviews', icon: 'star', group: 'Sell', module: 'commerce', permission: 'products:write' },
@@ -49,5 +50,6 @@ export const NAV_ICONS: Record<string, string> = {
 	cog: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z',
 	utensils: 'M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2M7 2v20M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zm0 0v7',
 	bike: 'M5 22a4 4 0 100-8 4 4 0 000 8zm14 0a4 4 0 100-8 4 4 0 000 8zM5 16l3-8h3m-3-2h4l5 7h3m-6-7h2',
-	flame: 'M12 2c3 2.5 5 5.5 5 9a5 5 0 01-10 0c0-1.5.5-3 1.5-4.5C9 8 10 9.5 11 10c0-2-2-4-2-8 1 1 2 2 3 0z'
+	flame: 'M12 2c3 2.5 5 5.5 5 9a5 5 0 01-10 0c0-1.5.5-3 1.5-4.5C9 8 10 9.5 11 10c0-2-2-4-2-8 1 1 2 2 3 0z',
+	receipt: 'M4 2h16v20l-2-1.5L16 22l-2-1.5L12 22l-2-1.5L8 22l-2-1.5L4 22V2zM8 7h8M8 11h8M8 15h5'
 }

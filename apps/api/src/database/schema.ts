@@ -14,7 +14,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
-import type { Address, ModuleId, OutletStatus, Permission, Scope } from '../shared/types'
+import type { Address, FoodOrderModifier, ModuleId, OutletStatus, Permission, Scope } from '../shared/types'
 
 // scale 3 supports GCC currencies with 3 decimals (KWD/BHD/OMR)
 const money = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
@@ -434,13 +434,23 @@ export const orders = pgTable(
     }),
     /** Marketing attribution captured at checkout (funnel `paid` metric). */
     attributionChannel: varchar('attribution_channel', { length: 20 }),
+    /** Order kind. `ecommerce` for legacy storefront orders; food orders use DINE_IN/TAKEAWAY/DELIVERY/QR/POS/SCHEDULED. */
+    orderType: varchar('order_type', { length: 20 }).notNull().default('ecommerce'),
+    /** Outlet a food/POS order is scoped to (null for ecommerce). */
+    outletId: varchar('outlet_id', { length: 30 }).references(() => outlets.id, {
+      onDelete: 'set null'
+    }),
+    /** Reserved time for scheduled delivery/pickup. */
+    scheduledFor: timestamp('scheduled_for'),
     expiresAt: timestamp('expires_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('orders_merchant_number_idx').on(t.merchantId, t.orderNumber),
-    index('orders_merchant_status_idx').on(t.merchantId, t.status)
+    index('orders_merchant_status_idx').on(t.merchantId, t.status),
+    index('orders_merchant_type_status_idx').on(t.merchantId, t.orderType, t.status),
+    index('orders_outlet_idx').on(t.outletId)
   ]
 )
 
@@ -464,6 +474,35 @@ export const orderItems = pgTable(
     total: money('total').notNull().default(0)
   },
   (t) => [index('order_items_order_idx').on(t.orderId)]
+)
+
+/** Menu-level line item for food orders (DINE_IN/TAKEAWAY/DELIVERY/QR/POS/SCHEDULED). */
+export const foodOrderItems = pgTable(
+  'food_order_items',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    orderId: varchar('order_id', { length: 30 })
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    menuItemId: varchar('menu_item_id', { length: 30 }).references(() => menuItems.id, {
+      onDelete: 'set null'
+    }),
+    productId: varchar('product_id', { length: 30 }).references(() => products.id, {
+      onDelete: 'set null'
+    }),
+    variantId: varchar('variant_id', { length: 30 }).references(() => productVariants.id, {
+      onDelete: 'set null'
+    }),
+    name: varchar('name', { length: 255 }).notNull(),
+    /** Selected modifiers snapshot: [{ modifierId, groupName, name, priceAdjustment, quantity }]. */
+    modifiers: jsonb('modifiers').$type<FoodOrderModifier[]>().notNull().default([]),
+    unitPrice: money('unit_price').notNull().default(0),
+    quantity: integer('quantity').notNull().default(1),
+    total: money('total').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [index('food_order_items_order_idx').on(t.orderId)]
 )
 
 export const returnsTable = pgTable(
@@ -1363,6 +1402,7 @@ export const table = {
   customers,
   orders,
   orderItems,
+  foodOrderItems,
   returnsTable,
   refunds,
   reviews,
@@ -1446,6 +1486,8 @@ export type Order = typeof orders.$inferSelect
 export type NewOrder = typeof orders.$inferInsert
 export type OrderItem = typeof orderItems.$inferSelect
 export type NewOrderItem = typeof orderItems.$inferInsert
+export type FoodOrderItem = typeof foodOrderItems.$inferSelect
+export type NewFoodOrderItem = typeof foodOrderItems.$inferInsert
 export type ReturnRecord = typeof returnsTable.$inferSelect
 export type NewReturn = typeof returnsTable.$inferInsert
 export type Refund = typeof refunds.$inferSelect

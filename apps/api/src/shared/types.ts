@@ -7,6 +7,41 @@ export type OrderPaymentStatus = (typeof ORDER_PAYMENT_STATUSES)[number]
 export const ORDER_FULFILLMENT_STATUSES = ['unfulfilled', 'fulfilled'] as const
 export type OrderFulfillmentStatus = (typeof ORDER_FULFILLMENT_STATUSES)[number]
 
+/* ------------------------- food order types/state ------------------------- */
+
+export const ORDER_TYPES = ['ecommerce', 'DINE_IN', 'TAKEAWAY', 'DELIVERY', 'QR', 'POS', 'SCHEDULED'] as const
+export type OrderType = (typeof ORDER_TYPES)[number]
+
+export const FOOD_ORDER_TYPES: OrderType[] = ['DINE_IN', 'TAKEAWAY', 'DELIVERY', 'QR', 'POS', 'SCHEDULED']
+
+export const FOOD_ORDER_STATUSES = [
+  'CREATED',
+  'CONFIRMED',
+  'PREPARING',
+  'READY',
+  'COMPLETED',
+  'CANCELLED'
+] as const
+export type FoodOrderStatus = (typeof FOOD_ORDER_STATUSES)[number]
+
+/** Valid food-order state transitions (validated, no raw status assignments). */
+export const FOOD_STATUS_TRANSITIONS: Record<FoodOrderStatus, FoodOrderStatus[]> = {
+  CREATED: ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED: ['PREPARING', 'CANCELLED'],
+  PREPARING: ['READY', 'CANCELLED'],
+  READY: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: [],
+  CANCELLED: []
+}
+
+export type FoodOrderModifier = {
+  modifierId: string
+  groupName: string
+  name: string
+  priceAdjustment: number
+  quantity: number
+}
+
 /** Built-in/default roles. `owner`, `admin` and `staff` are the legacy
  *  values still stored on `users.role` (kept for backward compatibility with
  *  existing fixtures/tests). The others are the plan's default roles and are

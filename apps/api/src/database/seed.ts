@@ -29,7 +29,7 @@ import {
   users,
   visits
 } from './schema'
-import { DEFAULT_MODULES, DEFAULT_ROLES } from '../shared/types'
+import { DEFAULT_MODULES, DEFAULT_ROLES, type ModuleId } from '../shared/types'
 
 /* --------------------------------- rng ---------------------------------- */
 
@@ -233,8 +233,9 @@ async function main() {
     })
     .returning()
 
+  const seedModules: ModuleId[] = [...DEFAULT_MODULES.commerce, 'restaurant']
   await db.insert(merchantModules).values(
-    [...DEFAULT_MODULES.commerce, 'restaurant'].map((module) => ({ merchantId: merchant.id, module, enabled: true }))
+    seedModules.map((module) => ({ merchantId: merchant.id, module, enabled: true }))
   )
 
   const seededRoles = await db

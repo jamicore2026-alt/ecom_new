@@ -617,3 +617,39 @@ export interface MenuItem {
 	}
 	modifierGroups?: MenuModifierGroup[]
 }
+
+export interface FoodOrderModifierSnapshot {
+	modifierId: string
+	groupName: string
+	name: string
+	priceAdjustment: number
+	quantity: number
+}
+
+export interface FoodOrderLine {
+	id: string
+	menuItemId: string | null
+	name: string
+	modifiers: FoodOrderModifierSnapshot[]
+	unitPrice: number
+	quantity: number
+	total: number
+}
+
+export interface FoodOrder {
+	id: string
+	orderNumber: string
+	status: 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED'
+	paymentStatus: string
+	orderType: 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY' | 'QR' | 'POS' | 'SCHEDULED'
+	outletId: string | null
+	outletName: string | null
+	scheduledFor: string | null
+	subtotal: number
+	taxTotal: number
+	total: number
+	currency: string
+	notes: string | null
+	createdAt: string
+	items: FoodOrderLine[]
+}
