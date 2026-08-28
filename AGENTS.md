@@ -5,6 +5,7 @@
 > NOTE: migration `0010_audit-hardening` added `customers.token_version`, `orders.coupon_code`, `orders.attribution_channel` — run `bun run db:migrate`. Seed now counts only collected revenue toward customer totalSpent.
 > NOTE: migration `0011_variant_clock_timestamp` switches `product_variants.created_at` default to `clock_timestamp()` — batch-inserted variants previously shared one `now()` stamp, so `ORDER BY created_at` ties were nondeterministic across databases (broke the CSV round-trip test in CI only).
 > NOTE: staff passwords now require ≥10 chars (bcrypt 12); shopper register on a guest email requires a recent order number as proof (`CLAIM_ORDER_REQUIRED` / `CLAIM_ORDER_MISMATCH`). Rate limiting is active per-IP in dev/prod but skipped when NODE_ENV=test.
+> NOTE: migration `0015_audit_logs` added the `audit_logs` table (merchant-scoped activity trail). Run `bun run db:migrate`. Noted 2026-08-28.
 
 ## Audit-hardening batch (2026-08-24) — what changed and why
 
@@ -138,8 +139,15 @@ Migrations committed in `drizzle/` (0000–0002). Analytics computed live via SQ
 - Env additions: ENCRYPTION_KEY (required for provider config), PUBLIC_API_URL (webhook base), PUBLIC_STOREFRONT_URL (return base) — all in turbo globalEnv.
 - Web dashboard Settings→Payments renders provider cards (mode select, country, masked credential inputs, Save + Test connection). Storefront checkout shows online providers above COD/manual; sessionStorage flag `ecom:pending:${slug}` releases cart after confirmed paid.
 
+### Audit logs / activity trail
+- `audit_logs` table (migration 0015): `id` cuid2 PK, `merchantId` (cascade FK), `actorUserId` (nullable, set-null FK to `users`), `actorName` (denormalized snapshot), `action` varchar(100), `entityType`/`entityId`, `metadata` jsonb default `{}`, `ipAddress`, `createdAt`. Indexes on merchant+created, merchant+action, entity. All merchant-scoped.
+- Merchant module `modules/audit-logs`: GET `/api/audit` (paginated; filters action/entityType/entityId/from/to) + GET `/api/audit/:id`. Swagger tag 'Audit Logs'. Reads need any valid auth (no extra permission).
+- Recording: fire-and-forget `auditFromRequest(auth, request, {action, entityType?, entityId?, metadata?})` helper (in `modules/audit-logs/index.ts`) derives IP from `x-forwarded-for` and calls `AuditService.log()` (never throws, action sliced to 100). Wired into WRITE endpoints of products (create/update/archive/bulk/import/variants/categories), orders (status_change), inventory (adjust), reviews (moderate), discounts (coupons+promotions CRUD), settings (staff CRUD), api-keys (create/revoke), customer-tags (add/remove), auth (login). Audit calls never await/block the request.
+- Web: nav item 'Audit Log' (shield icon, `/audit`), added to `hooks.server.ts` PROTECTED_PREFIXES, `(app)/audit/+page.svelte` (svelte 5 runes; filters entityType+action, table time/actor/action-badge/entity/details/IP, `dateTimeFull`, Pagination). `AuditEntry` type in `web/src/lib/types.ts`.
+- NOTE: build the migration before deploying (the API writes to audit_logs at runtime; missing table won't crash requests thanks to the fire-and-forget catch, but nothing will be recorded).
+
 ## Web dashboard (apps/web)
-Routes under `(app)/`: dashboard, analytics(tabs+range), products(list+[id] variants, CreateEditProduct modal, CategoriesManager), inventory(all/low/out/history), orders(list+[id] returns/refunds), customers(list+[id]), discounts(coupons/promotions tabs), settings(store/payments/shipping/taxes/staff). Plus `/login`, `/` redirector.
+Routes under `(app)/`: dashboard, analytics(tabs+range), products(list+[id] variants, CreateEditProduct modal, CategoriesManager), inventory(all/low/out/history), orders(list+[id] returns/refunds), customers(list+[id]), discounts(coupons/promotions tabs), settings(store/payments/shipping/taxes/staff), reviews, audit. Plus `/login`, `/` redirector.
 State: `session.svelte.ts` (Svelte 5 runes singleton; bootstrap() hydrates from /auth/me; login() now also fetches settings via fetchMe; isAdmin, can(perm)); **access token only** in localStorage (`md.access`) — refresh is cookie-based; api.ts single-flight refresh (`refreshPromise ??=`) so concurrent 401s share one refresh call. UI components: Badge, Button, Card, Modal, Pagination, Toast (+toast.svelte.ts store).
 `hooks.server.ts`: server-side guard — protected prefixes (dashboard/analytics/products/inventory/orders/customers/discounts/settings) require `md.refresh` cookie else 302 /login; /login redirects to /dashboard when session present. Presence check only (not JWT verification) — real auth still enforced by API.
 
