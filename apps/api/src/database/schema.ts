@@ -14,7 +14,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
-import type { Address, FoodOrderModifier, ModuleId, OutletStatus, Permission, Scope, TableSessionStatus, TableState } from '../shared/types'
+import type { Address, FoodOrderModifier, KitchenItemStatus, KitchenPriority, KitchenStationStatus, KotStatus, ModuleId, OutletStatus, Permission, Scope, TableSessionStatus, TableState } from '../shared/types'
 
 // scale 3 supports GCC currencies with 3 decimals (KWD/BHD/OMR)
 const money = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
@@ -587,6 +587,99 @@ export const tableSessions = pgTable(
     index('table_sessions_merchant_idx').on(t.merchantId)
   ]
 )
+
+/* ----------------------------- kitchen: stations / KOT / KDS ----------------------------- */
+
+/** A preparation station (Grill, Fryer, Drinks, Dessert, ...). Routes menu items to tickets. */
+export const kitchenStations = pgTable(
+  'kitchen_stations',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    outletId: varchar('outlet_id', { length: 30 }).references(() => outlets.id, {
+      onDelete: 'cascade'
+    }),
+    name: varchar('name', { length: 100 }).notNull(),
+    /** Target prep time for a ticket on this station (minutes) — drives the timer/SLA. */
+    prepSlaMin: integer('prep_sla_min').notNull().default(10),
+    sortOrder: integer('sort_order').notNull().default(0),
+    status: varchar('status', { length: 20 }).$type<KitchenStationStatus>().notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('kitchen_stations_merchant_outlet_name_idx').on(t.merchantId, t.outletId, t.name),
+    index('kitchen_stations_merchant_idx').on(t.merchantId)
+  ]
+)
+
+/** A kitchen order ticket (KOT). Created per (order, station). Duplicate creation is prevented. */
+export const kitchenTickets = pgTable(
+  'kitchen_tickets',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    outletId: varchar('outlet_id', { length: 30 }).references(() => outlets.id, {
+      onDelete: 'set null'
+    }),
+    orderId: varchar('order_id', { length: 30 })
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    orderNumber: varchar('order_number', { length: 40 }).notNull(),
+    stationId: varchar('station_id', { length: 30 })
+      .notNull()
+      .references(() => kitchenStations.id, { onDelete: 'cascade' }),
+    stationName: varchar('station_name', { length: 100 }).notNull(),
+    sourceType: varchar('source_type', { length: 20 }).notNull().default('DINE_IN'),
+    status: varchar('status', { length: 20 }).$type<KotStatus>().notNull().default('NEW'),
+    priority: varchar('priority', { length: 10 }).$type<KitchenPriority>().notNull().default('NORMAL'),
+    prepSlaMin: integer('prep_sla_min').notNull().default(10),
+    /** When the party/handoff is needed — drives priority ordering for scheduled KOTs. */
+    dueAt: timestamp('due_at'),
+    receivedAt: timestamp('received_at').defaultNow().notNull(),
+    startedAt: timestamp('started_at'),
+    readyAt: timestamp('ready_at'),
+    closedAt: timestamp('closed_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('kitchen_tickets_order_station_idx').on(t.orderId, t.stationId),
+    index('kitchen_tickets_merchant_status_idx').on(t.merchantId, t.status),
+    index('kitchen_tickets_station_idx').on(t.stationId),
+    index('kitchen_tickets_merchant_idx').on(t.merchantId)
+  ]
+)
+
+/** One menu line on a kitchen ticket — supports item-level completion. */
+export const kitchenTicketItems = pgTable(
+  'kitchen_ticket_items',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    ticketId: varchar('ticket_id', { length: 30 })
+      .notNull()
+      .references(() => kitchenTickets.id, { onDelete: 'cascade' }),
+    orderItemId: varchar('order_item_id', { length: 30 }).references(() => foodOrderItems.id, {
+      onDelete: 'set null'
+    }),
+    menuItemId: varchar('menu_item_id', { length: 30 }).references(() => menuItems.id, {
+      onDelete: 'set null'
+    }),
+    name: varchar('name', { length: 255 }).notNull(),
+    modifiers: jsonb('modifiers').$type<FoodOrderModifier[]>().notNull().default([]),
+    quantity: integer('quantity').notNull().default(1),
+    status: varchar('status', { length: 20 }).$type<KitchenItemStatus>().notNull().default('PENDING'),
+    readyAt: timestamp('ready_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    index('kitchen_ticket_items_ticket_idx').on(t.ticketId),
+    index('kitchen_ticket_items_merchant_idx').on(t.merchantId)
+  ]
+)
+
 
 export const returnsTable = pgTable(
   'returns',
@@ -1571,6 +1664,12 @@ export type OrderItem = typeof orderItems.$inferSelect
 export type NewOrderItem = typeof orderItems.$inferInsert
 export type FoodOrderItem = typeof foodOrderItems.$inferSelect
 export type NewFoodOrderItem = typeof foodOrderItems.$inferInsert
+export type KitchenStation = typeof kitchenStations.$inferSelect
+export type NewKitchenStation = typeof kitchenStations.$inferInsert
+export type KitchenTicket = typeof kitchenTickets.$inferSelect
+export type NewKitchenTicket = typeof kitchenTickets.$inferInsert
+export type KitchenTicketItem = typeof kitchenTicketItems.$inferSelect
+export type NewKitchenTicketItem = typeof kitchenTicketItems.$inferInsert
 export type ReturnRecord = typeof returnsTable.$inferSelect
 export type NewReturn = typeof returnsTable.$inferInsert
 export type Refund = typeof refunds.$inferSelect

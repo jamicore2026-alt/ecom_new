@@ -1,10 +1,11 @@
 import { hash } from 'bcryptjs'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { connection, db } from './client'
 import {
   categories,
   coupons,  customers,
   inventoryLogs,
+  kitchenStations,
   merchants,
   merchantModules,
   menuItemModifiers,
@@ -31,6 +32,7 @@ import {
   users,
   visits
 } from './schema'
+
 import { DEFAULT_MODULES, DEFAULT_ROLES, type ModuleId } from '../shared/types'
 
 /* --------------------------------- rng ---------------------------------- */
@@ -235,7 +237,7 @@ async function main() {
     })
     .returning()
 
-  const seedModules: ModuleId[] = [...DEFAULT_MODULES.commerce, 'restaurant', 'tables']
+  const seedModules: ModuleId[] = [...DEFAULT_MODULES.commerce, 'restaurant', 'tables', 'kitchen']
   await db.insert(merchantModules).values(
     seedModules.map((module) => ({ merchantId: merchant.id, module, enabled: true }))
   )
@@ -297,6 +299,31 @@ async function main() {
     })
   }
   console.log(`   Seeded ${tableDefs.length} tables in section "${mainSection.name}"`)
+
+  /* kitchen stations */
+  const stationDefs = [
+    { name: 'Grill', prepSlaMin: 12 },
+    { name: 'Fryer', prepSlaMin: 10 },
+    { name: 'Drinks', prepSlaMin: 4 },
+    { name: 'Dessert', prepSlaMin: 8 },
+    { name: 'General', prepSlaMin: 10 }
+  ]
+  for (let i = 0; i < stationDefs.length; i++) {
+    const existing = await db
+      .select()
+      .from(kitchenStations)
+      .where(and(eq(kitchenStations.merchantId, merchant.id), eq(kitchenStations.name, stationDefs[i].name)))
+    if (existing.length) continue
+    await db.insert(kitchenStations).values({
+      merchantId: merchant.id,
+      name: stationDefs[i].name,
+      outletId: defaultOutlet.id,
+      prepSlaMin: stationDefs[i].prepSlaMin,
+      sortOrder: i,
+      status: 'active'
+    })
+  }
+  console.log(`   Seeded ${stationDefs.length} kitchen stations`)
 
   /* categories */
   const catMap = new Map<string, string>()

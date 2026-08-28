@@ -78,6 +78,40 @@ export const TABLE_SESSION_TRANSITIONS: Record<TableSessionStatus, TableSessionS
   CANCELLED: []
 }
 
+/* --------------------------- kitchen: stations / KOT / KDS --------------------------- */
+
+export const KITCHEN_STATION_STATUSES = ['active', 'inactive', 'archived'] as const
+export type KitchenStationStatus = (typeof KITCHEN_STATION_STATUSES)[number]
+
+/** Priority value on a kitchen ticket (affects ordering & delayed detection). */
+export const KITCHEN_PRIORITIES = ['LOW', 'NORMAL', 'HIGH'] as const
+export type KitchenPriority = (typeof KITCHEN_PRIORITIES)[number]
+
+/** Legacy alias for kitchenStation — a printable kitchen-order ticket. */
+export const KOT_STATUSES = [
+  'NEW',
+  'ACCEPTED',
+  'PREPARING',
+  'READY',
+  'RECALLED',
+  'CANCELLED'
+] as const
+export type KotStatus = (typeof KOT_STATUSES)[number]
+
+/** Valid KOT/ticket state transitions (validated — no raw status assignments). */
+export const KOT_STATUS_TRANSITIONS: Record<KotStatus, KotStatus[]> = {
+  NEW: ['ACCEPTED', 'RECALLED', 'CANCELLED'],
+  ACCEPTED: ['PREPARING', 'RECALLED', 'CANCELLED'],
+  PREPARING: ['READY', 'RECALLED', 'CANCELLED'],
+  READY: [],
+  RECALLED: ['NEW', 'ACCEPTED', 'PREPARING', 'CANCELLED'],
+  CANCELLED: []
+}
+
+/** Per-line status on a kitchen ticket (supports item-level completion). */
+export const KITCHEN_ITEM_STATUSES = ['PENDING', 'READY', 'DONE', 'CANCELLED'] as const
+export type KitchenItemStatus = (typeof KITCHEN_ITEM_STATUSES)[number]
+
 /** Built-in/default roles. `owner`, `admin` and `staff` are the legacy
  *  values still stored on `users.role` (kept for backward compatibility with
  *  existing fixtures/tests). The others are the plan's default roles and are

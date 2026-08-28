@@ -547,26 +547,26 @@ Order #1024
 KDS states:
 
 ```text
-NEW
-ACCEPTED
-PREPARING
-READY
-RECALLED
-CANCELLED
+NEW     ✅
+ACCEPTED ✅
+PREPARING ✅
+READY   ✅
+RECALLED ✅
+CANCELLED ✅
 ```
 
 Requirements:
 
-- station filtering
-- ticket timer
-- preparation SLA
-- priority
-- notification
-- item-level completion
-- bump
-- recall
-- delayed indication
-- ready handoff
+- ✅ station filtering
+- ✅ ticket timer
+- ✅ preparation SLA
+- ✅ priority
+- ⏳ notification (delayed in-board highlight; push out of scope this pass)
+- ✅ item-level completion (auto-bump when all lines done)
+- ✅ bump
+- ✅ recall
+- ✅ delayed indication
+- ✅ ready handoff
 
 ---
 
@@ -1092,7 +1092,7 @@ Order types and validated state machine.
 ### Phase 5 — Tables + QR ✅
 Tables, sections, QR, sessions, move/merge/split.
 
-### Phase 6 — Kitchen + KOT + KDS
+### Phase 6 — Kitchen + KOT + KDS ✅
 Stations, routing, tickets, timers, priority, recall.
 
 ### Phase 7 — Delivery

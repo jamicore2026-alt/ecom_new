@@ -30,6 +30,8 @@ export const NAV_ITEMS: NavItem[] = [
 	{ label: 'Menu', route: '/menu', icon: 'utensils', group: 'Restaurant', module: 'restaurant', permission: 'menu.read' },
 	{ label: 'Food Orders', route: '/food-orders', icon: 'receipt', group: 'Restaurant', module: 'restaurant', permission: ['orders.read', 'orders.create'] },
 	{ label: 'Tables', route: '/tables', icon: 'layout', group: 'Restaurant', module: 'tables', permission: 'tables.read' },
+	{ label: 'Kitchen', route: '/kitchen', icon: 'flame', group: 'Restaurant', module: 'kitchen', permission: 'kitchen.read' },
+	{ label: 'KDS', route: '/kds', icon: 'monitor', group: 'Restaurant', module: 'kitchen', permission: 'kds.read' },
 	{ label: 'Inventory', route: '/inventory', icon: 'layers', group: 'Sell', module: 'inventory', permission: ['inventory.read', 'inventory:write'] },
 	{ label: 'Discounts', route: '/discounts', icon: 'tag', group: 'Sell', module: 'marketing', permission: 'discounts:write' },
 	{ label: 'Reviews', route: '/reviews', icon: 'star', group: 'Sell', module: 'commerce', permission: 'products:write' },
@@ -53,5 +55,6 @@ export const NAV_ICONS: Record<string, string> = {
 	bike: 'M5 22a4 4 0 100-8 4 4 0 000 8zm14 0a4 4 0 100-8 4 4 0 000 8zM5 16l3-8h3m-3-2h4l5 7h3m-6-7h2',
 	flame: 'M12 2c3 2.5 5 5.5 5 9a5 5 0 01-10 0c0-1.5.5-3 1.5-4.5C9 8 10 9.5 11 10c0-2-2-4-2-8 1 1 2 2 3 0z',
 	receipt: 'M4 2h16v20l-2-1.5L16 22l-2-1.5L12 22l-2-1.5L8 22l-2-1.5L4 22V2zM8 7h8M8 11h8M8 15h5',
-	layout: 'M4 4h16v16H4V4zm0 7h16M9 11v9'
+	layout: 'M4 4h16v16H4V4zm0 7h16M9 11v9',
+	monitor: 'M2 3h20v14H2V3zm6 18h8m-4-4v4'
 }

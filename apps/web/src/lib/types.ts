@@ -714,3 +714,87 @@ export interface TableQrContextItem {
 	price: number
 	taxRate: number
 }
+
+// ---- kitchen / KOT / KDS ----
+
+export type KitchenStationStatus = 'active' | 'inactive' | 'archived'
+export type KotStatus = 'NEW' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'RECALLED' | 'CANCELLED'
+export type KitchenItemStatus = 'PENDING' | 'READY' | 'DONE' | 'CANCELLED'
+export type KitchenPriority = 'LOW' | 'NORMAL' | 'HIGH'
+
+export interface KitchenStation {
+	id: string
+	name: string
+	prepSlaMin: number
+	sortOrder: number
+	status: KitchenStationStatus
+	outletId: string
+	outletName: string | null
+	openTickets: number
+}
+
+export interface KotItem {
+	name: string
+	quantity: number
+	modifiers: { groupName: string; name: string; quantity: number }[]
+	status: KitchenItemStatus
+}
+
+export interface KitchenTicket {
+	id: string
+	orderNumber: string
+	orderType: string
+	sourceType: string | null
+	stationId: string
+	stationName: string
+	status: KotStatus
+	priority: KitchenPriority
+	prepSlaMin: number | null
+	receivedAt: string
+	startedAt: string | null
+	dueAt: string | null
+	readyAt: string | null
+	closedAt: string | null
+	ageSec: number
+	delayed: boolean
+	items: KotItem[]
+}
+
+export interface KdsBoard {
+	stations: Array<{
+		id: string
+		name: string
+		prepSlaMin: number
+		tickets: KdsTicket[]
+	}>
+	delayedCount: number
+}
+
+export interface KdsTicket {
+	id: string
+	orderNumber: string
+	stationId: string
+	stationName: string
+	sourceType: string | null
+	status: KotStatus
+	priority: KitchenPriority
+	prepSlaMin: number | null
+	receivedAt: string
+	startedAt: string | null
+	dueAt: string | null
+	readyAt: string | null
+	tableName: string | null
+	ageSec: number
+	delayed: boolean
+	items: KdsItem[]
+}
+
+export interface KdsItem {
+	id: string
+	name: string
+	modifiers: { groupName: string; name: string; quantity: number }[]
+	quantity: number
+	status: KitchenItemStatus
+	readyAt: string | null
+}
+
