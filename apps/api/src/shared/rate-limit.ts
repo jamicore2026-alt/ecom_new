@@ -224,26 +224,40 @@ let store: CounterStore | undefined
 
 export const getRateLimitStore = (): CounterStore => {
   if (!store) {
-    const mode = (process.env.RATE_LIMIT_STORE ?? 'memory').toLowerCase()
-    if (mode === 'redis') {
+    // Auto-select: setting REDIS_URL opts into the shared Redis store (the
+    // primary intent); the explicit RATE_LIMIT_STORE override (memory|redis)
+    // still lets operators force either backend. Default is in-memory.
+    const explicit = (process.env.RATE_LIMIT_STORE ?? '').toLowerCase()
+    const useRedis =
+      explicit === 'redis' || (explicit !== 'memory' && Boolean(process.env.REDIS_URL))
+
+    if (useRedis) {
       const url = process.env.REDIS_URL
-      if (!url) throw new Error('REDIS_URL must be set when RATE_LIMIT_STORE=redis')
+      if (!url) throw new Error('REDIS_URL must be set to use the Redis rate-limit store')
       store = new RedisCounterStore(url)
-    } else if (mode === 'memory') {
-      store = new MemoryCounterStore()
     } else {
-      throw new Error(`Unsupported RATE_LIMIT_STORE: ${mode}. Use memory or redis.`)
+      store = new MemoryCounterStore()
     }
   }
   return store
 }
 
-// Validate Redis configuration/connection before the server starts listening.
+const fallbackToMemory = (reason: string, err?: unknown) => {
+  store = new MemoryCounterStore()
+  console.warn(`[rate-limit] ${reason}; falling back to in-memory store.`, err ?? '')
+}
+
+// Validate Redis before listening — but never crash the API just because Redis
+// is unreachable/absent. Degrade to the in-memory store (single-node behaviour)
+// with a warning so a transient/absent Redis cannot take the API down.
 export const initializeRateLimitStore = async () => {
   const selected = getRateLimitStore()
-  if (selected instanceof RedisCounterStore) {
+  if (!(selected instanceof RedisCounterStore)) return
+  try {
     await selected.get('__jamicore_rate_limit_startup_check__')
     await selected.reset('__jamicore_rate_limit_startup_check__')
+  } catch (err) {
+    fallbackToMemory('Redis unreachable at startup', err)
   }
 }
 
