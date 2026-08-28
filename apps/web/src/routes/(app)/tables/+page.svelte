@@ -1,0 +1,371 @@
+<script lang="ts">
+	import { onMount } from 'svelte'
+	import { api } from '$lib/api'
+	import { session } from '$lib/session.svelte'
+	import { toast } from '$lib/toast.svelte'
+	import Button from '$lib/components/Button.svelte'
+	import Card from '$lib/components/Card.svelte'
+	import Modal from '$lib/components/Modal.svelte'
+	import { dateTime } from '$lib/format'
+	import type { DiningTable, TableSection, TableSession } from '$lib/types'
+
+	const canManage = $derived(session.can('tables.manage'))
+
+	const STATUS_TONE: Record<string, string> = {
+		AVAILABLE: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
+		RESERVED: 'bg-sky-100 text-sky-800 ring-sky-200',
+		OCCUPIED: 'bg-amber-100 text-amber-800 ring-amber-200',
+		ORDERING: 'bg-indigo-100 text-indigo-800 ring-indigo-200',
+		DINING: 'bg-violet-100 text-violet-800 ring-violet-200',
+		BILL_REQUESTED: 'bg-orange-100 text-orange-800 ring-orange-200',
+		PAYMENT_PENDING: 'bg-rose-100 text-rose-800 ring-rose-200',
+		CLEANING: 'bg-slate-100 text-slate-700 ring-slate-200'
+	}
+
+	let sections = $state<TableSection[]>([])
+	let tables = $state<DiningTable[]>([])
+	let sessions = $state<TableSession[]>([])
+	let loading = $state(true)
+
+	let selected = $state<DiningTable | null>(null)
+	let showSeat = $state(false)
+	let seatGuests = $state('2')
+	let moveTo = $state('')
+	let qr = $state<{ token: string; url: string; image: string } | null>(null)
+	let showQr = $state(false)
+
+	// create controls
+	let showCreate = $state(false)
+	let outlets = $state<{ id: string; name: string }[]>([])
+	let newOutlet = $state('')
+	let newSection = $state('')
+	let newTableName = $state('')
+	let newTableCode = $state('')
+	let newTableSeats = $state('4')
+	let sectionsByOutlet = $state<TableSection[]>([])
+
+	async function load() {
+		loading = true
+		try {
+			const [s, t] = await Promise.all([
+				api.get<{ success: boolean; data: TableSection[] }>('/api/table-sections'),
+				api.get<{ success: boolean; data: DiningTable[] }>('/api/tables')
+			])
+			const sv = await api.get<{ success: boolean; data: TableSession[] }>('/api/table-sessions?status=OPEN')
+			sections = s.data
+			tables = t.data
+			sessions = sv.data
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			loading = false
+		}
+	}
+
+	const sectionsWithTables = $derived.by(() => {
+		const map = new Map<string, DiningTable[]>()
+		for (const table of tables) {
+			const key = table.sectionId ?? 'none'
+			if (!map.has(key)) map.set(key, [])
+			map.get(key)!.push(table)
+		}
+		return sections.map((s) => ({ section: s, tables: map.get(s.id) ?? [] }))
+	})
+
+	async function openSeat() {
+		if (!selected || !canManage) return
+		try {
+			await api.post<{ success: boolean }>('/api/table-sessions', { tableId: selected.id, guests: Number(seatGuests) || 1 })
+			toast.success(`Seated ${seatGuests || 1} at ${selected.name}`)
+			showSeat = false
+			selected = null
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function closeSession(id: string) {
+		try {
+			await api.post<{ success: boolean }>(`/api/table-sessions/${id}/close`)
+			toast.success('Table closed — ready for cleaning')
+			selected = null
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function cancelSession(id: string) {
+		try {
+			await api.post<{ success: boolean }>(`/api/table-sessions/${id}/cancel`)
+			toast.success('Session cancelled')
+			selected = null
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function doMove(id: string) {
+		if (!moveTo) return
+		try {
+			await api.post<{ success: boolean }>(`/api/table-sessions/${id}/move`, { toTableId: moveTo })
+			toast.success('Party moved')
+			selected = null
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function showTableQr(id: string) {
+		try {
+			const res = await api.get<{ success: boolean; data: { token: string; url: string; image: string } }>(`/api/tables/${id}/qr`)
+			qr = res.data
+			showQr = true
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	const freeTables = $derived(tables.filter((t) => t.id !== selected?.id && ['AVAILABLE', 'RESERVED', 'CLEANING'].includes(t.status)))
+
+	// create flow
+	async function openCreate() {
+		showCreate = true
+		requestAnimationFrame(() => loadOutlets())
+	}
+
+	async function loadOutlets() {
+		try {
+			const o = await api.get<{ success: boolean; data: { id: string; name: string }[] }>('/api/outlets')
+			outlets = o.data
+			newOutlet = newOutlet || o.data[0]?.id || ''
+			await refreshSections()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function refreshSections() {
+		const s = await api.get<{ success: boolean; data: TableSection[] }>('/api/table-sections')
+		sectionsByOutlet = s.data.filter((x) => x.outletId === newOutlet)
+	}
+
+	async function addSection() {
+		if (!newSection) return toast.error('Enter a section name')
+		try {
+			await api.post<{ success: boolean }>('/api/table-sections', { outletId: newOutlet, name: newSection })
+			toast.success('Section added')
+			newSection = ''
+			await refreshSections()
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function addTable() {
+		if (!newTableName || !newTableCode) return toast.error('Enter a name and code')
+		const firstSection = sectionsByOutlet[0]
+		try {
+			const body: Record<string, unknown> = { outletId: newOutlet, name: newTableName, code: newTableCode, seats: Number(newTableSeats) || 2 }
+			if (firstSection) body.sectionId = firstSection.id
+			await api.post<{ success: boolean }>('/api/tables', body)
+			toast.success('Table added')
+			newTableName = ''
+			newTableCode = ''
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function deleteTable(id: string) {
+		if (!confirm('Remove this table?')) return
+		try {
+			await api.delete<{ success: boolean }>(`/api/tables/${id}`)
+			toast.success('Table removed')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	onMount(load)
+</script>
+
+<svelte:head><title>Tables</title></svelte:head>
+
+<div class="space-y-6">
+	<div class="flex items-center justify-between">
+		<div>
+			<h1 class="text-2xl font-semibold text-gray-900">Tables &amp; Floor</h1>
+			<p class="text-sm text-gray-500">Live dine-in floor, table sessions and per-table QR codes.</p>
+		</div>
+		{#if canManage}
+			<Button onclick={openCreate}>Manage floor</Button>
+		{/if}
+	</div>
+
+	{#if loading}
+		<div class="py-10 text-center text-sm text-gray-500">Loading floor…</div>
+	{:else if sections.length === 0}
+		<Card>
+			<div class="py-10 text-center text-sm text-gray-500">No sections yet. Add one to start your floor.</div>
+		</Card>
+	{:else}
+		<div class="space-y-6">
+			{#each sectionsWithTables as grp (grp.section.id)}
+				<Card>
+					<div class="mb-3 flex items-center justify-between">
+						<h2 class="text-sm font-semibold text-gray-900">{grp.section.name}</h2>
+						<span class="text-xs text-gray-400">{grp.tables.filter((t) => t.status !== 'AVAILABLE').length} in use</span>
+					</div>
+					{#if grp.tables.length === 0}
+						<p class="text-sm text-gray-500">No tables in this section.</p>
+					{:else}
+						<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+							{#each grp.tables as table (table.id)}
+								<button
+									type="button"
+									class="rounded-xl border border-gray-200 p-3 text-left transition hover:border-indigo-300 hover:shadow-sm"
+									onclick={() => (selected = table)}
+								>
+									<div class="flex items-center justify-between">
+										<span class="font-semibold text-gray-900">{table.name}</span>
+										<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[table.status]}">{table.status}</span>
+									</div>
+									<div class="mt-2 text-xs text-gray-500">
+										<span>{table.code} · {table.seats} seats</span>
+										{#if table.openSession}
+											<span class="block text-indigo-600">{table.openSession.guests} guests · ${Number(table.total).toFixed(2)}</span>
+										{/if}
+									</div>
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</Card>
+			{/each}
+		</div>
+	{/if}
+</div>
+
+{#if selected}
+	<Modal title={`${selected.name} — ${selected.status}`} onClose={() => (selected = null)}>
+		<div class="space-y-4">
+			<div class="flex items-center justify-between text-sm text-gray-600">
+				<span>{selected.code} · {selected.seats} seats</span>
+				<button type="button" class="text-indigo-600 hover:underline" onclick={() => showTableQr(selected!.id)}>Show QR</button>
+			</div>
+
+			{#if selected.openSession}
+				<div class="rounded-lg bg-gray-50 p-3">
+					<div class="flex items-center justify-between">
+						<div>
+							<div class="text-sm font-medium text-gray-900">Session open · {selected.openSession.guests} guests</div>
+							<div class="text-xs text-gray-500">Opened {dateTime(selected.openSession.openedAt)}{selected.openSession.notes ? ` · "${selected.openSession.notes}"` : ''}</div>
+						</div>
+						{#if canManage}
+							<div class="flex gap-2">
+								<Button size="sm" variant="danger" onclick={() => cancelSession(selected!.openSession!.id)}>Cancel</Button>
+								<Button size="sm" onclick={() => closeSession(selected!.openSession!.id)}>Close</Button>
+							</div>
+						{/if}
+					</div>
+					{#if selected.orderCount > 0}
+						<div class="mt-2 text-xs text-gray-600">{selected.orderCount} order(s) · ${Number(selected.total).toFixed(2)}</div>
+					{/if}
+				</div>
+
+				{#if canManage && freeTables.length > 0}
+					<div class="flex items-end gap-2">
+						<div class="flex-1">
+							<label for="move-to" class="mb-1 block text-sm text-gray-600">Move party to</label>
+							<select id="move-to" bind:value={moveTo} class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+								<option value="" disabled>Choose a free table</option>
+								{#each freeTables as t (t.id)}
+									<option value={t.id}>{t.name} ({t.sectionName ?? '—'})</option>
+								{/each}
+							</select>
+						</div>
+						<Button variant="secondary" disabled={!moveTo} onclick={() => doMove(selected!.openSession!.id)}>Move</Button>
+					</div>
+				{/if}
+			{:else}
+				<p class="text-sm text-gray-500">This table is free.</p>
+				{#if canManage}
+					<div class="flex items-end gap-2">
+						<div class="w-24">
+							<label for="seat-guests" class="mb-1 block text-sm text-gray-600">Guests</label>
+							<input id="seat-guests" bind:value={seatGuests} type="number" min="1" max={selected.seats} class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+						</div>
+						<Button onclick={() => { showSeat = true }}>Seat guests</Button>
+						<Button variant="danger" onclick={() => deleteTable(selected!.id)}>Remove table</Button>
+					</div>
+				{/if}
+			{/if}
+		</div>
+	</Modal>
+{/if}
+
+{#if showSeat && selected && !selected.openSession}
+	<Modal title={`Seat ${selected.name}`} onClose={() => (showSeat = false)}>
+		<div class="space-y-4">
+			<label for="seat-guests-2" class="block text-sm text-gray-600">Guests</label>
+			<input id="seat-guests-2" bind:value={seatGuests} type="number" min="1" max={selected.seats} class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+			<div class="flex justify-end">
+				<Button onclick={openSeat}>Open table</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if showQr && qr}
+	<Modal title="Table QR" onClose={() => (showQr = false)} width="sm">
+		<div class="space-y-3 text-center">
+			<div class="mx-auto flex h-40 w-40 items-center justify-center rounded-lg bg-gray-50 text-4xl" aria-hidden="true">▦</div>
+			<p class="break-all text-xs text-gray-500">{qr.url}</p>
+			<p class="text-xs text-gray-400">Scan to open the public table menu — no account or private data required.</p>
+		</div>
+	</Modal>
+{/if}
+
+{#if showCreate && canManage}
+	<Modal title="Manage floor" onClose={() => (showCreate = false)}>
+		<div class="space-y-6">
+			<div>
+				<label for="cr-outlet" class="mb-1 block text-sm text-gray-600">Outlet</label>
+				<select id="cr-outlet" bind:value={newOutlet} onchange={refreshSections} class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+					{#each outlets as o (o.id)}
+						<option value={o.id}>{o.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="rounded-lg bg-gray-50 p-3">
+				<h3 class="text-sm font-semibold text-gray-900">Add section</h3>
+				<div class="mt-2 flex gap-2">
+					<input bind:value={newSection} placeholder="e.g. Patio" class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+					<Button variant="secondary" onclick={addSection}>Add</Button>
+				</div>
+			</div>
+
+			<div class="rounded-lg bg-gray-50 p-3">
+				<h3 class="text-sm font-semibold text-gray-900">Add table</h3>
+				<div class="mt-2 space-y-2">
+					<input bind:value={newTableName} placeholder="Name (e.g. Table 5)" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+					<div class="flex gap-2">
+						<input bind:value={newTableCode} placeholder="Code (e.g. T05)" class="w-1/2 rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+						<input bind:value={newTableSeats} type="number" min="1" placeholder="Seats" class="w-1/4 rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+						<div class="w-1/4">
+							<Button onclick={addTable}>Add</Button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</Modal>
+{/if}

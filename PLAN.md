@@ -1089,7 +1089,7 @@ Categories, items, variants, modifiers, availability, outlet rules.
 ### Phase 4 — Unified Food Orders ✅
 Order types and validated state machine.
 
-### Phase 5 — Tables + QR
+### Phase 5 — Tables + QR ✅
 Tables, sections, QR, sessions, move/merge/split.
 
 ### Phase 6 — Kitchen + KOT + KDS

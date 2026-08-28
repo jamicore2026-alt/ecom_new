@@ -42,6 +42,42 @@ export type FoodOrderModifier = {
   quantity: number
 }
 
+/* --------------------------- dine-in: tables/QR --------------------------- */
+
+export const TABLE_STATES = [
+  'AVAILABLE',
+  'RESERVED',
+  'OCCUPIED',
+  'ORDERING',
+  'DINING',
+  'BILL_REQUESTED',
+  'PAYMENT_PENDING',
+  'CLEANING'
+] as const
+export type TableState = (typeof TABLE_STATES)[number]
+
+/** Valid table-state transitions (validated — no raw status assignments). */
+export const TABLE_STATUS_TRANSITIONS: Record<TableState, TableState[]> = {
+  AVAILABLE: ['RESERVED', 'OCCUPIED', 'ORDERING'],
+  RESERVED: ['AVAILABLE', 'OCCUPIED', 'ORDERING'],
+  OCCUPIED: ['ORDERING', 'DINING', 'BILL_REQUESTED', 'AVAILABLE'],
+  ORDERING: ['DINING', 'BILL_REQUESTED', 'OCCUPIED'],
+  DINING: ['BILL_REQUESTED', 'ORDERING', 'OCCUPIED'],
+  BILL_REQUESTED: ['PAYMENT_PENDING', 'DINING'],
+  PAYMENT_PENDING: ['BILL_REQUESTED', 'AVAILABLE', 'CLEANING'],
+  CLEANING: ['AVAILABLE']
+}
+
+export const TABLE_SESSION_STATUSES = ['OPEN', 'CLOSED', 'CANCELLED'] as const
+export type TableSessionStatus = (typeof TABLE_SESSION_STATUSES)[number]
+
+/** Valid table-session transitions. OPEN parties can always be moved/merged/split. */
+export const TABLE_SESSION_TRANSITIONS: Record<TableSessionStatus, TableSessionStatus[]> = {
+  OPEN: ['CLOSED', 'CANCELLED'],
+  CLOSED: [],
+  CANCELLED: []
+}
+
 /** Built-in/default roles. `owner`, `admin` and `staff` are the legacy
  *  values still stored on `users.role` (kept for backward compatibility with
  *  existing fixtures/tests). The others are the plan's default roles and are

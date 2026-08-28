@@ -23,6 +23,7 @@ const ORDER_COLUMNS = {
   paymentStatus: orders.paymentStatus,
   orderType: orders.orderType,
   outletId: orders.outletId,
+  tableSessionId: orders.tableSessionId,
   scheduledFor: orders.scheduledFor,
   subtotal: orders.subtotal,
   taxTotal: orders.taxTotal,

@@ -134,6 +134,13 @@
       "when": 1787905952321,
       "tag": "0018_graceful_blackheart",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787908098570,
+      "tag": "0019_blue_groot",
+      "breakpoints": true
     }
   ]
 }

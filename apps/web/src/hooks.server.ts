@@ -14,6 +14,7 @@ const PROTECTED_PREFIXES = [
 	'/reviews',
 	'/menu',
 	'/food-orders',
+	'/tables',
 	'/audit',
 	'/settings'
 ]

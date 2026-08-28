@@ -14,7 +14,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
-import type { Address, FoodOrderModifier, ModuleId, OutletStatus, Permission, Scope } from '../shared/types'
+import type { Address, FoodOrderModifier, ModuleId, OutletStatus, Permission, Scope, TableSessionStatus, TableState } from '../shared/types'
 
 // scale 3 supports GCC currencies with 3 decimals (KWD/BHD/OMR)
 const money = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
@@ -442,6 +442,10 @@ export const orders = pgTable(
     }),
     /** Reserved time for scheduled delivery/pickup. */
     scheduledFor: timestamp('scheduled_for'),
+    /** Open dine-in/QR table session this order belongs to (null for ecommerce/takeaway). */
+    tableSessionId: varchar('table_session_id', { length: 30 }).references(() => tableSessions.id, {
+      onDelete: 'set null'
+    }),
     expiresAt: timestamp('expires_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
@@ -503,6 +507,85 @@ export const foodOrderItems = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull()
   },
   (t) => [index('food_order_items_order_idx').on(t.orderId)]
+)
+
+/* ----------------------------- dine-in: tables ----------------------------- */
+
+/** A dining area/floor section within an outlet (e.g. "Main Floor", "Patio"). */
+export const tableSections = pgTable(
+  'table_sections',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    outletId: varchar('outlet_id', { length: 30 })
+      .notNull()
+      .references(() => outlets.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 120 }).notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('table_sections_merchant_outlet_name_idx').on(t.merchantId, t.outletId, t.name),
+    index('table_sections_merchant_idx').on(t.merchantId)
+  ]
+)
+
+/** A physical table. `status` is the live floor state (validated transitions). */
+export const tables = pgTable(
+  'tables',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    outletId: varchar('outlet_id', { length: 30 })
+      .notNull()
+      .references(() => outlets.id, { onDelete: 'cascade' }),
+    sectionId: varchar('section_id', { length: 30 }).references(() => tableSections.id, {
+      onDelete: 'set null'
+    }),
+    name: varchar('name', { length: 60 }).notNull(),
+    code: varchar('code', { length: 30 }).notNull(),
+    seats: integer('seats').notNull().default(2),
+    status: varchar('status', { length: 20 }).$type<TableState>().notNull().default('AVAILABLE'),
+    /** Public QR locator — opaque, grants NO private merchant access. */
+    qrToken: varchar('qr_token', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('tables_merchant_outlet_code_idx').on(t.merchantId, t.outletId, t.code),
+    uniqueIndex('tables_qr_token_idx').on(t.qrToken),
+    index('tables_merchant_idx').on(t.merchantId),
+    index('tables_section_idx').on(t.sectionId)
+  ]
+)
+
+/** A party sitting at a table. One OCCUPIED table has at most one OPEN session. */
+export const tableSessions = pgTable(
+  'table_sessions',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    outletId: varchar('outlet_id', { length: 30 })
+      .notNull()
+      .references(() => outlets.id, { onDelete: 'cascade' }),
+    tableId: varchar('table_id', { length: 30 }).references(() => tables.id, {
+      onDelete: 'set null'
+    }),
+    status: varchar('status', { length: 20 }).$type<TableSessionStatus>().notNull().default('OPEN'),
+    guests: integer('guests').notNull().default(1),
+    openedAt: timestamp('opened_at').defaultNow().notNull(),
+    closedAt: timestamp('closed_at'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    index('table_sessions_merchant_status_idx').on(t.merchantId, t.status),
+    index('table_sessions_table_idx').on(t.tableId),
+    index('table_sessions_merchant_idx').on(t.merchantId)
+  ]
 )
 
 export const returnsTable = pgTable(

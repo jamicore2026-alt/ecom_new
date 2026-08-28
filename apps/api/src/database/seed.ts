@@ -24,6 +24,8 @@ import {
   roles,
   shippingSettings,
   storeSettings,
+  tableSections,
+  tables,
   taxSettings,
   userOutlets,
   users,
@@ -233,7 +235,7 @@ async function main() {
     })
     .returning()
 
-  const seedModules: ModuleId[] = [...DEFAULT_MODULES.commerce, 'restaurant']
+  const seedModules: ModuleId[] = [...DEFAULT_MODULES.commerce, 'restaurant', 'tables']
   await db.insert(merchantModules).values(
     seedModules.map((module) => ({ merchantId: merchant.id, module, enabled: true }))
   )
@@ -261,6 +263,40 @@ async function main() {
   ])
 
   console.log(`   Seeded ${seededRoles.length} system roles, 1 outlet, ${DEFAULT_MODULES.commerce.length} modules`)
+
+  /* dine-in floor */
+  const [mainSection] = await db
+    .insert(tableSections)
+    .values({
+      merchantId: merchant.id,
+      outletId: defaultOutlet.id,
+      name: 'Main Floor',
+      sortOrder: 0,
+      status: 'active'
+    })
+    .returning()
+  const tableDefs = [
+    { code: 'T01', name: 'Table 1', seats: 2 },
+    { code: 'T02', name: 'Table 2', seats: 4 },
+    { code: 'T03', name: 'Table 3', seats: 4 },
+    { code: 'T04', name: 'Table 4', seats: 6 },
+    { code: 'T05', name: 'Bar 1', seats: 2 },
+    { code: 'T06', name: 'Bar 2', seats: 2 },
+    { code: 'T07', name: 'Patio 1', seats: 4 },
+    { code: 'T08', name: 'Patio 2', seats: 6 }
+  ]
+  for (const def of tableDefs) {
+    await db.insert(tables).values({
+      merchantId: merchant.id,
+      outletId: defaultOutlet.id,
+      sectionId: mainSection.id,
+      name: def.name,
+      code: def.code,
+      seats: def.seats,
+      qrToken: crypto.randomUUID().replace(/-/g, '') + Buffer.from(crypto.getRandomValues(new Uint8Array(8))).toString('hex')
+    })
+  }
+  console.log(`   Seeded ${tableDefs.length} tables in section "${mainSection.name}"`)
 
   /* categories */
   const catMap = new Map<string, string>()

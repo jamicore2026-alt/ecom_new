@@ -7,6 +7,7 @@
 > NOTE: staff passwords now require ≥10 chars (bcrypt 12); shopper register on a guest email requires a recent order number as proof (`CLAIM_ORDER_REQUIRED` / `CLAIM_ORDER_MISMATCH`). Rate limiting is active per-IP in dev/prod but skipped when NODE_ENV=test.
 > NOTE: migration `0015_audit_logs` added the `audit_logs` table (merchant-scoped activity trail). Run `bun run db:migrate`. Noted 2026-08-28.
 > NOTE: migration `0016_tense_garia` added Phase 1 foundation tables — `outlets`, `merchant_modules`, `roles`, `user_outlets` (normalized, all merchant-scoped, `user_outlets` cascade on user/outlet delete). Run `bun run db:migrate` + `db:seed` (seed is idempotent; reseeding is required for a fresh merchant to get its default outlet/modules/roles). Noted 2026-08-28.
+> NOTE: migration `0019_blue_groot.sql` added Phase 5 dine-in tables — `table_sections`, `tables`, `table_sessions`, plus `orders.tableSessionId`. Run `bun run db:migrate` + `db:seed` (seed now also creates a `Main Floor` section with 8 tables, each with a QR token). Noted 2026-08-28.
 
 ## Phase 1 — Outlets, modules, RBAC foundation (2026-08-28)
 
@@ -85,6 +86,19 @@ Extends the existing `orders` model rather than forking it (per plan §8). One o
 - Overview/analytics day buckets are UTC (`at time zone 'UTC'`); overview currency comes from the merchant row (was hardcoded USD); lowPerformers respects the selected range + revenue statuses; parseRange swaps inverted ranges; bulk price multiply rounds to 3dp.
 - Funnel events channel allowlist (direct|organic|social|paid|email|referral, else 'direct'); storefront track() derives channel from utm_medium/referrer.
 - Checkout model hardened: email format validation, items maxItems 50, address field maxLengths, notes ≤2000.
+
+## Phase 5 — Tables + QR (2026-08-28)
+
+Dine-in floor management: sections, tables with per-table QR, open/close sessions, move/merge/split, and a public no-auth QR menu context. Builds on the Phase-4 unified orders (a food order can be attached to a table session via `orders.tableSessionId`).
+
+- **Constants** (`src/shared/types.ts`): `TABLE_STATES` (AVAILABLE, RESERVED, OCCUPIED, ORDERING, DINING, BILL_REQUESTED, PAYMENT_PENDING, CLEANING), `TABLE_STATUS_TRANSITIONS` (keyed by CURRENT state), `TABLE_SESSION_STATUSES` (OPEN/CLOSED/CANCELLED) + `TABLE_SESSION_TRANSITIONS`.
+- **State helpers** (`src/shared/table-state.ts`): `isTableState`, `isSessionStatus`, `assertTableTransition` (invalid next state → 409 `INVALID_TRANSITION`, unknown state → 400), `assertSessionTransition`.
+- **Schema** (migration `0019_blue_groot.sql`): `table_sections` (unique merchant/outlet/name), `tables` (unique merchant/outlet/code, unique `qrToken` random), `table_sessions` (tableId set-null FK, status, guests, openedAt/closedAt), plus `orders.tableSessionId` (set-null FK→table_sessions). `TRUNCATE` in seed does NOT include these (CASCADE), so test-created rows persist across runs — tables tests use per-run-unique names/codes + a `freeTables()` beforeEach helper (closes OPEN sessions, restores AVAILABLE).
+- **API module** (`modules/tables/{index,service,model}.ts`): guarded `tablesModule` — reads `outletGuard({module:'tables',permissions:['tables.read']})`, writes `['tables.manage']` (staff lacks manage → 403). Routes: section CRUD, table CRUD (list joins section + open session + orderCount/total), table status, session open/close/cancel, session move (reassigns orders.outletId), merge (sums guests, reassigns orders), split (new session, returns `{session, splitInto}`), attach order to session, GET `/tables/:id/qr`. Public `tableQrModule` registered UNGUARDED: GET `/api/table-qr/:token` → `TableQrService.context(token)` returns table + outlet + public menu items w/ outlet priceAdjustment — NO private merchant data. Guarded module registered AFTER public one in `app.ts`.
+- **Seed**: `seedModules` now includes `'tables'`; seeds a `Main Floor` section + 8 tables (T01–T04, Bar 1–2, Patio 1–2), each with a random `qrToken`.
+- **food-orders service**: `ORDER_COLUMNS` now includes `orders.tableSessionId` so order detail returns the attached session.
+- **Dashboard**: `Tables` nav item (`layout` icon, Restaurant group, `module:'restaurant'`+`tables.read`) + `/tables` page (floor grouped by section, status-chip tone map, seat-guests modal, open session panel w/ close/cancel, move-to-free-table, per-table QR url display, manage-floor modal to add section/table). Added `/tables` to `hooks.server.ts`. New `TableSection`/`DiningTable`/`OpenSession`/`TableSession`/`TableQrContextItem`/`TableState` types in `web/src/lib/types.ts`.
+- **Verification**: `bun run typecheck` (api) PASS · `bun run check` (web+storefront): 0 errors, 71 pre-existing a11y warnings · `bun test`: **147 pass / 0 fail** across 18 files (new `test/tables.test.ts`, 9 tests).
 
 ## What this is
 

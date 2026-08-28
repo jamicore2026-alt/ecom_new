@@ -653,3 +653,64 @@ export interface FoodOrder {
 	createdAt: string
 	items: FoodOrderLine[]
 }
+
+// ---- dine-in tables + QR ----
+
+export interface TableSection {
+	id: string
+	name: string
+	sortOrder: number
+	status: 'active' | 'inactive'
+	outletId: string
+	outletName: string | null
+}
+
+export type TableState = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'ORDERING' | 'DINING' | 'BILL_REQUESTED' | 'PAYMENT_PENDING' | 'CLEANING'
+
+export interface OpenSession {
+	id: string
+	guests: number
+	openedAt: string
+	notes: string | null
+}
+
+export interface DiningTable {
+	id: string
+	name: string
+	code: string
+	seats: number
+	status: TableState
+	outletId: string
+	sectionId: string | null
+	sectionName: string | null
+	qrToken: string
+	createdAt: string
+	openSession: OpenSession | null
+	orderCount: number
+	total: number
+}
+
+export interface TableSession {
+	id: string
+	status: 'OPEN' | 'CLOSED' | 'CANCELLED'
+	guests: number
+	tableId: string | null
+	tableName: string | null
+	tableCode: string | null
+	sectionName: string | null
+	outletId: string | null
+	notes: string | null
+	openedAt: string
+	closedAt: string | null
+	orderCount: number
+	total: number
+	orders: Array<{ orderNumber: string; total: number; status: string }>
+}
+
+export interface TableQrContextItem {
+	id: string
+	name: string
+	description: string | null
+	price: number
+	taxRate: number
+}
