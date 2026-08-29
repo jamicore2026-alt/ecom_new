@@ -98,13 +98,13 @@
 			<h3 class="text-sm font-semibold text-gray-800">{editing ? 'Edit category' : 'New category'}</h3>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">Name *</label>
-					<input class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={name} required />
+					<label for="cat-name" class="mb-1 block text-sm font-medium text-gray-700">Name *</label>
+					<input id="cat-name" class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={name} required />
 					{#if fieldErrors.name}<p class="mt-1 text-xs text-red-600">{fieldErrors.name}</p>{/if}
 				</div>
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">Parent</label>
-					<select class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={parentId}>
+					<label for="cat-parent" class="mb-1 block text-sm font-medium text-gray-700">Parent</label>
+					<select id="cat-parent" class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={parentId}>
 						<option value="">None (top level)</option>
 						{#each flatten(categories) as c (c.id)}
 							{#if c.id !== editing?.id}
@@ -114,12 +114,12 @@
 					</select>
 				</div>
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">Sort order</label>
-					<input type="number" class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={sortOrder} />
+					<label for="cat-sort-order" class="mb-1 block text-sm font-medium text-gray-700">Sort order</label>
+					<input id="cat-sort-order" type="number" class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={sortOrder} />
 				</div>
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">Status</label>
-					<select class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={status}>
+					<label for="cat-status" class="mb-1 block text-sm font-medium text-gray-700">Status</label>
+					<select id="cat-status" class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={status}>
 						<option value="active">Active</option>
 						<option value="archived">Archived</option>
 					</select>

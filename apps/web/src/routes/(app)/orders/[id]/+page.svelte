@@ -386,8 +386,9 @@
 				Available to return <span class="font-semibold text-gray-900">{number(availableToReturn(returnItem))}</span>
 			</p>
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Quantity</label>
+				<label for="return-qty" class="mb-1 block text-sm font-medium text-gray-700">Quantity</label>
 				<input
+					id="return-qty"
 					type="number"
 					class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
 					bind:value={returnQty}
@@ -396,8 +397,8 @@
 				/>
 			</div>
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Reason</label>
-				<textarea rows="2" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={returnReason} placeholder="Optional"></textarea>
+				<label for="return-reason" class="mb-1 block text-sm font-medium text-gray-700">Reason</label>
+				<textarea id="return-reason" rows="2" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={returnReason} placeholder="Optional"></textarea>
 			</div>
 			<div class="flex justify-end gap-2 pt-2">
 				<Button variant="secondary" onclick={() => (returnOpen = false)}>Cancel</Button>
@@ -419,8 +420,8 @@
 		>
 			{#if pendingReturns().length > 0}
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">Linked to return</label>
-					<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={refundReturnId}>
+					<label for="refund-return" class="mb-1 block text-sm font-medium text-gray-700">Linked to return</label>
+					<select id="refund-return" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={refundReturnId}>
 						<option value="">No return</option>
 						{#each pendingReturns() as r (r.id)}
 							<option value={r.id}>Return {r.id.slice(0, 8)} — {currency(r.amount, order.currency)}</option>
@@ -429,12 +430,12 @@
 				</div>
 			{/if}
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Amount (max {currency(refundable(), order.currency)})</label>
-				<input type="number" step="0.01" min="0.01" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={refundAmount} required />
+				<label for="refund-amount" class="mb-1 block text-sm font-medium text-gray-700">Amount (max {currency(refundable(), order.currency)})</label>
+				<input id="refund-amount" type="number" step="0.01" min="0.01" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={refundAmount} required />
 			</div>
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Method</label>
-				<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={refundMethod}>
+				<label for="refund-method" class="mb-1 block text-sm font-medium text-gray-700">Method</label>
+				<select id="refund-method" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={refundMethod}>
 					<option value="original">Original payment method</option>
 				</select>
 			</div>

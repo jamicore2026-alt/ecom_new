@@ -258,33 +258,33 @@
 			}}
 		>
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">SKU</label>
-				<input class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vSku} />
+				<label for="v-sku" class="mb-1 block text-sm font-medium text-gray-700">SKU</label>
+				<input id="v-sku" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vSku} />
 			</div>
 
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Price</label>
-				<input type="number" step="0.01" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vPrice} />
+				<label for="v-price" class="mb-1 block text-sm font-medium text-gray-700">Price</label>
+				<input id="v-price" type="number" step="0.01" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vPrice} />
 			</div>
 
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Compare-at price</label>
-				<input type="number" step="0.01" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vCompareAt} />
+				<label for="v-compare-at" class="mb-1 block text-sm font-medium text-gray-700">Compare-at price</label>
+				<input id="v-compare-at" type="number" step="0.01" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vCompareAt} />
 			</div>
 
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Inventory</label>
-				<input type="number" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vInventory} />
+				<label for="v-inventory" class="mb-1 block text-sm font-medium text-gray-700">Inventory</label>
+				<input id="v-inventory" type="number" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vInventory} />
 				{#if vFieldErrors.inventory}<p class="mt-1 text-xs text-red-600">{vFieldErrors.inventory}</p>{/if}
 			</div>
 
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Image URL</label>
-				<input class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vImage} placeholder="https://…" />
+				<label for="v-image" class="mb-1 block text-sm font-medium text-gray-700">Image URL</label>
+				<input id="v-image" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vImage} placeholder="https://…" />
 			</div>
 
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Options (Size, Color, …)</label>
+				<p class="mb-1 block text-sm font-medium text-gray-700">Options (Size, Color, …)</p>
 				<div class="space-y-2">
 					{#each optionValues as row, i (i)}
 						<div class="flex gap-2">

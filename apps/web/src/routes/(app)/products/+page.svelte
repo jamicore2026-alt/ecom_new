@@ -323,8 +323,8 @@
 	<Modal title="Bulk edit products" open={true} width="sm" onClose={() => (bulkModal = false)}>
 		<div class="space-y-4">
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Action</label>
-				<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={bulkAction}>
+				<label for="bulk-action" class="mb-1 block text-sm font-medium text-gray-700">Action</label>
+				<select id="bulk-action" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={bulkAction}>
 					<option value="set_status">Set status</option>
 					<option value="set_category">Set category</option>
 					<option value="multiply_price">Multiply price</option>
@@ -333,8 +333,8 @@
 			</div>
 			{#if bulkAction === 'set_status'}
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">Status</label>
-					<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={bulkStatus}>
+					<label for="bulk-status" class="mb-1 block text-sm font-medium text-gray-700">Status</label>
+					<select id="bulk-status" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={bulkStatus}>
 						<option value="active">Active</option>
 						<option value="draft">Draft</option>
 						<option value="archived">Archived</option>
@@ -342,8 +342,8 @@
 				</div>
 			{:else if bulkAction === 'set_category'}
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">Category</label>
-					<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={bulkCategory}>
+					<label for="bulk-category" class="mb-1 block text-sm font-medium text-gray-700">Category</label>
+					<select id="bulk-category" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={bulkCategory}>
 						<option value="">None</option>
 						{#each categories as c (c.id)}
 							<option value={c.id}>{c.name}</option>
@@ -352,10 +352,11 @@
 				</div>
 			{:else}
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">
+					<label for="bulk-value" class="mb-1 block text-sm font-medium text-gray-700">
 						{bulkAction === 'multiply_price' ? 'Multiplier (e.g. 1.1)' : 'New inventory count'}
 					</label>
 					<input
+						id="bulk-value"
 						type="number"
 						class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
 						bind:value={bulkValue}

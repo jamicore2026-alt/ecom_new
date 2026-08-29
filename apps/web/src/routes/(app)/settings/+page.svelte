@@ -377,20 +377,20 @@
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveStore() }}>
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-700">Store name</label>
-							<input class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={sName} required />
+							<label for="store-name" class="mb-1 block text-sm font-medium text-gray-700">Store name</label>
+							<input id="store-name" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={sName} required />
 						</div>
 						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-700">Currency</label>
-							<input class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm uppercase" bind:value={sCurrency} maxlength="10" />
+							<label for="store-currency" class="mb-1 block text-sm font-medium text-gray-700">Currency</label>
+							<input id="store-currency" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm uppercase" bind:value={sCurrency} maxlength="10" />
 						</div>
 						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-700">Timezone</label>
-							<input class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={sTimezone} placeholder="UTC" />
+							<label for="store-timezone" class="mb-1 block text-sm font-medium text-gray-700">Timezone</label>
+							<input id="store-timezone" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={sTimezone} placeholder="UTC" />
 						</div>
 						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-700">Announcement</label>
-							<input class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={sAnnouncement} />
+							<label for="store-announcement" class="mb-1 block text-sm font-medium text-gray-700">Announcement</label>
+							<input id="store-announcement" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={sAnnouncement} />
 						</div>
 					</div>
 
@@ -494,8 +494,8 @@
 			<Card title="Payment methods">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); savePayments() }}>
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">Currency</label>
-						<input class="w-40 rounded-lg border border-gray-300 px-3 py-2 text-sm uppercase" bind:value={pCurrency} maxlength="10" />
+						<label for="payments-currency" class="mb-1 block text-sm font-medium text-gray-700">Currency</label>
+						<input id="payments-currency" class="w-40 rounded-lg border border-gray-300 px-3 py-2 text-sm uppercase" bind:value={pCurrency} maxlength="10" />
 					</div>
 					<div class="space-y-2">
 						{#each methods as m, i (m.id)}
@@ -514,8 +514,8 @@
 			<Card title="Shipping">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveShipping() }}>
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">Free shipping threshold</label>
-						<input type="number" step="0.01" min="0" class="w-40 rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={freeShippingThreshold} />
+						<label for="free-shipping-threshold" class="mb-1 block text-sm font-medium text-gray-700">Free shipping threshold</label>
+						<input id="free-shipping-threshold" type="number" step="0.01" min="0" class="w-40 rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={freeShippingThreshold} />
 					</div>
 					<div>
 						<div class="mb-2 flex items-center justify-between">
@@ -667,8 +667,8 @@
 	<Modal title={editingStaff ? `Edit ${editingStaff.name}` : 'Add staff member'} open={true} width="sm" onClose={() => (staffOpen = false)}>
 		<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveStaff() }}>
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Name *</label>
-				<input class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={staffName} required />
+				<label for="staff-name" class="mb-1 block text-sm font-medium text-gray-700">Name *</label>
+				<input id="staff-name" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={staffName} required />
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-gray-700">Email *</label>

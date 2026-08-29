@@ -264,12 +264,12 @@
 		>
 			<p class="text-sm text-gray-500">Current stock: <span class="font-semibold text-gray-900">{number(adjustTarget.inventory)}</span></p>
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Change (+ add / − remove)</label>
-				<input type="number" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={adjustChange} required />
+				<label for="adjust-change" class="mb-1 block text-sm font-medium text-gray-700">Change (+ add / − remove)</label>
+				<input id="adjust-change" type="number" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={adjustChange} required />
 			</div>
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Reason</label>
-				<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={adjustReason}>
+				<label for="adjust-reason" class="mb-1 block text-sm font-medium text-gray-700">Reason</label>
+				<select id="adjust-reason" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={adjustReason}>
 					<option value="adjustment">Adjustment</option>
 					<option value="purchase">Purchase</option>
 					<option value="return">Return</option>
