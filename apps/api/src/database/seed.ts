@@ -4,6 +4,8 @@ import { connection, db } from './client'
 import {
   categories,
   coupons,  customers,
+  deliveryZones,
+  drivers,
   inventoryLogs,
   kitchenStations,
   merchants,
@@ -221,7 +223,8 @@ async function main() {
       { merchantId: merchant.id, name: 'Alex Owner', email: 'owner@acme.com', passwordHash, role: 'owner', permissions: [] },
       { merchantId: merchant.id, name: 'Sam Admin', email: 'admin@acme.com', passwordHash, role: 'admin', permissions: [] },
       { merchantId: merchant.id, name: 'Jordan Staff', email: 'staff@acme.com', passwordHash, role: 'staff', permissions: ['products:write', 'orders:write', 'inventory:write'] },
-      { merchantId: merchant.id, name: 'Riley Staff', email: 'riley@acme.com', passwordHash, role: 'staff', permissions: ['analytics:read'] }
+      { merchantId: merchant.id, name: 'Riley Staff', email: 'riley@acme.com', passwordHash, role: 'staff', permissions: ['analytics:read'] },
+      { merchantId: merchant.id, name: 'Dana Driver', email: 'driver@acme.com', passwordHash, role: 'driver', permissions: [] }
     ])
     .returning()
 
@@ -237,7 +240,7 @@ async function main() {
     })
     .returning()
 
-  const seedModules: ModuleId[] = [...DEFAULT_MODULES.commerce, 'restaurant', 'tables', 'kitchen']
+  const seedModules: ModuleId[] = [...DEFAULT_MODULES.commerce, 'restaurant', 'tables', 'kitchen', 'delivery']
   await db.insert(merchantModules).values(
     seedModules.map((module) => ({ merchantId: merchant.id, module, enabled: true }))
   )
@@ -324,6 +327,46 @@ async function main() {
     })
   }
   console.log(`   Seeded ${stationDefs.length} kitchen stations`)
+
+  /* delivery zone + driver */
+  const [driverUser] = await db.select().from(users).where(eq(users.email, 'driver@acme.com'))
+  const existingZone = await db
+    .select()
+    .from(deliveryZones)
+    .where(and(eq(deliveryZones.merchantId, merchant.id), eq(deliveryZones.name, 'Downtown')))
+  if (existingZone.length === 0) {
+    await db.insert(deliveryZones).values({
+      merchantId: merchant.id,
+      outletId: defaultOutlet.id,
+      name: 'Downtown',
+      centerLat: 40.7128,
+      centerLng: -74.006,
+      radiusKm: 10,
+      deliveryFee: 5,
+      minOrder: 10,
+      freeDeliveryThreshold: 50,
+      etaMin: 30,
+      status: 'active'
+    })
+  }
+  const existingDriver = await db
+    .select()
+    .from(drivers)
+    .where(and(eq(drivers.merchantId, merchant.id), eq(drivers.userId, driverUser.id)))
+  if (existingDriver.length === 0) {
+    await db.insert(drivers).values({
+      merchantId: merchant.id,
+      userId: driverUser.id,
+      name: driverUser.name,
+      phone: '+1 555-0142',
+      email: 'driver@acme.com',
+      vehicleType: 'motorcycle',
+      vehiclePlate: 'NYC-8421',
+      status: 'ONLINE',
+      assignedOutletId: defaultOutlet.id
+    })
+  }
+  console.log('   Seeded 1 delivery zone (Downtown) + 1 driver (Dana Driver)')
 
   /* categories */
   const catMap = new Map<string, string>()

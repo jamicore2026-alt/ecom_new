@@ -14,7 +14,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
-import type { Address, FoodOrderModifier, KitchenItemStatus, KitchenPriority, KitchenStationStatus, KotStatus, ModuleId, OutletStatus, Permission, Scope, TableSessionStatus, TableState } from '../shared/types'
+import type { Address, DeliveryStatus, DeliveryZoneStatus, DriverStatus, FoodOrderModifier, KitchenItemStatus, KitchenPriority, KitchenStationStatus, KotStatus, ModuleId, OutletStatus, Permission, Scope, TableSessionStatus, TableState } from '../shared/types'
 
 // scale 3 supports GCC currencies with 3 decimals (KWD/BHD/OMR)
 const money = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
@@ -680,6 +680,127 @@ export const kitchenTicketItems = pgTable(
   ]
 )
 
+/* ------------------------------ delivery ------------------------------ */
+
+export const deliveryZones = pgTable(
+  'delivery_zones',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    outletId: varchar('outlet_id', { length: 30 }).references(() => outlets.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 100 }).notNull(),
+    centerLat: numeric('center_lat', { precision: 9, scale: 6, mode: 'number' }).notNull(),
+    centerLng: numeric('center_lng', { precision: 9, scale: 6, mode: 'number' }).notNull(),
+    radiusKm: numeric('radius_km', { precision: 8, scale: 3, mode: 'number' }).notNull().default(5),
+    deliveryFee: money('delivery_fee').notNull().default(0),
+    minOrder: money('min_order').notNull().default(0),
+    freeDeliveryThreshold: money('free_delivery_threshold'),
+    etaMin: integer('eta_min').notNull().default(30),
+    status: varchar('status', { length: 20 }).$type<DeliveryZoneStatus>().notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('delivery_zones_merchant_outlet_name_idx').on(t.merchantId, t.outletId, t.name),
+    index('delivery_zones_merchant_idx').on(t.merchantId)
+  ]
+)
+
+export const drivers = pgTable(
+  'drivers',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    userId: varchar('user_id', { length: 30 })
+      .notNull()
+      .references(() => users.id, { onDelete: 'set null' }),
+    name: varchar('name', { length: 255 }).notNull(),
+    phone: varchar('phone', { length: 50 }),
+    email: varchar('email', { length: 255 }),
+    vehicleType: varchar('vehicle_type', { length: 50 }),
+    vehiclePlate: varchar('vehicle_plate', { length: 50 }),
+    status: varchar('status', { length: 20 }).$type<DriverStatus>().notNull().default('OFFLINE'),
+    assignedOutletId: varchar('assigned_outlet_id', { length: 30 }).references(() => outlets.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('drivers_merchant_user_idx').on(t.merchantId, t.userId),
+    index('drivers_merchant_status_idx').on(t.merchantId, t.status),
+    index('drivers_outlet_idx').on(t.assignedOutletId)
+  ]
+)
+
+export const driverLocations = pgTable(
+  'driver_locations',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    driverId: varchar('driver_id', { length: 30 })
+      .notNull()
+      .references(() => drivers.id, { onDelete: 'cascade' }),
+    lat: numeric('lat', { precision: 9, scale: 6, mode: 'number' }).notNull(),
+    lng: numeric('lng', { precision: 9, scale: 6, mode: 'number' }).notNull(),
+    at: timestamp('at').defaultNow().notNull()
+  },
+  (t) => [
+    index('driver_locations_driver_idx').on(t.driverId),
+    index('driver_locations_merchant_idx').on(t.merchantId)
+  ]
+)
+
+export const deliveryOrders = pgTable(
+  'delivery_orders',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    orderId: varchar('order_id', { length: 30 })
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    outletId: varchar('outlet_id', { length: 30 }).references(() => outlets.id, { onDelete: 'set null' }),
+    zoneId: varchar('zone_id', { length: 30 }).references(() => deliveryZones.id, { onDelete: 'set null' }),
+    status: varchar('status', { length: 25 }).$type<DeliveryStatus>().notNull().default('UNASSIGNED'),
+    assignedDriverId: varchar('assigned_driver_id', { length: 30 }).references(() => drivers.id, { onDelete: 'set null' }),
+    driverName: varchar('driver_name', { length: 255 }),
+    address: jsonb('address').$type<Address>().notNull().default({}),
+    fee: money('fee').notNull().default(0),
+    etaMin: integer('eta_min').notNull().default(30),
+    pickupAt: timestamp('pickup_at'),
+    pickedUpAt: timestamp('picked_up_at'),
+    arrivedAt: timestamp('arrived_at'),
+    deliveredAt: timestamp('delivered_at'),
+    cancelledAt: timestamp('cancelled_at'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('delivery_orders_order_idx').on(t.orderId),
+    index('delivery_orders_merchant_status_idx').on(t.merchantId, t.status),
+    index('delivery_orders_zone_idx').on(t.zoneId),
+    index('delivery_orders_driver_idx').on(t.assignedDriverId)
+  ]
+)
+
+export const driverAssignments = pgTable(
+  'driver_assignments',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    deliveryOrderId: varchar('delivery_order_id', { length: 30 })
+      .notNull()
+      .references(() => deliveryOrders.id, { onDelete: 'cascade' }),
+    driverId: varchar('driver_id', { length: 30 }).references(() => drivers.id, { onDelete: 'set null' }),
+    driverName: varchar('driver_name', { length: 255 }),
+    assignedAt: timestamp('assigned_at').defaultNow().notNull(),
+    unassignedAt: timestamp('unassigned_at'),
+    reason: varchar('reason', { length: 50 })
+  },
+  (t) => [
+    index('driver_assignments_delivery_idx').on(t.deliveryOrderId),
+    index('driver_assignments_driver_idx').on(t.driverId)
+  ]
+)
 
 export const returnsTable = pgTable(
   'returns',
@@ -1670,6 +1791,16 @@ export type KitchenTicket = typeof kitchenTickets.$inferSelect
 export type NewKitchenTicket = typeof kitchenTickets.$inferInsert
 export type KitchenTicketItem = typeof kitchenTicketItems.$inferSelect
 export type NewKitchenTicketItem = typeof kitchenTicketItems.$inferInsert
+export type DeliveryZone = typeof deliveryZones.$inferSelect
+export type NewDeliveryZone = typeof deliveryZones.$inferInsert
+export type Driver = typeof drivers.$inferSelect
+export type NewDriver = typeof drivers.$inferInsert
+export type DriverLocation = typeof driverLocations.$inferSelect
+export type NewDriverLocation = typeof driverLocations.$inferInsert
+export type DeliveryOrder = typeof deliveryOrders.$inferSelect
+export type NewDeliveryOrder = typeof deliveryOrders.$inferInsert
+export type DriverAssignment = typeof driverAssignments.$inferSelect
+export type NewDriverAssignment = typeof driverAssignments.$inferInsert
 export type ReturnRecord = typeof returnsTable.$inferSelect
 export type NewReturn = typeof returnsTable.$inferInsert
 export type Refund = typeof refunds.$inferSelect

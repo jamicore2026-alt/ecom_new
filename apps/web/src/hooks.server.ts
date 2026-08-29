@@ -17,6 +17,7 @@ const PROTECTED_PREFIXES = [
 	'/tables',
 	'/kitchen',
 	'/kds',
+	'/delivery',
 	'/audit',
 	'/settings'
 ]

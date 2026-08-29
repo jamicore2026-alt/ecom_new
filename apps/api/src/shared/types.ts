@@ -112,6 +112,51 @@ export const KOT_STATUS_TRANSITIONS: Record<KotStatus, KotStatus[]> = {
 export const KITCHEN_ITEM_STATUSES = ['PENDING', 'READY', 'DONE', 'CANCELLED'] as const
 export type KitchenItemStatus = (typeof KITCHEN_ITEM_STATUSES)[number]
 
+/* --------------------------- delivery: zones / drivers / orders --------------------------- */
+
+export const DELIVERY_ZONE_STATUSES = ['active', 'inactive'] as const
+export type DeliveryZoneStatus = (typeof DELIVERY_ZONE_STATUSES)[number]
+
+/** Per-delivery lifecycle — fills UNASSIGNED → DELIVERED, plus FAILED/CANCELLED. */
+export const DELIVERY_STATUSES = [
+  'UNASSIGNED',
+  'ASSIGNED',
+  'ARRIVED_AT_PICKUP',
+  'PICKED_UP',
+  'IN_TRANSIT',
+  'ARRIVED',
+  'DELIVERED',
+  'FAILED',
+  'CANCELLED'
+] as const
+export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number]
+
+/** Valid delivery state transitions (validated — no raw status assignments). */
+export const DELIVERY_STATUS_TRANSITIONS: Record<DeliveryStatus, DeliveryStatus[]> = {
+  UNASSIGNED: ['ASSIGNED', 'CANCELLED'],
+  ASSIGNED: ['UNASSIGNED', 'ARRIVED_AT_PICKUP', 'FAILED', 'CANCELLED'],
+  ARRIVED_AT_PICKUP: ['UNASSIGNED', 'PICKED_UP', 'FAILED', 'CANCELLED'],
+  PICKED_UP: ['IN_TRANSIT', 'FAILED'],
+  IN_TRANSIT: ['ARRIVED', 'FAILED'],
+  ARRIVED: ['DELIVERED', 'FAILED'],
+  DELIVERED: [],
+  FAILED: [],
+  CANCELLED: []
+}
+
+/** Headless driver states. */
+export const DRIVER_STATUSES = ['OFFLINE', 'ONLINE', 'BUSY', 'PAUSED', 'SUSPENDED'] as const
+export type DriverStatus = (typeof DRIVER_STATUSES)[number]
+
+/** Valid driver state transitions. */
+export const DRIVER_STATUS_TRANSITIONS: Record<DriverStatus, DriverStatus[]> = {
+  OFFLINE: ['ONLINE', 'SUSPENDED'],
+  ONLINE: ['OFFLINE', 'BUSY', 'PAUSED', 'SUSPENDED'],
+  PAUSED: ['ONLINE', 'OFFLINE', 'SUSPENDED'],
+  BUSY: ['ONLINE', 'PAUSED', 'OFFLINE', 'SUSPENDED'],
+  SUSPENDED: ['ONLINE', 'OFFLINE']
+}
+
 /** Built-in/default roles. `owner`, `admin` and `staff` are the legacy
  *  values still stored on `users.role` (kept for backward compatibility with
  *  existing fixtures/tests). The others are the plan's default roles and are

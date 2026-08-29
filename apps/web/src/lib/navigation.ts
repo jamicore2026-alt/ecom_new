@@ -32,6 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
 	{ label: 'Tables', route: '/tables', icon: 'layout', group: 'Restaurant', module: 'tables', permission: 'tables.read' },
 	{ label: 'Kitchen', route: '/kitchen', icon: 'flame', group: 'Restaurant', module: 'kitchen', permission: 'kitchen.read' },
 	{ label: 'KDS', route: '/kds', icon: 'monitor', group: 'Restaurant', module: 'kitchen', permission: 'kds.read' },
+	{ label: 'Delivery', route: '/delivery', icon: 'bike', group: 'Restaurant', module: 'delivery', permission: 'delivery.read' },
 	{ label: 'Inventory', route: '/inventory', icon: 'layers', group: 'Sell', module: 'inventory', permission: ['inventory.read', 'inventory:write'] },
 	{ label: 'Discounts', route: '/discounts', icon: 'tag', group: 'Sell', module: 'marketing', permission: 'discounts:write' },
 	{ label: 'Reviews', route: '/reviews', icon: 'star', group: 'Sell', module: 'commerce', permission: 'products:write' },

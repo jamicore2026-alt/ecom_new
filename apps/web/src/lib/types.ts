@@ -798,3 +798,84 @@ export interface KdsItem {
 	readyAt: string | null
 }
 
+// ------------------------------ delivery ------------------------------
+
+export type DeliveryZoneStatus = 'active' | 'inactive'
+export type DeliveryStatus =
+	| 'UNASSIGNED'
+	| 'ASSIGNED'
+	| 'ARRIVED_AT_PICKUP'
+	| 'PICKED_UP'
+	| 'IN_TRANSIT'
+	| 'ARRIVED'
+	| 'DELIVERED'
+	| 'FAILED'
+	| 'CANCELLED'
+export type DriverStatus = 'OFFLINE' | 'ONLINE' | 'BUSY' | 'PAUSED' | 'SUSPENDED'
+
+export interface DeliveryAddress {
+	name?: string
+	line1?: string
+	line2?: string
+	city?: string
+	state?: string
+	postalCode?: string
+	country?: string
+	phone?: string
+}
+
+export interface DeliveryZone {
+	id: string
+	merchantId: string
+	outletId: string | null
+	name: string
+	centerLat: number
+	centerLng: number
+	radiusKm: number
+	deliveryFee: number
+	minOrder: number
+	freeDeliveryThreshold: number | null
+	etaMin: number
+	status: DeliveryZoneStatus
+	createdAt: string
+	updatedAt: string
+}
+
+export interface Driver {
+	id: string
+	userId: string
+	name: string
+	phone: string | null
+	email: string | null
+	vehicleType: string | null
+	vehiclePlate: string | null
+	status: DriverStatus
+	assignedOutletId: string | null
+	outletName?: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export interface DeliveryOrder {
+	id: string
+	orderId: string
+	orderNumber: string
+	outletId: string | null
+	outletName: string | null
+	zoneId: string | null
+	status: DeliveryStatus
+	assignedDriverId: string | null
+	driverName: string | null
+	address: DeliveryAddress
+	fee: number
+	etaMin: number
+	pickupAt: string | null
+	pickedUpAt: string | null
+	arrivedAt: string | null
+	deliveredAt: string | null
+	cancelledAt: string | null
+	notes: string | null
+	createdAt: string
+	updatedAt: string
+}
+
