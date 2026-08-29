@@ -112,7 +112,7 @@ export class FoodOrdersService {
     const ctx = await this.buildResolver(merchantId, menuIds)
     const orderNumber = `#F${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`
 
-    const { order, lines } = await db.transaction(async (tx) => {
+    const { order } = await db.transaction(async (tx) => {
       const [order] = await tx.insert(orders).values({
         merchantId,
         outletId: input.outletId,

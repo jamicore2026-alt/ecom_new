@@ -14,7 +14,7 @@ import { ok } from '../../shared/response'
 import { parsePagination, makeMeta } from '../../shared/pagination'
 import { badRequest, notFound, conflict } from '../../shared/errors'
 import { assertDeliveryTransition, assertDriverTransition, isDeliveryStatus, isDriverStatus } from '../../shared/delivery-state'
-import type { Address, DeliveryStatus, DeliveryZoneStatus, DriverStatus } from '../../shared/types'
+import type { Address, DeliveryStatus, DeliveryZoneStatus } from '../../shared/types'
 
 const TERMINAL_DELIVERY = ['DELIVERED', 'FAILED', 'CANCELLED'] as const
 
@@ -290,7 +290,7 @@ export class DriversService {
   }
 
   /** Transition a driver's headless state (driver self-service or manager override). */
-  static async setStatus(merchantId: string, id: string, nextStatus: string, actingUserId?: string) {
+  static async setStatus(merchantId: string, id: string, nextStatus: string, _actingUserId?: string) {
     const [driver] = await db.select().from(drivers).where(and(eq(drivers.id, id), eq(drivers.merchantId, merchantId)))
     if (!driver) throw notFound('DRIVER_NOT_FOUND', 'Driver not found')
     if (!isDriverStatus(nextStatus)) throw badRequest('INVALID_DRIVER_STATUS', 'Unknown driver status')
@@ -332,7 +332,7 @@ export class DeliveryOrdersService {
     const [dup] = await db.select().from(deliveryOrders).where(eq(deliveryOrders.orderId, order.id))
     if (dup) throw conflict('DELIVERY_EXISTS', 'A delivery already exists for this order')
 
-    let outletId = input.outletId ?? order.outletId ?? null
+    const outletId = input.outletId ?? order.outletId ?? null
     if (outletId) {
       const [outlet] = await db.select().from(outlets).where(and(eq(outlets.id, outletId), eq(outlets.merchantId, merchantId)))
       if (!outlet) throw notFound('OUTLET_NOT_FOUND', 'Outlet not found')

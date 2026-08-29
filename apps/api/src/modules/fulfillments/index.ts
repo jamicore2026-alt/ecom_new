@@ -6,7 +6,6 @@ import {
   fulfillmentParams,
   fulfillmentQuery,
   markShippedBody,
-  orderParams,
   updateFulfillmentBody
 } from './model'
 

@@ -6,7 +6,7 @@ export function siteUrl(origin: string): string {
 }
 
 /** Resolve a stored image path to an absolute URL suitable for OG / JSON-LD. */
-export function absoluteImageUrl(url: string | null | undefined, origin: string): string | null {
+export function absoluteImageUrl(url: string | null | undefined, _origin: string): string | null {
 	if (!url) return null
 	if (/^https?:\/\//i.test(url)) return url
 	const apiBase = (env.PUBLIC_API_URL || 'http://localhost:3005').replace(/\/+$/, '')

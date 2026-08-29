@@ -2,7 +2,7 @@ import type { RequestHandler } from './$types'
 import { proxyToApi } from '$lib/server/api-proxy'
 
 const passthrough =
-	(method: string): RequestHandler =>
+	(_method: string): RequestHandler =>
 	(event) =>
 		proxyToApi(event.request, `/api/${event.params.path}`, event.url.search)
 

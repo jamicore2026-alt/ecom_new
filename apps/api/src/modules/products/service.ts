@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, sql } from 'drizzle-orm'
 import { db } from '../../database/client'
 import { categories, inventoryLogs, productImages, products, productVariants } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
@@ -953,7 +953,7 @@ export class ProductsService {
             existingVariants.filter((v) => v.sku).map((v) => [v.sku as string, v])
           )
 
-          for (const { line, cells } of lines) {
+          for (const { cells } of lines) {
             const vSku = str(cells, 'variant_sku') || null
             const ovRaw = str(cells, 'option_values')
             let optionValues: Record<string, string> | undefined

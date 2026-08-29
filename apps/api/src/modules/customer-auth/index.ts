@@ -200,7 +200,7 @@ export const customerAuthModule = new Elysia({ prefix: '/api/store' })
   /* ---------------------------- email verification ---------------------------- */
   .post(
     '/:slug/auth/resend-verification',
-    ({ params, body, shopper }) =>
+    ({ params, shopper }) =>
       CustomerAuthService.requestEmailVerification(params.slug, shopper),
     {
       params: storeParams,

@@ -358,7 +358,7 @@ export class TablesSessionService {
       throw conflict('TABLE_OCCUPIED', `Destination table ${toTable.name} is not free`)
     }
 
-    const result = await db.transaction(async (tx) => {
+    await db.transaction(async (tx) => {
       await tx.update(tableSessions).set({ tableId: toTable.id, outletId: toTable.outletId }).where(eq(tableSessions.id, id))
       await tx.update(orders).set({ outletId: toTable.outletId }).where(and(eq(orders.tableSessionId, id), eq(orders.merchantId, merchantId)))
       await tx.update(tables).set({ status: 'ORDERING' }).where(eq(tables.id, toTable.id))

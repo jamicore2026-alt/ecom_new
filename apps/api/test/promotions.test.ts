@@ -438,7 +438,7 @@ describe('P0 closure — promotions, cancellation routing, refund idempotency', 
     const safe = (fn: () => Promise<unknown>) => fn().catch(() => undefined)
 
     // Restore inventory consumed by test orders before deleting them
-    const acmeOrders = await safe(async () => {
+    await safe(async () => {
       const list = await db
         .select({ id: orders.id })
         .from(orders)

@@ -2,7 +2,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../../database/client'
 import { affiliates, referrals } from '../../database/schema'
 import { ok } from '../../shared/response'
-import { badRequest, notFound } from '../../shared/errors'
+import { badRequest } from '../../shared/errors'
 
 export class AffiliatesService {
   static async list(merchantId: string) {

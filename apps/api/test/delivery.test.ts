@@ -29,7 +29,6 @@ const stamp = Date.now().toString(36)
 let menuItemId = ''
 
 let driver1Auth: Record<string, string> = {}
-let driver2UserId = ''
 let driver1Id = ''
 let driver2Id = ''
 
@@ -96,7 +95,6 @@ describe('Phase 7: delivery + drivers', () => {
     driver1Id = await makeDriverRecord(d1.id, 'Driver One', 'ONLINE')
     driver1Auth = await loginAs(`driver1-${stamp}@test.test`)
     const d2 = await createDriver(`driver2-${stamp}@test.test`)
-    driver2UserId = d2.id
     driver2Id = await makeDriverRecord(d2.id, 'Driver Two', 'OFFLINE')
   }, 20000)
 

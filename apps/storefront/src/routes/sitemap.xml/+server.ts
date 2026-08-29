@@ -12,12 +12,9 @@ const escapeXml = (s: string) =>
 
 export const GET: RequestHandler = async ({ fetch, url, setHeaders }) => {
 	const base = siteUrl(url.origin)
-	let stores: Array<{ slug: string; name: string }> = []
-	try {
-		stores = await storefrontApi.stores(fetch)
-	} catch {
-		stores = []
-	}
+	const stores: Array<{ slug: string; name: string }> = await storefrontApi
+		.stores(fetch)
+		.catch(() => [] as Array<{ slug: string; name: string }>)
 
 	const entries = stores
 		.map(

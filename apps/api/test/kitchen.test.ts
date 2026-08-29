@@ -130,8 +130,8 @@ describe('Phase 6: kitchen + KOT + KDS', () => {
 
   it('bump marks a ticket READY and readyAt is set', async () => {
     const orderId = await makeOrder()
-    let tickets = await generate(orderId)
-    let ticket = tickets[0]
+    const tickets = await generate(orderId)
+    const ticket = tickets[0]
     await call(`/api/kitchen/tickets/${ticket.id}/status`, {
       method: 'POST', headers: { ...admin, ...jsonHeaders }, body: JSON.stringify({ status: 'ACCEPTED' })
     })
@@ -147,8 +147,8 @@ describe('Phase 6: kitchen + KOT + KDS', () => {
 
   it('item-level completion auto-bumps when all lines are done', async () => {
     const orderId = await makeOrder()
-    let tickets = await generate(orderId)
-    let ticket = tickets[0]
+    const tickets = await generate(orderId)
+    const ticket = tickets[0]
     await call(`/api/kitchen/tickets/${ticket.id}/status`, {
       method: 'POST', headers: { ...admin, ...jsonHeaders }, body: JSON.stringify({ status: 'ACCEPTED' })
     })
@@ -167,8 +167,8 @@ describe('Phase 6: kitchen + KOT + KDS', () => {
 
   it('recall returns a PREPARING ticket to RECALLED', async () => {
     const orderId = await makeOrder()
-    let tickets = await generate(orderId)
-    let ticket = tickets[0]
+    const tickets = await generate(orderId)
+    const ticket = tickets[0]
     await call(`/api/kitchen/tickets/${ticket.id}/status`, {
       method: 'POST', headers: { ...admin, ...jsonHeaders }, body: JSON.stringify({ status: 'ACCEPTED' })
     })

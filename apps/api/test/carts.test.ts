@@ -26,8 +26,8 @@ describe('Abandoned carts pipeline (storefront persistence → conversion)', () 
   let variantId: string
   let merchantId: string
   let cartId = ''
-  let createdCustomerEmails: string[] = []
-  let createdOrderNumbers: string[] = []
+  const createdCustomerEmails: string[] = []
+  const createdOrderNumbers: string[] = []
 
   beforeAll(async () => {
     const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'acme-store'))

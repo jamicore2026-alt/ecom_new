@@ -32,8 +32,6 @@ const expireRefreshCookie = {
   path: '/api/auth'
 }
 
-const now = () => new Date()
-
 export const authModule = new Elysia({ prefix: '/api/auth' })
   .use(accessJwt)
   .use(refreshJwt)
@@ -133,7 +131,7 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
   .post(
     '/logout',
     async ({ body, refreshJwt, cookie }) => {
-      const token = body.refreshToken ?? cookie[REFRESH_COOKIE]?.value ?? null
+      const token = body?.refreshToken ?? cookie[REFRESH_COOKIE]?.value ?? null
       if (token) {
         const payload = await refreshJwt.verify(token)
         if (payload && payload.jti) {
@@ -143,7 +141,7 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
       cookie[REFRESH_COOKIE]?.set(expireRefreshCookie)
       return { success: true, data: { message: 'Signed out successfully' } }
     },
-    { body: logoutBody, cookie: cookieSchema }
+    { body: t.Optional(logoutBody), cookie: cookieSchema }
   )
   .use(authPlugin)
   .get(

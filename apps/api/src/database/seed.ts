@@ -49,7 +49,6 @@ const mulberry32 = (a: number) => () => {
 const rand = mulberry32(1337)
 const int = (min: number, max: number) => Math.floor(rand() * (max - min + 1)) + min
 const pick = <T>(arr: T[]): T => arr[Math.floor(rand() * arr.length)]
-const rnd = (n: number) => Math.round(rand() * n * 100) / 100
 
 const DAY = 86400000
 const daysAgo = (n: number, hour = 12) => {

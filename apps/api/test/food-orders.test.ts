@@ -19,7 +19,7 @@ async function loginAs(email: string) {
 }
 
 let adminToken = ''
-let createdIds: string[] = []
+const createdIds: string[] = []
 
 describe('Phase 4: unified food orders', () => {
   let admin: Record<string, string>
@@ -174,6 +174,5 @@ describe('Phase 4: unified food orders', () => {
 
 afterAll(async () => {
   if (!adminToken) return
-  const admin = { authorization: adminToken }
   // Food orders supersede items via cascade; nothing else to clean up.
 })

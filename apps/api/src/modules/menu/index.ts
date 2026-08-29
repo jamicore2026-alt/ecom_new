@@ -8,7 +8,6 @@ import {
   menuUpdateBody,
   menuParams,
   menuGroupParams,
-  modifierParams,
   modifierGroupBody,
   modifierGroupUpdateBody,
   modifierBody,

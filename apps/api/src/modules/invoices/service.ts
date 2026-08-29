@@ -1,11 +1,9 @@
 import { and, desc, eq } from 'drizzle-orm'
-import { createId } from '@paralleldrive/cuid2'
 import { db } from '../../database/client'
 import { invoices, orderItems, orders, storeSettings } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
 import { makeMeta, parsePagination } from '../../shared/pagination'
-import { roundForCurrency } from '../../shared/currency'
 
 export class InvoicesService {
   /** Generate the next invoice number for a merchant (e.g. INV-0001). */

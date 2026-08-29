@@ -134,7 +134,7 @@ export class CampaignsService {
     return ok({ deleted: true })
   }
 
-  private static async resolveAudience(merchantId: string, audience: Record<string, unknown>) {
+  private static async resolveAudience(merchantId: string, _audience: Record<string, unknown>) {
     const all = await db
       .select({ email: customers.email })
       .from(customers)

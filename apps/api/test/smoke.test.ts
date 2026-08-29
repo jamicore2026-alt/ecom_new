@@ -143,7 +143,6 @@ describe('Merchant Dashboard API smoke test', () => {
       body: JSON.stringify({ email: 'admin@acme.com', password: 'password123' })
     })
     const oldRefresh = login.body.data.refreshToken
-    const oldAccess = login.body.data.accessToken
 
     const rotated = await call('/api/auth/refresh', {
       method: 'POST',

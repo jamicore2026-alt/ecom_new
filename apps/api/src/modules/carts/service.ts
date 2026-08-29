@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, lt } from 'drizzle-orm'
 import { db } from '../../database/client'
 import { carts, customers, merchants, storeSettings } from '../../database/schema'
 import { ok } from '../../shared/response'
@@ -137,7 +137,7 @@ export class CartsService {
   }
 
   /** Recover a cart from a recovery code — restore the items (client revalidates stock). */
-  static async recoverCart(slug: string, recoveryCode: string, customerId?: string) {
+  static async recoverCart(slug: string, recoveryCode: string, _customerId?: string) {
     const [merchant] = await db
       .select()
       .from(merchants)

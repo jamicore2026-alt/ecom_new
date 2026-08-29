@@ -1,4 +1,3 @@
-import { error } from '@sveltejs/kit'
 import { storefrontApi, loadError } from '$lib/api'
 import type { Category } from '$lib/types'
 import type { LayoutServerLoad } from './$types'

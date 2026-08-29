@@ -1,7 +1,4 @@
 import { Elysia } from 'elysia'
-import { and, desc, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
-import { backgroundJobs, webhookDeliveries, webhookEndpoints } from '../../database/schema'
 import { authPlugin } from '../../plugins/auth'
 import { ok } from '../../shared/response'
 import { OutboundWebhooksService } from './service'

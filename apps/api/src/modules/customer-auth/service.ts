@@ -492,9 +492,6 @@ export class CustomerAuthService {
 
   /** Complete a password reset — validated + single-use + invalidates sessions. */
   static async resetPassword(slug: string, token: string, newPassword: string) {
-    const store = await this.resolveStore(slug)
-    const tokenHash = await hash(token, 10)
-
     // The stored hash uses compare() (bcrypt), so find candidate tokens by customer
     // and compare — bcrypt can't be used in an equality query.
     const [merchant] = await db

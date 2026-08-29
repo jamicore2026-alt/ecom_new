@@ -38,7 +38,7 @@ export class LoyaltyService {
     const account = await this.ensureAccount(merchantId, customerId)
     if (!account) throw notFound('LOYALTY_ACCOUNT_NOT_FOUND', 'Loyalty account not found')
 
-    let balanceAfter = account.points + input.points
+    const balanceAfter = account.points + input.points
     if (balanceAfter < 0) {
       throw notFound('INSUFFICIENT_POINTS', 'Customer does not have enough loyalty points')
     }

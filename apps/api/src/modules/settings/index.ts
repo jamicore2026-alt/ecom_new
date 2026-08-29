@@ -10,7 +10,6 @@ import {
   paymentBody,
   providerBody,
   providerParams,
-  serviceabilityBody,
   shippingBody,
   staffCreateBody,
   staffUpdateBody,

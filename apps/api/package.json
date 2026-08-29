@@ -16,7 +16,8 @@
     "db:seed": "bun src/database/seed.ts",
     "db:studio": "drizzle-kit studio",
     "test": "bun test",
-    "typecheck": "bunx tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit",
+    "lint": "eslint src test"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.2.0",

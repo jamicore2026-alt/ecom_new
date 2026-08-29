@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, inArray } from 'drizzle-orm'
+import { and, count, desc, eq, ilike } from 'drizzle-orm'
 import { db } from '../../database/client'
 import { coupons, promotions } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
@@ -190,7 +190,7 @@ export class DiscountsService {
       const subtotal = matched.reduce((s, l) => s + roundForCurrency(l.price * l.quantity, currency), 0)
       if (subtotal <= 0) continue
 
-      let discount = 0
+      let discount: number
       if (promotion.type === 'buy_x_get_y') {
         // Every (buyQty+getQty)-th unit across matched lines gets discountPercent
         // off — cheapest units are discounted first so the merchant's intent

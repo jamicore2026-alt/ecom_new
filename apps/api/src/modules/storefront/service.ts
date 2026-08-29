@@ -1050,7 +1050,7 @@ export class StorefrontService {
       }
 
       const email = body.email.trim().toLowerCase()
-      let customerId: string | null = null
+      let customerId: string | null
       const [existing] = await tx
         .select()
         .from(customers)

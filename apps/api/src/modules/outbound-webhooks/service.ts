@@ -1,10 +1,8 @@
 import { Type } from '@sinclair/typebox'
-import { and, desc, eq, isNull, or } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../../database/client'
 import { backgroundJobs, webhookDeliveries, webhookEndpoints } from '../../database/schema'
 import { badRequest, notFound } from '../../shared/errors'
-import { ok } from '../../shared/response'
-import { signWebhookPayload } from '../../shared/outbound-webhook'
 
 const WEBHOOK_EVENTS = [
   'order.created',

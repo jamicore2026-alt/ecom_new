@@ -1,4 +1,4 @@
-import { and, eq, gt, lt, or, isNull } from 'drizzle-orm'
+import { and, eq, lt, or, isNull } from 'drizzle-orm'
 import { db } from '../database/client'
 import { backgroundJobs } from '../database/schema'
 import { processWebhookDeliveries } from './webhook-delivery'
