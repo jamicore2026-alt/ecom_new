@@ -446,6 +446,10 @@ export const orders = pgTable(
     tableSessionId: varchar('table_session_id', { length: 30 }).references(() => tableSessions.id, {
       onDelete: 'set null'
     }),
+    /** Warehouse (of the storefront/checkout order) that fulfills this order's stock (null when no warehouses configured). */
+    warehouseId: varchar('warehouse_id', { length: 30 }).references(() => warehouses.id, {
+      onDelete: 'set null'
+    }),
     expiresAt: timestamp('expires_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
@@ -454,7 +458,8 @@ export const orders = pgTable(
     uniqueIndex('orders_merchant_number_idx').on(t.merchantId, t.orderNumber),
     index('orders_merchant_status_idx').on(t.merchantId, t.status),
     index('orders_merchant_type_status_idx').on(t.merchantId, t.orderType, t.status),
-    index('orders_outlet_idx').on(t.outletId)
+    index('orders_outlet_idx').on(t.outletId),
+    index('orders_warehouse_idx').on(t.warehouseId)
   ]
 )
 

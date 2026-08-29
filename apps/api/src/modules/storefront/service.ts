@@ -22,7 +22,9 @@ import {
   shippingSettings,
   storeSettings,
   taxSettings,
-  visits
+  visits,
+  warehouseInventory,
+  warehouses
 } from '../../database/schema'
 import { DiscountsService } from '../discounts/service'
 import { EmailsService } from '../emails/service'
@@ -53,6 +55,8 @@ export interface CheckoutInput extends CheckoutPreviewInput {
   paymentMethod: string
   notes?: string
   cartId?: string
+  /** Warehouse to fulfill this order from. Defaults to the merchant's default active warehouse when set. */
+  fulfillmentWarehouseId?: string
 }
 
 export interface CheckoutPreviewInput {
@@ -60,6 +64,65 @@ export interface CheckoutPreviewInput {
   couponCode?: string
   /** Optional country so previewed totals match the final order's shipping/tax. */
   shippingAddress?: { country?: string }
+}
+
+/** Drizzle transaction type used inside `db.transaction(async (tx) => ...)`. */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/**
+ * Resolve the warehouse that fulfills an order. Returns the explicit override if
+ * it belongs to the merchant and is active, else the merchant's default active
+ * warehouse, else null when the merchant has no usable warehouse. Unknown/no
+ * warehouse is a no-op (legacy global-inventory behavior) rather than an error.
+ */
+async function resolveFulfillingWarehouse(
+  merchantId: string,
+  overrideId?: string
+): Promise<string | null> {
+  if (overrideId) {
+    const [wh] = await db
+      .select()
+      .from(warehouses)
+      .where(and(eq(warehouses.id, overrideId), eq(warehouses.merchantId, merchantId)))
+    if (wh && wh.status === 'active') return wh.id
+  }
+  const [def] = await db
+    .select()
+    .from(warehouses)
+    .where(and(eq(warehouses.merchantId, merchantId), eq(warehouses.isDefault, true)))
+    .limit(1)
+  if (def && def.status === 'active') return def.id
+  return null
+}
+
+/**
+ * Decrement a warehouse's stock for a variant as order fulfillment. The decrement
+ * never goes below 0 and skips variants the warehouse doesn't stock (no row).
+ * Runs inside the checkout transaction so it's atomic with the order + global
+ * inventory decrement.
+ */
+async function allocateWarehouseStock(
+  tx: Tx,
+  merchantId: string,
+  warehouseId: string,
+  variantId: string,
+  quantity: number
+): Promise<void> {
+  const [row] = await tx
+    .select()
+    .from(warehouseInventory)
+    .where(
+      and(
+        eq(warehouseInventory.warehouseId, warehouseId),
+        eq(warehouseInventory.variantId, variantId)
+      )
+    )
+    .for('update')
+  if (!row || row.quantity <= 0) return
+  await tx
+    .update(warehouseInventory)
+    .set({ quantity: Math.max(0, row.quantity - quantity), updatedAt: new Date() })
+    .where(eq(warehouseInventory.id, row.id))
 }
 
 interface StorePayload {
@@ -954,6 +1017,14 @@ export class StorefrontService {
     // them unguessable (public confirmation endpoint) and collision-free.
     const orderNumber = `#W${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`
 
+    // Resolve the fulfilling warehouse: explicit override, else the merchant's
+    // default active warehouse. Null when the merchant has no warehouses set up
+    // (legacy single-location behavior — no warehouse accounting happens).
+    const fulfillingWarehouseId = await resolveFulfillingWarehouse(
+      store.merchant.id,
+      body.fulfillmentWarehouseId
+    )
+
     return db.transaction(async (tx) => {
       // Acquire ALL variant locks FIRST — before customer/order/quota writes —
       // so every checkout transaction takes row locks in one global order.
@@ -1049,6 +1120,7 @@ export class StorefrontService {
           couponCode: summary.coupon?.code ?? null,
           promotionId: summary.promotionId ?? null,
           attributionChannel: 'direct',
+          warehouseId: fulfillingWarehouseId,
           expiresAt: opts.expiresAt ?? null
         })
         .returning()
@@ -1129,6 +1201,19 @@ export class StorefrontService {
             reason: 'sale',
             reference: orderNumber
           })
+
+          // Fulfillment allocation: decrement the chosen warehouse's stock for
+          // this variant so per-location availability reflects the sale. Skips
+          // variants the warehouse doesn't stock (no row → never below 0).
+          if (fulfillingWarehouseId) {
+            await allocateWarehouseStock(
+              tx,
+              store.merchant.id,
+              fulfillingWarehouseId,
+              item.variantId,
+              item.quantity
+            )
+          }
         }
       }
 
