@@ -57,7 +57,8 @@ export const checkoutBody = t.Object({
   shippingAddress: addressBody,
   billingAddress: t.Optional(addressBody),
   paymentMethod: t.String({ maxLength: 50 }),
-  notes: t.Optional(t.String({ maxLength: 2000 }))
+  notes: t.Optional(t.String({ maxLength: 2000 })),
+  cartId: t.Optional(t.String({ maxLength: 30 }))
 })
 
 export const orderParams = t.Object({

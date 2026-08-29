@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation'
+	import { page } from '$app/state'
+	import { onMount } from 'svelte'
 	import { ApiError, storefrontApi } from '$lib/api'
 	import { cart } from '$lib/cart.svelte'
 	import { account } from '$lib/account.svelte'
@@ -15,6 +17,22 @@
 	$effect(() => {
 		track(slug, 'checkout_start')
 		account.setSlug(slug)
+		cart.setSlug(slug)
+	})
+
+	// Restore an abandoned cart via a ?recovery=<code> link, then drop the param.
+	onMount(async () => {
+		const code = page.url.searchParams.get('recovery')
+		if (!code || !slug) return
+		try {
+			const recovered = await storefrontApi.recoverCart(fetch, slug, code)
+			cart.restore(recovered.items, recovered.cartId)
+			const url = new URL(window.location.href)
+			url.searchParams.delete('recovery')
+			window.history.replaceState({}, '', url.toString())
+		} catch {
+			// Ignore — fall back to normal empty-cart checkout experience.
+		}
 	})
 
 	const paymentMethods = $derived(
@@ -182,7 +200,8 @@
 					phone: phone.trim() || undefined
 				},
 				paymentMethod,
-				notes: notes.trim() || undefined
+				notes: notes.trim() || undefined,
+				cartId: cart.persistedCartId
 			}
 
 			if (selectedIsProvider) {

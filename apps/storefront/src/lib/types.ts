@@ -196,6 +196,7 @@ export interface CheckoutInput {
 	billingAddress?: AddressInput
 	paymentMethod: string
 	notes?: string
+	cartId?: string
 }
 
 export interface CheckoutPreviewInput {

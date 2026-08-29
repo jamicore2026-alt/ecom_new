@@ -10,6 +10,7 @@
 > NOTE: migration `0019_blue_groot.sql` added Phase 5 dine-in tables — `table_sections`, `tables`, `table_sessions`, plus `orders.tableSessionId`. Run `bun run db:migrate` + `db:seed` (seed now also creates a `Main Floor` section with 8 tables, each with a QR token). Noted 2026-08-28.
 > NOTE: migration `0020_round_union_jack.sql` added Phase 6 kitchen/KOT/KDS — `kitchen_stations`, `kitchen_tickets` (unique order+station → guards dup KOT), `kitchen_ticket_items`. Run `bun run db:migrate` + `db:seed` (seed now also creates 5 stations: Grill/Fryer/Drinks/Dessert/General). `seedModules` includes `'kitchen'`; `seed` `TRUNCATE` does NOT list `kitchen_stations` (CASCADE from orders clears tickets), so re-running seed's station block is guarded by a per-name existence check to stay idempotent. Test-created tickets/stations persist across runs (kitchen test uses a per-run-unique station name). Noted 2026-08-28.
 > NOTE: migration `0021_cultured_chameleon.sql` added Phase 7 delivery — `delivery_zones`, `drivers`, `delivery_orders`, `driver_assignments`, `driver_locations`. Run `bun run db:migrate` + `db:seed` (seed now also creates 1 Downtown zone + 1 driver, Dana Driver, `driver@acme.com`). `seedModules` includes `'delivery'`. Noted 2026-08-29.
+> NOTE (2026-08-29): abandoned-cart pipeline is now wired end-to-end. `CartsService.saveCart` upserts by client-held `cartId` (fallback: most-recent cart for `customerId`) and returns a stable `cart.id`; the storefront `cart.svelte.ts` debounce-persists every change to `POST /store/:slug/cart` (stores the id in `ecom:cartid:<slug>`, includes `customerId` when signed in) and the checkout page passes `cartId` (recovery links `/checkout?recovery=<code>` restore items). Storefront `checkout`/`checkoutPay` now call `CartsService.markConverted` when a `cartId` is present. New `test/carts.test.ts` covers save/dedup/recover/convert (5 tests). `bun test`: **171 pass / 0 fail** across 21 files.
 
 ## Phase 1 — Outlets, modules, RBAC foundation (2026-08-28)
 
@@ -267,7 +268,7 @@ Cart: `cart.svelte.ts` class singleton, localStorage key `ecom:cart:${slug}`, li
 - adapter-auto unpinned in both SvelteKit apps; prod API origin config still dev-proxy-only
 - hooks.server.ts guard is cookie-presence based, not JWT-verified (fine as UX guard; API enforces real auth)
 - Logout endpoint returns 400 when POSTed with content-type json but empty body (clients send `{}`)
-- Roadmap Phase 2 (next): CSV export/import (customer accounts ✅, reviews ✅, wishlists ✅, FTS search ✅ done); Phase 3: fulfillment tracking, abandoned-cart queue (pg-boss), outbound merchant webhooks, multi-warehouse, i18n ar+RTL (prioritized per user)
+- Roadmap Phase 2 (next): CSV export/import (customer accounts ✅, reviews ✅, wishlists ✅, FTS search ✅ done); Phase 3: fulfillment tracking (API ✅), abandoned-cart queue (persistence + conversion wired 2026-08-29; not pg-boss), outbound merchant webhooks ✅, multi-warehouse (API ✅, not checkout-integrated), i18n ar+RTL (missing)
 
 ## Gotchas
 - Elysia: method chaining required for type inference; explicit `.use()` for plugins that add context types

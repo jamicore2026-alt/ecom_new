@@ -26,6 +26,7 @@ import {
 } from '../../database/schema'
 import { DiscountsService } from '../discounts/service'
 import { EmailsService } from '../emails/service'
+import { CartsService } from '../carts/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { markOrderPaidEffects } from '../../shared/order-payments'
 import { runCancelPendingOrder } from '../../shared/order-cancel'
@@ -51,6 +52,7 @@ export interface CheckoutInput extends CheckoutPreviewInput {
   billingAddress?: Record<string, unknown>
   paymentMethod: string
   notes?: string
+  cartId?: string
 }
 
 export interface CheckoutPreviewInput {
@@ -1176,6 +1178,11 @@ export class StorefrontService {
       paymentStatus: result.paymentStatus
     })
 
+    // Convert the tracked shopping cart (if the shopper had one) into an order.
+    if (body.cartId) {
+      void CartsService.markConverted(summary.store.merchant.id, body.cartId, result.id)
+    }
+
     return ok({
       id: result.id,
       orderNumber: result.orderNumber,
@@ -1241,6 +1248,11 @@ export class StorefrontService {
       status: order.status,
       paymentStatus: order.paymentStatus
     })
+
+    // Convert the tracked shopping cart (if the shopper had one) into an order.
+    if (body.cartId) {
+      void CartsService.markConverted(store.merchant.id, body.cartId, order.id)
+    }
 
     const urls = this.orderUrls(slug, providerId, order.orderNumber)
     let session

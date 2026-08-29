@@ -133,6 +133,22 @@ export const storefrontApi = {
 			body: JSON.stringify(body)
 		}),
 
+	saveCart: (
+		fetchFn: typeof fetch,
+		slug: string,
+		body: { cartId?: string; customerId?: string; items: Array<{ variantId: string; productId?: string; name: string; price: number; quantity: number; image?: string | null; slug?: string }> }
+	) =>
+		request<{ cart: { id: string } }>(fetchFn, `/${slug}/cart`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		}),
+
+	recoverCart: (fetchFn: typeof fetch, slug: string, code: string) =>
+		request<{ cartId: string; items: Array<{ variantId: string; productId?: string; name: string; price: number; quantity: number; image?: string | null; slug?: string }>; restored: boolean }>(
+			fetchFn,
+			`/${slug}/cart/recover/${encodeURIComponent(code)}`
+		),
+
 	syncOrder: (
 		fetchFn: typeof fetch,
 		slug: string,

@@ -6,6 +6,7 @@ import { CartsService } from './service'
 const storeParams = t.Object({ slug: t.String() })
 
 const saveCartBody = t.Object({
+  cartId: t.Optional(t.String()),
   customerId: t.Optional(t.String()),
   items: t.Array(
     t.Object({

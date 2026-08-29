@@ -20,6 +20,7 @@ export class CartsService {
   static async saveCart(
     slug: string,
     input: {
+      cartId?: string
       customerId?: string
       items: CartItem[]
       email?: string
@@ -32,18 +33,25 @@ export class CartsService {
       .where(and(eq(merchants.slug, slug), eq(merchants.status, 'active')))
     if (!merchant) throw notFound('STORE_NOT_FOUND', 'Store not found')
 
-    // Find an existing cart for this customer/email that's still active/recoverable.
-    const [existing] = await db
-      .select()
-      .from(carts)
-      .where(
-        and(
-          eq(carts.merchantId, merchant.id),
-          input.customerId ? eq(carts.customerId, input.customerId) : sql`false`
-        )
-      )
-      .orderBy(desc(carts.createdAt))
-      .limit(1)
+    // Prefer the client-held cart id, then fall back to the most recent cart
+    // for the customer/email so guest carts stay stable across sessions.
+    let existing: typeof carts.$inferSelect | undefined
+    if (input.cartId) {
+      const [byId] = await db
+        .select()
+        .from(carts)
+        .where(and(eq(carts.id, input.cartId), eq(carts.merchantId, merchant.id)))
+      existing = byId
+    }
+    if (!existing && input.customerId) {
+      const [byCustomer] = await db
+        .select()
+        .from(carts)
+        .where(and(eq(carts.merchantId, merchant.id), eq(carts.customerId, input.customerId)))
+        .orderBy(desc(carts.createdAt))
+        .limit(1)
+      existing = byCustomer
+    }
 
     if (existing) {
       const [updated] = await db
@@ -51,6 +59,7 @@ export class CartsService {
         .set({
           items: input.items as never,
           status: input.items.length > 0 ? 'active' : existing.status,
+          customerId: input.customerId ?? existing.customerId,
           abandonedAt: null,
           lastActivityAt: new Date(),
           updatedAt: new Date()
