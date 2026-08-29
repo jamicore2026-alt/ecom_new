@@ -1,6 +1,7 @@
 import { and, count, desc, eq, gte, ilike, lte, or, sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
 import { db } from '../../database/client'
+import { toCsv } from '../../shared/csv'
 import {
   customers,
   inventoryLogs,
@@ -126,6 +127,77 @@ export class OrdersService {
       .offset(offset)
 
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
+  }
+
+  /* ------------------------------ csv export ------------------------------ */
+
+  static async exportCsv(merchantId: string): Promise<string> {
+    const rows = await db
+      .select({
+        id: orders.id,
+        orderNumber: orders.orderNumber,
+        status: orders.status,
+        paymentStatus: orders.paymentStatus,
+        fulfillmentStatus: orders.fulfillmentStatus,
+        customerName: sql<string>`concat_ws(' ', ${customers.firstName}, ${customers.lastName})`,
+        customerEmail: customers.email,
+        subtotal: orders.subtotal,
+        shippingTotal: orders.shippingTotal,
+        discountTotal: orders.discountTotal,
+        taxTotal: orders.taxTotal,
+        total: orders.total,
+        currency: orders.currency,
+        paymentMethod: orders.paymentMethod,
+        createdAt: orders.createdAt,
+        itemCount: sql<number>`(
+          select coalesce(sum(${orderItems.quantity}), 0) from ${orderItems}
+          where ${orderItems.orderId} = ${orders.id}
+        )`
+      })
+      .from(orders)
+      .leftJoin(customers, eq(orders.customerId, customers.id))
+      .where(eq(orders.merchantId, merchantId))
+      .orderBy(desc(orders.createdAt))
+
+    const headers = [
+      'order_id',
+      'order_number',
+      'status',
+      'payment_status',
+      'fulfillment_status',
+      'customer_email',
+      'customer_name',
+      'subtotal',
+      'shipping_total',
+      'discount_total',
+      'tax_total',
+      'total',
+      'currency',
+      'payment_method',
+      'item_count',
+      'created_at'
+    ]
+
+    const csvRows: unknown[][] = rows.map((r) => [
+      r.id,
+      r.orderNumber,
+      r.status,
+      r.paymentStatus,
+      r.fulfillmentStatus,
+      r.customerEmail ?? '',
+      r.customerName ?? '',
+      r.subtotal,
+      r.shippingTotal,
+      r.discountTotal,
+      r.taxTotal,
+      r.total,
+      r.currency,
+      r.paymentMethod ?? '',
+      r.itemCount,
+      r.createdAt.toISOString()
+    ])
+
+    return toCsv(headers, csvRows)
   }
 
   /* -------------------------------- detail -------------------------------- */

@@ -286,6 +286,7 @@ export type Permission =
   | 'staff.read'
   | 'staff.manage'
   | 'customers.read'
+  | 'customers.write'
   | 'settings.read'
   | 'settings.manage'
 
@@ -327,6 +328,7 @@ export const PERMISSIONS: Permission[] = [
   'staff.read',
   'staff.manage',
   'customers.read',
+  'customers.write',
   'settings.read',
   'settings.manage'
 ]

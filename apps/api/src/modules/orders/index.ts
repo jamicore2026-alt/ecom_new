@@ -15,6 +15,17 @@ export const ordersModule = new Elysia({ prefix: '/api' })
   .get('/orders', async ({ query, auth }) => OrdersService.list(auth.merchant.id, query), {
     query: orderQuery
   })
+  // registered before '/orders/:id' so "export" is not captured as an id
+  .get(
+    '/orders/export',
+    async ({ auth, set }) => {
+      const csv = await OrdersService.exportCsv(auth.merchant.id)
+      set.headers['content-type'] = 'text/csv; charset=utf-8'
+      set.headers['content-disposition'] = `attachment; filename="orders-${auth.merchant.slug}-${new Date().toISOString().slice(0, 10)}.csv"`
+      return csv
+    },
+    { detail: { summary: 'Export orders as CSV' } }
+  )
   .get('/orders/:id', async ({ params, auth }) => OrdersService.get(auth.merchant.id, params.id))
   .get('/returns', async ({ query, auth }) =>
     OrdersService.listReturns(auth.merchant.id, query.orderId)

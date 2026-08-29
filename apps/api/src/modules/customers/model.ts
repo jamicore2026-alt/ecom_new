@@ -10,3 +10,9 @@ export const customerQuery = t.Object({
   ),
   sortOrder: t.Optional(t.Enum({ asc: 'asc', desc: 'desc' }))
 })
+
+export const importCsvBody = t.Object({
+  // NOTE: no MIME whitelist — Elysia validates t.File types via magic-byte
+  // sniffing, which plain text CSVs can never satisfy. Content is parsed as text.
+  file: t.File()
+})
