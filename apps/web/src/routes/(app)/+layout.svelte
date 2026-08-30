@@ -66,7 +66,7 @@
 		<div class="lg:grid lg:grid-cols-[240px_1fr]">
 			<!-- Sidebar -->
 			<aside
-				class="fixed inset-y-0 left-0 z-30 w-60 transform border-r border-gray-200 bg-white transition-transform lg:static lg:translate-x-0"
+				class="fixed inset-y-0 left-0 z-30 flex w-60 flex-col transform border-r border-gray-200 bg-white transition-transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0"
 				class:translate-x-0={sidebarOpen}
 				class:-translate-x-full={!sidebarOpen}
 			>
@@ -99,7 +99,7 @@
 					</div>
 				{/if}
 
-				<nav class="flex-1 space-y-4 overflow-y-auto p-3">
+				<nav class="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
 					{#each Object.entries(navGroups) as [group, items]}
 						<div>
 							<p class="mb-1 px-3 text-xs font-medium uppercase tracking-wide text-gray-400">{group}</p>

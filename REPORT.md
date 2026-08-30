@@ -5,7 +5,7 @@ Method: Playwright 1.62.1, 3 breakpoints (375 / 768 / 1440), phased browsers, ne
 
 ## Result summary
 - 12 / 12 flow verifications pass ✅
-- 5 findings from the audit — **all FIXED, applied + verified in the shipped builds** ✅
+- 5 findings from the audit — **all FIXED, applied + verified in the shipped builds** ✅ (plus #6, the sidebar-clipping issue found and fixed after the audit)
 - Screenshot evidence captured for every page/flow.
 
 ## Verified flows ✅
@@ -46,6 +46,9 @@ Submit button is disabled in SSR and only enables after client hydration (`onMou
 
 ### 5. Rate-limit UX conflated with session expiry — **FIXED** ✅
 `session.bootstrap()` now records whether `/api/auth/me` failed with HTTP 429 (`RATE_LIMITED`) vs a real expiry, and the dashboard layout shows a distinct "Too many requests — please wait a few seconds and try again." message with a **Retry** button (re-runs `bootstrap()` and recovers without losing the token). Verified in the shipped build (`apps/web/build/client/_app/immutable/nodes/2.BpfdMdpP.js`).
+
+### 6. Sidebar nav clipped — only first two groups reachable — **FIXED** ✅ (found post-audit)
+The dashboard `aside` was not a flex column with a bounded height, so `nav`'s `overflow-y-auto` had no scroll context (`scrollHeight === clientHeight`). At short viewport heights (and in the mobile drawer) everything below the "General"/"Sell" groups was clipped off-screen with no way to scroll — the menu appeared to "only have two menus". Fix in `apps/web/src/routes/(app)/+layout.svelte`: `aside` → `flex flex-col lg:sticky lg:top-0 lg:h-screen`, `nav` → `min-h-0 flex-1 overflow-y-auto`. Verified: mobile drawer scrolls to the last item ("Settings"), desktop sidebar is sticky full-height with the grid layout intact (main content correct at 240px offset).
 
 ## Reproduction & environment notes
 - Run: `cd /tmp/opencode/e2e && LD_LIBRARY_PATH=/tmp/opencode/libs/extracted/usr/lib/x86_64-linux-gnu node audit.js`
