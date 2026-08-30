@@ -86,9 +86,17 @@ class RedisCounterStore implements CounterStore {
   private readonly database?: string
 
   constructor(url: string) {
-    const parsed = new URL(url)
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      throw new Error('REDIS_URL must be a valid URL using redis:// or rediss:// — e.g. redis://user:pass@host:6379/0')
+    }
     if (!['redis:', 'rediss:'].includes(parsed.protocol)) {
-      throw new Error('REDIS_URL must use redis:// or rediss://')
+      throw new Error(
+        `REDIS_URL must use redis:// or rediss:// (got scheme "${parsed.protocol.replace(/:$/, '')}"). ` +
+          'Example: redis://user:pass@host:6379/0'
+      )
     }
     this.host = parsed.hostname
     this.port = Number(parsed.port || 6379)
@@ -236,7 +244,7 @@ export const getRateLimitStore = (): CounterStore => {
 
     if (useRedis) {
       const url = process.env.REDIS_URL
-      if (!url) throw new Error('REDIS_URL must be set for production/shared rate limiting')
+      if (!url) throw new Error('REDIS_URL must be set for production/shared rate limiting — e.g. redis://user:pass@host:6379/0')
       store = new RedisCounterStore(url)
     } else {
       store = new MemoryCounterStore()
