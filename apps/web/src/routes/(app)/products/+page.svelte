@@ -179,7 +179,7 @@
 			<h1 class="text-xl font-bold text-gray-900">Products</h1>
 			<p class="text-sm text-gray-500">{meta.total} total</p>
 		</div>
-		<div class="flex gap-2">
+		<div class="flex flex-wrap gap-2">
 			<Button variant="secondary" loading={exporting} onclick={exportCsv}>Export CSV</Button>
 			{#if canWrite()}
 				<Button variant="secondary" onclick={() => { importResult = null; importFile = null; importOpen = true }}>Import CSV</Button>
@@ -264,7 +264,7 @@
 											{/if}
 										</div>
 										<div>
-											<a href="/products/{p.id}" class="font-medium text-indigo-600 hover:text-indigo-800">{p.name}</a>
+											<a href="/products/{p.id}" class="inline-block py-1 font-medium text-indigo-600 hover:text-indigo-800">{p.name}</a>
 											{#if p.category}
 												<span class="ml-1 text-xs text-gray-400">· {p.category.name}</span>
 											{/if}
@@ -285,11 +285,11 @@
 								<td class="px-3 py-3 text-gray-500">{dateTime(p.updatedAt)}</td>
 								<td class="px-5 py-3 text-right">
 									{#if canWrite()}
-										<button class="text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => { editProduct = p; editOpen = true }}>
+										<button class="inline-block py-1 text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => { editProduct = p; editOpen = true }}>
 											Edit
 										</button>
 										<span class="mx-1 text-gray-300">|</span>
-										<button class="text-xs font-medium text-red-600 hover:text-red-800" onclick={() => archiveProduct(p)}>
+										<button class="inline-block py-1 text-xs font-medium text-red-600 hover:text-red-800" onclick={() => archiveProduct(p)}>
 											Archive
 										</button>
 									{/if}

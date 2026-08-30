@@ -115,7 +115,7 @@
 						{#each items as o (o.id)}
 							<tr class="border-b border-gray-50 hover:bg-gray-50/60">
 								<td class="px-5 py-3">
-									<a href="/orders/{o.id}" class="font-medium text-indigo-600 hover:text-indigo-800">#{o.orderNumber}</a>
+									<a href="/orders/{o.id}" class="inline-block py-1 font-medium text-indigo-600 hover:text-indigo-800">#{o.orderNumber}</a>
 								</td>
 								<td class="px-3 py-3">
 									<p class="font-medium text-gray-900">{o.customerName || 'Guest'}</p>

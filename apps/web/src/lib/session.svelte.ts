@@ -18,6 +18,7 @@ let allowedOutlets: Outlet[] = $state([])
 let enabledModules: ModuleId[] = $state([])
 let selectedOutletId: string | null = $state(getSelectedOutletId())
 let ready = $state(false)
+let bootError = $state<'RATE_LIMITED' | 'SESSION_EXPIRED' | null>(null)
 
 function applyMe(me: { data: MeData }) {
 	user = me.data.user
@@ -74,6 +75,9 @@ export const session = {
 	get ready() {
 		return ready
 	},
+	get bootError() {
+		return bootError
+	},
 	get allowedOutlets() {
 		return allowedOutlets
 	},
@@ -115,10 +119,12 @@ export const session = {
 			ready = true
 			return
 		}
+		bootError = null
 		try {
 			const me = await fetchMe()
 			applyMe(me)
-		} catch {
+		} catch (e) {
+			bootError = (e as { status?: number }).status === 429 ? 'RATE_LIMITED' : 'SESSION_EXPIRED'
 			user = null
 			merchant = null
 			settings = null

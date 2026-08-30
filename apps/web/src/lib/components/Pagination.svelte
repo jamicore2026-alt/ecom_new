@@ -14,7 +14,7 @@
 		</p>
 		<div class="flex items-center gap-1">
 			<button
-				class="rounded-lg px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+				class="min-h-11 rounded-lg px-3 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-40"
 				disabled={meta.page <= 1}
 				onclick={() => onPage(meta.page - 1)}
 			>
@@ -24,7 +24,7 @@
 				{meta.page} / {meta.totalPages}
 			</span>
 			<button
-				class="rounded-lg px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+				class="min-h-11 rounded-lg px-3 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-40"
 				disabled={meta.page >= meta.totalPages}
 				onclick={() => onPage(meta.page + 1)}
 			>

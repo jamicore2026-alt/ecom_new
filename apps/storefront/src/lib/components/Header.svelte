@@ -80,18 +80,18 @@
 					type="search"
 					name="q"
 					placeholder="Search products"
-					class="h-9 w-40 rounded-full border border-gray-300 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 lg:w-56"
+					class="h-10 w-40 rounded-full border border-gray-300 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 lg:w-56"
 				/>
 				<button
 					type="submit"
-					class="h-9 rounded-full bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700"
+					class="h-10 rounded-full bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700"
 				>
 					Search
 				</button>
 			</form>
 			<a
 				href={`/${slug}/account`}
-				class="flex h-9 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+				class="flex h-11 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
 			>
 				{#if account.signedIn && account.customer}
 					{account.customer.firstName || 'Account'}
@@ -101,7 +101,7 @@
 			</a>
 			<a
 				href={`/${slug}/wishlist`}
-				class="relative flex h-9 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+				class="relative flex h-11 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
 			>
 				Wishlist
 				{#if account.wishlist.length > 0}
@@ -114,7 +114,7 @@
 			</a>
 			<a
 				href={`/${slug}/cart`}
-				class="relative flex h-9 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+				class="relative flex h-11 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
 			>
 				Cart
 				{#if cart.count > 0}
@@ -126,7 +126,7 @@
 				{/if}
 			</a>
 			<button
-				class="flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50 lg:hidden"
+				class="flex h-11 w-11 items-center justify-center rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50 lg:hidden"
 				onclick={() => (menuOpen = !menuOpen)}
 				aria-label={menuOpen ? 'Close menu' : 'Open menu'}
 				aria-expanded={menuOpen}

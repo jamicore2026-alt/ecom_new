@@ -35,9 +35,9 @@
 
 	<div class="flex flex-1 flex-col gap-1 p-4">
 		<p class="text-xs text-gray-500">{product.category?.name ?? 'General'}</p>
-		<h3 class="line-clamp-2 text-sm font-medium text-gray-900 group-hover:underline">
+		<h2 class="line-clamp-2 text-sm font-medium text-gray-900 group-hover:underline">
 			{product.name}
-		</h3>
+		</h2>
 		<div class="mt-auto flex items-baseline gap-2 pt-2">
 			<span class="text-base font-semibold text-gray-900">{money(product.price, currency)}</span>
 			{#if product.compareAtPrice && product.compareAtPrice > product.price}

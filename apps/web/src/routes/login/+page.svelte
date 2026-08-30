@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte'
 	import { goto } from '$app/navigation'
 	import { session } from '$lib/session.svelte'
 	import { toast } from '$lib/toast.svelte'
@@ -8,7 +9,12 @@
 	let password = $state('')
 	let merchantSlug = $state('')
 	let loading = $state(false)
+	let hydrated = $state(false)
 	let fieldErrors = $state<Record<string, string>>({})
+
+	onMount(() => {
+		hydrated = true
+	})
 
 	async function submit() {
 		loading = true
@@ -41,10 +47,7 @@
 
 		<form
 			class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm"
-			onsubmit={(e) => {
-				e.preventDefault()
-				submit()
-			}}
+			on:submit|preventDefault={submit}
 		>
 			<div class="space-y-4">
 				<div>
@@ -98,7 +101,7 @@
 				</div>
 			</div>
 
-			<Button type="submit" class="mt-6 w-full" loading={loading} disabled={loading}>
+			<Button type="submit" class="mt-6 w-full" loading={loading} disabled={loading || !hydrated}>
 				Sign in
 			</Button>
 		</form>

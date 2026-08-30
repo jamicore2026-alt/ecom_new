@@ -1,5 +1,5 @@
 <script lang="ts">
-	let { title, subtitle, padded = true, class: className, children, headingLevel = 'h3' } = $props<{
+	let { title, subtitle, padded = true, class: className, children, headingLevel = 'h2' } = $props<{
 		title?: string
 		subtitle?: string
 		padded?: boolean
