@@ -31,7 +31,7 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/ecom_merchant
       JWT_ACCESS_SECRET: ci-access-secret
       JWT_REFRESH_SECRET: ci-refresh-secret
-      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      ENCRYPTION_KEY: ci-encryption-key
     steps:
       - uses: actions/checkout@v4
 
@@ -62,30 +62,71 @@ jobs:
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          # Trigger a Coolify deploy webhook with retries + exponential backoff.
-          # A single transient 503 (Coolify busy/queuing) must not block the
-          # remaining service webhooks, so all three are always attempted and
-          # the step only fails if a webhook still fails after all retries.
-          deploy_webhook() {
+          # 4GB VPS: the three services must NEVER build/boot at the same time,
+          # or Coolify OOMs the box. So each service is deployed and fully
+          # WAITED OUT (polled to a terminal state) before the next one is
+          # even triggered. This is deliberately sequential, not parallel.
+          #
+          # Trigger call: retries + exponential backoff for transient 503s.
+          # Status poll: Coolify's GET /api/v1/deployments/{uuid} has been
+          # flaky on some self-hosted versions (returns "Deployment not
+          # found" for an active deploy - see coollabsio/coolify#8925), so a
+          # few consecutive lookup misses are tolerated instead of failing
+          # the whole step immediately, but total wait time is still capped
+          # so a genuinely stuck deploy can't hang CI forever.
+          deploy_and_wait() {
             local url="$1"
-            local attempts=5
+            local base
+            base="$(echo "$url" | grep -oE '^https?://[^/]+')"
+
+            local resp deploy_uuid attempts=5
             for i in $(seq 1 "$attempts"); do
-              if curl -fsS -X POST "$url" \
-                -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"; then
-                echo "::notice:: Deploy triggered successfully"
-                return 0
-              fi
+              resp="$(curl -fsS -X POST "$url" \
+                -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}")" && break
               local code=$?
-              echo "attempt $i of $attempts failed (curl exit $code); retrying in $((i*5))s"
+              echo "trigger attempt $i of $attempts failed (curl exit $code): $url; retrying in $((i*5))s"
               sleep "$((i*5))"
+              [ "$i" -eq "$attempts" ] && { echo "::error:: Deploy webhook failing after $attempts attempts: $url"; return 1; }
             done
-            echo "::error:: Deploy webhook failed after $attempts attempts"
+            echo "::notice:: Deploy triggered: $url"
+
+            deploy_uuid="$(echo "$resp" | jq -r '.deployment_uuid // empty')"
+            if [ -z "$deploy_uuid" ]; then
+              echo "::warning:: no deployment_uuid in response, cannot poll status - falling back to fixed wait for: $url"
+              sleep 180
+              return 0
+            fi
+
+            echo "::notice:: waiting for deployment $deploy_uuid to finish ($url)"
+            local elapsed=0 max_wait=900 interval=10 misses=0 max_misses=6
+            while [ "$elapsed" -lt "$max_wait" ]; do
+              sleep "$interval"
+              elapsed=$((elapsed + interval))
+              status="$(curl -fsS "$base/api/v1/deployments/$deploy_uuid" \
+                -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" | jq -r '.status // empty')"
+              case "$status" in
+                finished)
+                  echo "::notice:: deployment finished: $url"
+                  return 0 ;;
+                failed|error)
+                  echo "::error:: deployment failed: $url"
+                  return 1 ;;
+                "")
+                  misses=$((misses + 1))
+                  if [ "$misses" -ge "$max_misses" ]; then
+                    echo "::warning:: status endpoint unreachable/empty $max_misses times in a row for $deploy_uuid - assuming it's done and moving on"
+                    return 0
+                  fi ;;
+                *)
+                  misses=0 ;;
+              esac
+            done
+            echo "::error:: timed out after ${max_wait}s waiting for deployment: $url"
             return 1
           }
 
           fail=0
-          deploy_webhook "${{ secrets.COOLIFY_WEBHOOK_URL }}" || fail=1
-          deploy_webhook "${{ secrets.COOLIFY_WEBHOOK_URL_MERCHANT }}" || fail=1
-          deploy_webhook "${{ secrets.COOLIFY_WEBHOOK_URL_STORE }}" || fail=1
+          deploy_and_wait "${{ secrets.COOLIFY_WEBHOOK_URL }}" || fail=1
+          deploy_and_wait "${{ secrets.COOLIFY_WEBHOOK_URL_MERCHANT }}" || fail=1
+          deploy_and_wait "${{ secrets.COOLIFY_WEBHOOK_URL_STORE }}" || fail=1
           exit "$fail"
-          
