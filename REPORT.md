@@ -1,7 +1,7 @@
 # Complete E2E UI/UX Audit — merchant-dashboard (ecom_new)
 
 Date: 2026-08-30 · Stack (production builds): web :5478, storefront :5479, API :3005
-Method: Playwright 1.62.1, 3 breakpoints (375 / 768 / 1440), phased browsers, network + console capture, SSR cross-check via curl, order cross-check in dashboard.
+Method: Playwright 1.62.1, 3 breakpoints (375 / 768 / 1440), phased browsers, network + console capture, SSR cross-check via curl, order cross-check in dashboard, **plus a live pass against merchant.jamicore.com**.
 
 ## Result summary
 - 12 / 12 flow verifications pass ✅
@@ -55,6 +55,15 @@ The dashboard `aside` was not a flex column with a bounded height, so `nav`'s `o
 - **Font fix (required):** this container has no fonts, which broke text layout in headless chromium (0-height text) and produced harfbuzz renderer crashes. Installed DejaVu (Sans/Serif/Bold) to `/tmp/opencode/fonts` + a custom `fonts.conf` (Inter→DejaVu fallback, sans-serif→DejaVu Sans). `audit.js` launches chromium with `FONTCONFIG_FILE` and blocks the Inter variable `.woff2` (which triggers a software-renderer crash in this headless env); pages fall back to DejaVu.
 - Result: all pages render deterministically, including desktop (1440px) and the order-confirmation page that previously crashed.
 - Screenshots use DejaVu Sans instead of Inter; functional/layout checks are unaffected.
+
+## Follow-up: live-site (merchant.jamicore.com) root-cause
+- The shipped 375 / 768 / 1440 layout was verified clean on the live production build, and a full live-site pass added one real (non-layout) finding — see **#7**.
+
+### 7. Menu reduced to 3 items on production — empty `merchant_modules` — **FIXED** ✅ (live data + code guard)
+`/api/auth/me` returned `enabledModules: []` for the production merchant despite the store actively selling (20 products, 22 orders, 43 customers). `navigation.ts` `navVisible()` gates every commerce item behind the merchant having that module enabled, so the sidebar collapsed to the 3 ungated items (**Overview / Audit Log / Settings**) — "the menu only has two groups". Root cause: the merchant predates migration `0016` (`merchant_modules` table); that migration created the table but never backfilled existing merchants.
+- Fixed live: enabled the default commerce set (`commerce`, `inventory`, `marketing`, `analytics`) via `PUT /api/modules/:module`. Drawer re-verified on the user's device viewport (392×872) and 360×740: 10 items, all visible, last item reachable, no clipping.
+- Code guard shipped: `apps/api/src/shared/merchant-context.ts` now falls back to `DEFAULT_MODULES.commerce` when a merchant has **no rows at all** in `merchant_modules` (merchants who explicitly disabled every module are still respected). Prevents the same stripping for any other pre-existing merchant.
+- Minor live findings, not yet fixed: 4 product images 404 (`/uploads/...png` referenced in DB but missing on the server) and the sidebar Sign out icon is a ~36–40px tap target (below the 44px mobile guideline).
 
 ## Artifacts
 - Screenshots: `/tmp/opencode/e2e/shots/`

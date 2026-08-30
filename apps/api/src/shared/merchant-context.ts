@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '../database/client'
 import { merchantModules, outlets, userOutlets } from '../database/schema'
 import type { Outlet } from '../database/schema'
-import type { ModuleId } from './types'
+import { DEFAULT_MODULES, type ModuleId } from './types'
 
 export interface MerchantContext {
   /** Every outlet the current user may act on (owner/admin default to all). */
@@ -61,6 +61,14 @@ export async function resolveMerchantContext(
   const enabledModules = modules
     .filter((m) => m.enabled)
     .map((m) => m.module) as ModuleId[]
+
+  // Merchants that predate the module system have no rows at all; without a
+  // fallback their navigation would be stripped to the few ungated items.
+  // Default to the standard commerce set. Explicitly disabled rows are still
+  // respected — this only covers the "no rows registered" case.
+  if (modules.length === 0) {
+    enabledModules.push(...DEFAULT_MODULES.commerce)
+  }
 
   return { allowedOutlets, selectedOutlet, enabledModules }
 }
