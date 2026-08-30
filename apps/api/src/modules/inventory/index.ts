@@ -6,6 +6,7 @@ import { adjustBody, historyQuery, inventoryQuery } from './model'
 
 export const inventoryModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(requirePermission('inventory.read'))
   .get('/inventory', async ({ query, auth }) => InventoryService.list(auth.merchant.id, query), {
     query: inventoryQuery
   })

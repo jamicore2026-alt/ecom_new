@@ -364,7 +364,7 @@
 			<h1 class="text-xl font-bold text-gray-900">Settings</h1>
 		</div>
 
-		<div class="flex gap-1 rounded-lg border border-gray-200 bg-white p-1 w-fit">
+		<div class="flex max-w-full gap-1 overflow-x-auto rounded-lg border border-gray-200 bg-white p-1 w-fit">
 			{#each sections as s (s.id)}
 				<button class="rounded-md px-3 py-1.5 text-sm font-medium" class:bg-indigo-600={section === s.id} class:text-white={section === s.id} class:text-gray-600={section !== s.id} onclick={() => switchSection(s.id)}>
 					{s.label}
@@ -373,7 +373,7 @@
 		</div>
 
 		{#if section === 'store' && store}
-			<Card title="Store settings">
+			<Card title="Store settings" headingLevel="h2">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveStore() }}>
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div>
@@ -419,7 +419,7 @@
 					<div class="flex flex-wrap items-start justify-between gap-3">
 						<div class="min-w-0">
 							<div class="flex items-center gap-2">
-								<h3 class="text-sm font-semibold text-gray-900">{p.label}</h3>
+								<h2 class="text-sm font-semibold text-gray-900">{p.label}</h2>
 								<Badge label={p.mode} />
 								<span class="text-[11px] font-medium {p.configured ? 'text-green-600' : 'text-gray-400'}">
 									{p.configured ? '● credentials saved' : '○ not configured'}
@@ -491,7 +491,7 @@
 				</Card>
 			{/each}
 
-			<Card title="Payment methods">
+			<Card title="Payment methods" headingLevel="h2">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); savePayments() }}>
 					<div>
 						<label for="payments-currency" class="mb-1 block text-sm font-medium text-gray-700">Currency</label>
@@ -511,7 +511,7 @@
 				</form>
 			</Card>
 		{:else if section === 'shipping' && shipping}
-			<Card title="Shipping">
+			<Card title="Shipping" headingLevel="h2">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveShipping() }}>
 					<div>
 						<label for="free-shipping-threshold" class="mb-1 block text-sm font-medium text-gray-700">Free shipping threshold</label>
@@ -546,7 +546,7 @@
 				</form>
 			</Card>
 		{:else if section === 'taxes' && taxes}
-			<Card title="Taxes">
+			<Card title="Taxes" headingLevel="h2">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveTaxes() }}>
 					<div class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
 						<span class="text-sm text-gray-700">Auto-calculate taxes</span>
@@ -578,7 +578,7 @@
 				</form>
 			</Card>
 		{:else if section === 'notifications' && notifications}
-			<Card title="Email notifications">
+			<Card title="Email notifications" headingLevel="h2">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveNotifications() }}>
 					<div class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
 						<span class="text-sm text-gray-700">Send transactional emails</span>
@@ -619,7 +619,7 @@
 		{:else if section === 'staff'}
 			<Card padded={false}>
 				<div class="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-					<h3 class="text-sm font-semibold text-gray-900">Staff members</h3>
+					<h2 class="text-sm font-semibold text-gray-900">Staff members</h2>
 					<Button size="sm" onclick={openNewStaff}>Add staff</Button>
 				</div>
 				{#if staff.length === 0}

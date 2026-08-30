@@ -104,7 +104,7 @@
 		<!-- Sales chart + top products -->
 		<div class="grid gap-6 lg:grid-cols-3">
 			<div class="lg:col-span-2">
-				<Card title="Revenue (last 14 days)">
+				<Card title="Revenue (last 14 days)" headingLevel="h2">
 					<div class="h-64">
 						{#if data.salesChart.length === 0}
 							<div class="flex h-full items-center justify-center text-sm text-gray-400">
@@ -160,7 +160,7 @@
 				</Card>
 			</div>
 
-			<Card title="Top products">
+			<Card title="Top products" headingLevel="h2">
 				{#if data.topProducts.length === 0}
 					<p class="py-8 text-center text-sm text-gray-400">No product sales yet</p>
 				{:else}
@@ -183,7 +183,7 @@
 		</div>
 
 		<!-- Recent orders -->
-		<Card title="Recent orders" padded={false}>
+		<Card title="Recent orders" headingLevel="h2" padded={false}>
 			{#if data.recentOrders.length === 0}
 				<p class="py-10 text-center text-sm text-gray-400">No orders yet</p>
 			{:else}

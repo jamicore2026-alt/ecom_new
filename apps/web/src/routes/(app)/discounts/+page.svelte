@@ -293,9 +293,9 @@
 				Promotions
 			</button>
 		</div>
-		<div class="flex gap-2">
+		<div class="flex flex-wrap gap-2">
 			{#if section === 'coupons'}
-				<input class="w-48 rounded-lg border border-gray-300 px-3 py-1.5 text-sm" placeholder="Search code…" bind:value={search} onkeydown={(e) => { if (e.key === 'Enter') { page = 1; load() } }} />
+				<input class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm sm:w-48" placeholder="Search code…" bind:value={search} onkeydown={(e) => { if (e.key === 'Enter') { page = 1; load() } }} />
 			{/if}
 			<select class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={statusFilter}>
 				<option value="">All statuses</option>

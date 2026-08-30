@@ -129,7 +129,7 @@
 		}
 	}
 
-	const freeTables = $derived(tables.filter((t) => t.id !== selected?.id && ['AVAILABLE', 'RESERVED', 'CLEANING'].includes(t.status)))
+	const freeTables = $derived((Array.isArray(tables) ? tables : []).filter((t) => t.id !== selected?.id && ['AVAILABLE', 'RESERVED', 'CLEANING'].includes(t.status)))
 
 	// create flow
 	async function openCreate() {

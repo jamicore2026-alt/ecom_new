@@ -11,6 +11,7 @@ import {
 
 export const fulfillmentsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(requirePermission('orders.read'))
 
   .get('/fulfillments', async ({ auth, query }) => {
     return FulfillmentsService.list(auth.merchant.id, query)

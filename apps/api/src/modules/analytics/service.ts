@@ -27,10 +27,19 @@ const parseRange = (from?: string, to?: string, days = 30) => {
   return { start, end }
 }
 
+type AnalyticsInterval = 'day' | 'week' | 'month'
+
 interface Query {
   from?: string
   to?: string
-  interval?: string
+  interval?: AnalyticsInterval
+}
+
+// Keep SQL fragments fully internal. Never interpolate request-derived values into sql.raw().
+const intervalTruncExpressions: Record<AnalyticsInterval, ReturnType<typeof sql.raw>> = {
+  day: sql.raw(`date_trunc('day', "orders"."created_at") at time zone 'UTC'`),
+  week: sql.raw(`date_trunc('week', "orders"."created_at") at time zone 'UTC'`),
+  month: sql.raw(`date_trunc('month', "orders"."created_at") at time zone 'UTC'`)
 }
 
 export class AnalyticsService {
@@ -38,7 +47,7 @@ export class AnalyticsService {
 
   static async sales(merchantId: string, q: Query) {
     const { start, end } = parseRange(q.from, q.to)
-    const interval = q.interval ?? 'day'
+    const interval: AnalyticsInterval = q.interval ?? 'day'
     const length = end.getTime() - start.getTime()
     const prevStart = new Date(start.getTime() - length)
     const prevEnd = new Date(start.getTime() - 1)
@@ -51,7 +60,7 @@ export class AnalyticsService {
         lte(orders.createdAt, e)
       )
 
-    const truncExpr = sql.raw(`date_trunc('${interval}', "orders"."created_at") at time zone 'UTC'`)
+    const truncExpr = intervalTruncExpressions[interval]
     const run = async (s: Date, e: Date) => {
       const buckets = await db
         .select({

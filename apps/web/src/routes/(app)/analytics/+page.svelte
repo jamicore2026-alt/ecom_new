@@ -113,7 +113,7 @@
 					<p class="mt-0.5 text-xs text-red-500">{currency(-sales.refunds)} refunds</p>
 				</div>
 			</div>
-			<Card title="Revenue over time">
+			<Card title="Revenue over time" headingLevel="h2">
 				{#if sales.series.length === 0}
 					<p class="py-10 text-center text-sm text-gray-400">No data.</p>
 				{:else}
@@ -130,7 +130,7 @@
 			</Card>
 		{:else if tab === 'products' && products}
 			<div class="grid gap-5 lg:grid-cols-2">
-				<Card title="Top products">
+				<Card title="Top products" headingLevel="h2">
 					<ul class="space-y-3">
 						{#each products.top as p (p.productId)}
 							<li class="flex items-center justify-between gap-3">
@@ -147,7 +147,7 @@
 					</ul>
 				</Card>
 
-				<Card title="By category">
+				<Card title="By category" headingLevel="h2">
 					<ul class="space-y-3">
 						{#each products.categoryBreakdown as c (c.categoryId ?? 'none')}
 							<li class="flex items-center justify-between gap-3">
@@ -165,7 +165,7 @@
 				</Card>
 
 				<div class="lg:col-span-2">
-					<Card title="Low performers">
+					<Card title="Low performers" headingLevel="h2">
 						{#if products.lowPerformers.length === 0}
 							<p class="py-8 text-center text-sm text-gray-400">No data.</p>
 						{:else}
@@ -216,7 +216,7 @@
 			</div>
 
 			<div class="grid gap-5 lg:grid-cols-2">
-				<Card title="New customers per month" padded={false}>
+				<Card title="New customers per month" headingLevel="h2" padded={false}>
 					{#if customers.monthlyNewCustomers.length === 0}
 						<p class="py-10 text-center text-sm text-gray-400">No data.</p>
 					{:else}
@@ -231,7 +231,7 @@
 					{/if}
 				</Card>
 
-				<Card title="Top spenders" padded={false}>
+				<Card title="Top spenders" headingLevel="h2" padded={false}>
 					{#if customers.topSpenders.length === 0}
 						<p class="py-10 text-center text-sm text-gray-400">No customers.</p>
 					{:else}
@@ -276,7 +276,7 @@
 			</div>
 
 			<div class="grid gap-5 lg:grid-cols-2">
-				<Card title="Funnel">
+				<Card title="Funnel" headingLevel="h2">
 					<div class="space-y-3">
 						{#each [
 							{ label: 'View → Cart', value: conversion.funnel.viewToCart },
@@ -296,7 +296,7 @@
 					</div>
 				</Card>
 
-				<Card title="By channel" padded={false}>
+				<Card title="By channel" headingLevel="h2" padded={false}>
 					{#if conversion.byChannel.length === 0}
 						<p class="py-10 text-center text-sm text-gray-400">No data.</p>
 					{:else}

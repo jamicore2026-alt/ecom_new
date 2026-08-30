@@ -163,7 +163,7 @@
 					<div class="flex items-center justify-between">
 						<div class="flex items-center gap-2">
 							<span class="h-2.5 w-2.5 rounded-full {station.status === 'active' ? 'bg-emerald-500' : 'bg-slate-300'}" aria-hidden="true"></span>
-							<h3 class="font-semibold text-gray-900">{station.name}</h3>
+							<h2 class="font-semibold text-gray-900">{station.name}</h2>
 						</div>
 						{#if canManage}
 							<div class="flex gap-1">

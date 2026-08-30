@@ -1,10 +1,11 @@
 import { Elysia } from 'elysia'
-import { authPlugin } from '../../plugins/auth'
+import { authPlugin, requirePermission } from '../../plugins/auth'
 import { ok } from '../../shared/response'
 import { OutboundWebhooksService } from './service'
 
 export const outboundWebhooksModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(requirePermission('settings.manage'))
 
   .get('/webhook-endpoints', async ({ auth }) => {
     const endpoints = await OutboundWebhooksService.listEndpoints(auth.merchant.id)

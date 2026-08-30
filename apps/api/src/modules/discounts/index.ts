@@ -6,6 +6,7 @@ import { couponBody, couponQuery, couponUpdateBody, promotionBody, promotionUpda
 
 export const discountsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(requirePermission('discounts:write'))
   .get('/coupons', async ({ query, auth }) => DiscountsService.listCoupons(auth.merchant.id, query), {
     query: couponQuery
   })

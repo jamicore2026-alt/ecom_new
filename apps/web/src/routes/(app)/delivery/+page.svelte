@@ -84,8 +84,8 @@
 		}
 	}
 
-	const activeOrders = $derived(deliveries.filter((d) => !['DELIVERED', 'FAILED', 'CANCELLED'].includes(d.status)))
-	const pastOrders = $derived(deliveries.filter((d) => ['DELIVERED', 'FAILED', 'CANCELLED'].includes(d.status)))
+	const activeOrders = $derived((Array.isArray(deliveries) ? deliveries : []).filter((d) => !['DELIVERED', 'FAILED', 'CANCELLED'].includes(d.status)))
+	const pastOrders = $derived((Array.isArray(deliveries) ? deliveries : []).filter((d) => ['DELIVERED', 'FAILED', 'CANCELLED'].includes(d.status)))
 
 	async function dispatch(delivery: DeliveryOrder) {
 		try {

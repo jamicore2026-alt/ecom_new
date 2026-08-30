@@ -27,6 +27,7 @@ const createBody = t.Object({
 
 export const campaignsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(requirePermission('settings:write'))
 
   .get('/campaigns', async ({ auth }) => CampaignsService.list(auth.merchant.id))
   .get('/campaigns/:id', async ({ auth, params }) => CampaignsService.get(auth.merchant.id, params.id))

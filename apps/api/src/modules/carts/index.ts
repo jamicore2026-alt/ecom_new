@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia'
 import { t } from 'elysia'
-import { authPlugin } from '../../plugins/auth'
+import { authPlugin, requirePermission } from '../../plugins/auth'
 import { CartsService } from './service'
 
 const storeParams = t.Object({ slug: t.String() })
@@ -50,6 +50,7 @@ export const cartsModule = new Elysia({ prefix: '/api' })
 
   // Merchant dashboard — abandoned cart management
   .use(authPlugin)
+  .use(requirePermission('customers.read'))
   .get(
     '/carts',
     ({ auth, query }) => CartsService.list(auth.merchant.id, query),

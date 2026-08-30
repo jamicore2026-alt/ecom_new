@@ -18,7 +18,7 @@ const refreshCookieOptions = {
   httpOnly: true,
   sameSite: 'lax' as const,
   secure: process.env.NODE_ENV === 'production',
-  path: '/api/auth',
+  path: '/',
   maxAge: REFRESH_TOKEN_TTL
 }
 
@@ -29,7 +29,7 @@ const expireRefreshCookie = {
   httpOnly: true,
   sameSite: 'lax' as const,
   secure: process.env.NODE_ENV === 'production',
-  path: '/api/auth'
+  path: '/'
 }
 
 export const authModule = new Elysia({ prefix: '/api/auth' })

@@ -224,24 +224,20 @@ let store: CounterStore | undefined
 
 export const getRateLimitStore = (): CounterStore => {
   if (!store) {
-    // Auto-select: setting REDIS_URL opts into the shared Redis store (the
-    // primary intent); the explicit RATE_LIMIT_STORE override (memory|redis)
-    // still lets operators force either backend. Default is in-memory.
     const explicit = (process.env.RATE_LIMIT_STORE ?? '').toLowerCase()
-    const useRedis =
-      explicit === 'redis' || (explicit !== 'memory' && Boolean(process.env.REDIS_URL))
+    const production = process.env.NODE_ENV === 'production'
+    const allowMemory = process.env.RATE_LIMIT_ALLOW_MEMORY === 'true'
+
+    if (production && explicit === 'memory' && !allowMemory) {
+      throw new Error('RATE_LIMIT_STORE=memory is not allowed in production without RATE_LIMIT_ALLOW_MEMORY=true')
+    }
+
+    const useRedis = production || explicit === 'redis' || (explicit !== 'memory' && Boolean(process.env.REDIS_URL))
 
     if (useRedis) {
       const url = process.env.REDIS_URL
-      if (!url) throw new Error('REDIS_URL must be set to use the Redis rate-limit store')
-      try {
-        store = new RedisCounterStore(url)
-      } catch (err) {
-        // A malformed REDIS_URL (wrong protocol, empty, etc.) must never take
-        // the API down — degrade to the in-memory store with a warning.
-        console.warn(`[rate-limit] invalid REDIS_URL; falling back to in-memory store.`, err)
-        store = new MemoryCounterStore()
-      }
+      if (!url) throw new Error('REDIS_URL must be set for production/shared rate limiting')
+      store = new RedisCounterStore(url)
     } else {
       store = new MemoryCounterStore()
     }
@@ -264,6 +260,9 @@ export const initializeRateLimitStore = async () => {
     await selected.get('__jamicore_rate_limit_startup_check__')
     await selected.reset('__jamicore_rate_limit_startup_check__')
   } catch (err) {
+    if (process.env.NODE_ENV === 'production' && process.env.RATE_LIMIT_ALLOW_MEMORY !== 'true') {
+      throw new Error(`Redis is required for production rate limiting: ${err instanceof Error ? err.message : String(err)}`, { cause: err })
+    }
     fallbackToMemory('Redis unreachable at startup', err)
   }
 }

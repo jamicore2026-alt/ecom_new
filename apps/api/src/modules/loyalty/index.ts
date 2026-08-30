@@ -13,6 +13,7 @@ const adjustBody = t.Object({
 
 export const loyaltyModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(requirePermission('customers.read'))
 
   .get('/loyalty/:customerId', async ({ auth, params }) => LoyaltyService.getByCustomer(auth.merchant.id, params.customerId))
   .get('/loyalty/:customerId/ledger', async ({ auth, params }) => LoyaltyService.ledger(auth.merchant.id, params.customerId))

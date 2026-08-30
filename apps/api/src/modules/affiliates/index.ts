@@ -12,6 +12,7 @@ const affiliateBody = t.Object({
 
 export const affiliatesModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(requirePermission('settings:write'))
 
   .get('/affiliates', async ({ auth }) => AffiliatesService.list(auth.merchant.id))
   .get('/affiliates/:id/referrals', async ({ auth, params }) => AffiliatesService.referrals(auth.merchant.id, params.id))

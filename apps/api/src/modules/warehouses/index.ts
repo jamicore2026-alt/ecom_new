@@ -26,12 +26,15 @@ const transferBody = t.Object({
 
 export const warehousesModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(requirePermission('inventory.read'))
 
   .get('/warehouses', async ({ auth }) => WarehousesService.list(auth.merchant.id))
   .get('/warehouses/:id', async ({ auth, params }) => WarehousesService.get(auth.merchant.id, params.id), { params: warehouseParams })
   .get('/warehouses/:id/inventory', async ({ auth, params }) => WarehousesService.listInventory(auth.merchant.id, params.id), { params: warehouseParams })
-  .put('/warehouses/:id/inventory', async ({ auth, params, body }) => WarehousesService.setInventory(auth.merchant.id, params.id, body.variantId, body.quantity), { params: warehouseParams, body: setInventoryBody })
   .get('/transfers', async ({ auth }) => WarehousesService.listTransfers(auth.merchant.id))
+
+  .use(requirePermission('inventory.manage'))
+  .put('/warehouses/:id/inventory', async ({ auth, params, body }) => WarehousesService.setInventory(auth.merchant.id, params.id, body.variantId, body.quantity), { params: warehouseParams, body: setInventoryBody })
 
   .use(requirePermission('inventory:write'))
   .post('/warehouses', async ({ auth, body }) => WarehousesService.create(auth.merchant.id, body), { body: warehouseBody })

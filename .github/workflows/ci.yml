@@ -31,7 +31,7 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/ecom_merchant
       JWT_ACCESS_SECRET: ci-access-secret
       JWT_REFRESH_SECRET: ci-refresh-secret
-      ENCRYPTION_KEY: ci-encryption-key
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     steps:
       - uses: actions/checkout@v4
 
@@ -59,7 +59,7 @@ jobs:
         run: bun run build
 
       - name: Deploy to Coolify
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           # Trigger a Coolify deploy webhook with retries + exponential backoff.
@@ -72,14 +72,14 @@ jobs:
             for i in $(seq 1 "$attempts"); do
               if curl -fsS -X POST "$url" \
                 -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"; then
-                echo "::notice:: Deploy triggered OK: $url"
+                echo "::notice:: Deploy triggered successfully"
                 return 0
               fi
               local code=$?
-              echo "attempt $i of $attempts failed (curl exit $code): $url; retrying in $((i*5))s"
+              echo "attempt $i of $attempts failed (curl exit $code); retrying in $((i*5))s"
               sleep "$((i*5))"
             done
-            echo "::error:: Deploy webhook failing after $attempts attempts: $url"
+            echo "::error:: Deploy webhook failed after $attempts attempts"
             return 1
           }
 

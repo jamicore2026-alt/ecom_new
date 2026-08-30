@@ -1,7 +1,7 @@
 import { Elysia } from 'elysia'
 import { t } from 'elysia'
 import type { AuthContext } from '../../plugins/auth'
-import { authPlugin } from '../../plugins/auth'
+import { authPlugin, requirePermission } from '../../plugins/auth'
 import { AuditService } from './service'
 import { auditQuery } from './model'
 
@@ -36,6 +36,7 @@ export const auditFromRequest = (
 
 export const auditLogsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(requirePermission('reports.read'))
   .get('/audit', ({ query, auth }) => AuditService.list(auth.merchant.id, query), {
     query: auditQuery,
     detail: { tags: ['Audit Logs'], summary: 'List merchant activity / audit history' }

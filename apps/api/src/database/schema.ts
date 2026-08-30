@@ -917,7 +917,8 @@ export const refunds = pgTable(
   },
   (t) => [
     index('refunds_merchant_idx').on(t.merchantId, t.orderId),
-    index('refunds_idempotency_idx').on(t.idempotencyKey)
+    index('refunds_idempotency_idx').on(t.idempotencyKey),
+    uniqueIndex('refunds_merchant_idempotency_unique_idx').on(t.merchantId, t.idempotencyKey)
   ]
 )
 

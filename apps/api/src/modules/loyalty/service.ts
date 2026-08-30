@@ -1,12 +1,23 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, gte, sql } from 'drizzle-orm'
 import { db } from '../../database/client'
-import { loyaltyAccounts, loyaltyLedger } from '../../database/schema'
+import { customers, loyaltyAccounts, loyaltyLedger } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
 
 export class LoyaltyService {
+  /** Verify the customer belongs to the current merchant before touching loyalty data. */
+  private static async assertCustomer(merchantId: string, customerId: string) {
+    const [customer] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(and(eq(customers.id, customerId), eq(customers.merchantId, merchantId)))
+      .limit(1)
+    if (!customer) throw notFound('CUSTOMER_NOT_FOUND', 'Customer not found')
+  }
+
   /** Ensure a loyalty account exists for a customer and return it. */
   static async ensureAccount(merchantId: string, customerId: string) {
+    await this.assertCustomer(merchantId, customerId)
     const [existing] = await db
       .select()
       .from(loyaltyAccounts)
@@ -27,8 +38,9 @@ export class LoyaltyService {
   }
 
   /**
-   * Adjust points atomically and write a ledger entry.
-   * Allowed only for administered adjustments (no auth on shopper flow here).
+   * Adjust points atomically and write a ledger entry in the same transaction.
+   * The conditional UPDATE prevents concurrent debits from overspending a balance
+   * and SQL expressions prevent lost updates under concurrent credits/debits.
    */
   static async adjust(
     merchantId: string,
@@ -38,34 +50,44 @@ export class LoyaltyService {
     const account = await this.ensureAccount(merchantId, customerId)
     if (!account) throw notFound('LOYALTY_ACCOUNT_NOT_FOUND', 'Loyalty account not found')
 
-    const balanceAfter = account.points + input.points
-    if (balanceAfter < 0) {
-      throw notFound('INSUFFICIENT_POINTS', 'Customer does not have enough loyalty points')
-    }
+    return await db.transaction(async (tx) => {
+      const conditions = [
+        eq(loyaltyAccounts.id, account.id),
+        eq(loyaltyAccounts.merchantId, merchantId),
+        eq(loyaltyAccounts.customerId, customerId)
+      ]
+      if (input.points < 0) conditions.push(gte(loyaltyAccounts.points, -input.points))
 
-    const [updated] = await db
-      .update(loyaltyAccounts)
-      .set({
-        points: Math.max(0, balanceAfter),
-        lifetimePoints: input.points > 0 ? account.lifetimePoints + input.points : account.lifetimePoints
-      })
-      .where(eq(loyaltyAccounts.id, account.id))
-      .returning()
+      const [updated] = await tx
+        .update(loyaltyAccounts)
+        .set({
+          points: sql`${loyaltyAccounts.points} + ${input.points}`,
+          ...(input.points > 0 && {
+            lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${input.points}`
+          })
+        })
+        .where(and(...conditions))
+        .returning()
 
-    const [entry] = await db
-      .insert(loyaltyLedger)
-      .values({
-        merchantId,
-        customerId,
-        type: input.type,
-        points: input.points,
-        balanceAfter: updated.points,
-        reference: input.reference ?? null,
-        meta: (input.meta as object) ?? {}
-      })
-      .returning()
+      if (!updated) {
+        throw notFound('INSUFFICIENT_POINTS', 'Customer does not have enough loyalty points')
+      }
 
-    return ok({ account: updated, entry })
+      const [entry] = await tx
+        .insert(loyaltyLedger)
+        .values({
+          merchantId,
+          customerId,
+          type: input.type,
+          points: input.points,
+          balanceAfter: updated.points,
+          reference: input.reference ?? null,
+          meta: (input.meta as object) ?? {}
+        })
+        .returning()
+
+      return ok({ account: updated, entry })
+    })
   }
 
   static async getByCustomer(merchantId: string, customerId: string) {
@@ -74,6 +96,7 @@ export class LoyaltyService {
   }
 
   static async ledger(merchantId: string, customerId: string) {
+    await this.assertCustomer(merchantId, customerId)
     const rows = await db
       .select()
       .from(loyaltyLedger)

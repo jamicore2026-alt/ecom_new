@@ -125,9 +125,9 @@
 		</div>
 
 		{#if tab === 'all'}
-			<div class="flex gap-2">
+			<div class="flex flex-wrap gap-2">
 				<input
-					class="w-56 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+					class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm sm:w-56"
 					placeholder="Search product or SKU…"
 					bind:value={search}
 					onkeydown={(e) => e.key === 'Enter' && load()}
