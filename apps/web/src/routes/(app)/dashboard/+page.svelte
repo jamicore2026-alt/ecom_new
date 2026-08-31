@@ -5,6 +5,7 @@
 	import { toast } from '$lib/toast.svelte'
 	import Card from '$lib/components/Card.svelte'
 	import Badge from '$lib/components/Badge.svelte'
+	import Icon from '$lib/components/Icon.svelte'
 	import { currency, dateTimeFull, timeAgo, number } from '$lib/format'
 	import type { OverviewData } from '$lib/types'
 
@@ -75,28 +76,46 @@
 	]
 </script>
 
+<svelte:head>
+	<title>Overview — Merchant OS</title>
+</svelte:head>
+
 {#if loading}
 	<div class="grid gap-4">
-		<div class="h-40 animate-pulse rounded-xl bg-gray-200"></div>
-		<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-			{#each Array(4) as _}
-				<div class="h-24 animate-pulse rounded-xl bg-gray-200"></div>
+		<div class="h-40 animate-pulse rounded bg-surface-container"></div>
+		<div class="grid grid-cols-2 gap-4 lg:grid-cols-6">
+			{#each Array(6) as _}
+				<div class="h-24 animate-pulse rounded bg-surface-container"></div>
 			{/each}
 		</div>
 	</div>
 {:else if data}
 	<div class="space-y-6">
-		<h1 class="sr-only">Dashboard</h1>
+		<!-- Page header -->
+		<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+			<div>
+				<h1 class="font-display text-display text-on-surface">Overview</h1>
+				<p class="mt-1 text-body-sm text-secondary">Executive summary for {session.merchant?.name ?? 'your store'}.</p>
+			</div>
+			<a
+				href="/orders"
+				class="inline-flex items-center gap-2 self-start rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary transition-colors hover:bg-on-primary-fixed-variant"
+			>
+				<Icon name="receipt_long" size="text-[18px]" />
+				View orders
+			</a>
+		</div>
+
 		<!-- Stat cards -->
-		<div class="grid grid-cols-2 gap-4 lg:grid-cols-6">
+		<div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
 			{#each stats as s}
-				<div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-					<p class="text-xs font-medium text-gray-500">{s.label}</p>
-					<p class="mt-1.5 text-xl font-bold text-gray-900">
+				<div class="relative flex flex-col rounded border border-outline-variant bg-surface-container-lowest p-4 transition-colors hover:border-primary">
+					<span class="font-mono-label text-mono-label uppercase tracking-wider text-secondary">{s.label}</span>
+					<span class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">
 						{s.key === 'todaySales' || s.key === 'avgOrderValue'
 							? currency(data![s.key], currencyCode)
 							: number(data![s.key])}
-					</p>
+					</span>
 				</div>
 			{/each}
 		</div>
@@ -107,9 +126,7 @@
 				<Card title="Revenue (last 14 days)" headingLevel="h2">
 					<div class="h-64">
 						{#if data.salesChart.length === 0}
-							<div class="flex h-full items-center justify-center text-sm text-gray-400">
-								No sales data yet
-							</div>
+							<div class="flex h-full items-center justify-center text-sm text-secondary">No sales data yet</div>
 						{:else}
 							{@const pts = chart?.pts ?? []}
 							{@const chartW = chart?.chartW ?? 600}
@@ -118,14 +135,14 @@
 							<svg viewBox="0 0 680 280" class="h-full w-full" preserveAspectRatio="none">
 								<defs>
 									<linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="0%" stop-color="#6366f1" stop-opacity="0.25" />
-										<stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
+										<stop offset="0%" stop-color="#004ac6" stop-opacity="0.2" />
+										<stop offset="100%" stop-color="#004ac6" stop-opacity="0" />
 									</linearGradient>
 								</defs>
 								{#if chartTicks}
 									{#each chartTicks.yTicks as t}
-										<text x="70" y={t.y + 4} text-anchor="end" class="fill-gray-400" font-size="10">{t.label}</text>
-										<line x1="72" y1={t.y} x2={chartW + 60} y2={t.y} class="stroke-gray-100" />
+										<text x="70" y={t.y + 4} text-anchor="end" class="fill-on-surface-variant" font-size="10">{t.label}</text>
+										<line x1="72" y1={t.y} x2={chartW + 60} y2={t.y} class="stroke-outline-variant" stroke-width="1" />
 									{/each}
 								{/if}
 								<g transform="translate(70,0)">
@@ -136,13 +153,13 @@
 									<polyline
 										points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
 										fill="none"
-										stroke="#6366f1"
+										stroke="#004ac6"
 										stroke-width="2.5"
 										stroke-linecap="round"
 										stroke-linejoin="round"
 									/>
 									{#each pts as p, i (i)}
-										<circle cx={p.x} cy={p.y} r="3" fill="#6366f1">
+										<circle cx={p.x} cy={p.y} r="3" fill="#004ac6">
 											<title>{currency(data.salesChart[i].revenue, currencyCode)} — {data.salesChart[i].date}</title>
 										</circle>
 									{/each}
@@ -150,7 +167,7 @@
 								{#if chartTicks}
 									{#each chartTicks.xTicks as t, i}
 										{#if i % 3 === 0 || i === chartTicks.xTicks.length - 1}
-											<text x={t.x + 70} y={chartH - pad + 18} text-anchor="middle" class="fill-gray-400" font-size="10">{t.label}</text>
+											<text x={t.x + 70} y={chartH - pad + 18} text-anchor="middle" class="fill-on-surface-variant" font-size="10">{t.label}</text>
 										{/if}
 									{/each}
 								{/if}
@@ -162,18 +179,18 @@
 
 			<Card title="Top products" headingLevel="h2">
 				{#if data.topProducts.length === 0}
-					<p class="py-8 text-center text-sm text-gray-400">No product sales yet</p>
+					<p class="py-8 text-center text-sm text-secondary">No product sales yet</p>
 				{:else}
 					<ul class="space-y-3">
 						{#each data.topProducts as p (p.productId)}
 							<li class="flex items-center justify-between gap-3">
 								<div class="min-w-0">
-									<a href="/products/{p.productId}" class="group block truncate text-sm font-medium text-indigo-600 hover:text-indigo-800 hover:underline">{p.name}</a>
-									<p class="text-xs text-gray-500">{number(p.quantity)} sold</p>
+									<a href="/products/{p.productId}" class="inline-block truncate py-1 text-sm font-medium text-primary hover:text-on-primary-fixed-variant hover:underline">{p.name}</a>
+									<p class="text-xs text-secondary">{number(p.quantity)} sold</p>
 								</div>
 								<div class="flex items-center gap-2">
-									<span class="text-sm font-semibold text-gray-900">{currency(p.revenue, currencyCode)}</span>
-									<svg class="h-4 w-4 shrink-0 text-gray-300 group-hover:text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg>
+									<span class="font-mono-label text-mono-label text-on-surface">{currency(p.revenue, currencyCode)}</span>
+									<Icon name="chevron_right" size="text-[18px]" class="text-outline" />
 								</div>
 							</li>
 						{/each}
@@ -185,31 +202,31 @@
 		<!-- Recent orders -->
 		<Card title="Recent orders" headingLevel="h2" padded={false}>
 			{#if data.recentOrders.length === 0}
-				<p class="py-10 text-center text-sm text-gray-400">No orders yet</p>
+				<p class="py-10 text-center text-sm text-secondary">No orders yet</p>
 			{:else}
 				<div class="overflow-x-auto">
-					<table class="w-full text-sm">
+					<table class="w-full text-left text-sm">
 						<thead>
-							<tr class="border-b border-gray-100 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-								<th class="px-5 py-3">Order</th>
-								<th class="px-5 py-3">Customer</th>
-								<th class="px-5 py-3">Status</th>
-								<th class="px-5 py-3">Payment</th>
-								<th class="px-5 py-3">Total</th>
-								<th class="px-5 py-3">Placed</th>
+							<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
+								<th class="px-table-cell-x py-table-cell-y font-semibold">Order</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">Customer</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">Payment</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">Total</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">Placed</th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each data.recentOrders as o (o.id)}
-								<tr class="border-b border-gray-50 hover:bg-gray-50/60">
-								<td class="px-5 py-3 font-medium text-indigo-600">
-									<a href="/orders/{o.id}" class="lowercase" title={o.orderNumber}>#{formatOrderNumber(o.orderNumber)}</a>
-								</td>
-									<td class="px-5 py-3 text-gray-700">{o.customerName}</td>
-									<td class="px-5 py-3"><Badge label={o.status} /></td>
-									<td class="px-5 py-3"><Badge label={o.paymentStatus} /></td>
-									<td class="px-5 py-3 font-medium text-gray-900">{currency(o.total, o.currency)}</td>
-									<td class="px-5 py-3 text-gray-500" title={dateTimeFull(o.createdAt)}>{timeAgo(o.createdAt)}</td>
+								<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
+									<td class="px-table-cell-x py-table-cell-y font-medium text-primary">
+										<a href="/orders/{o.id}" class="lowercase" title={o.orderNumber}>#{formatOrderNumber(o.orderNumber)}</a>
+									</td>
+									<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{o.customerName}</td>
+									<td class="px-table-cell-x py-table-cell-y"><Badge label={o.status} /></td>
+									<td class="px-table-cell-x py-table-cell-y"><Badge label={o.paymentStatus} /></td>
+									<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{currency(o.total, o.currency)}</td>
+									<td class="px-table-cell-x py-table-cell-y text-secondary" title={dateTimeFull(o.createdAt)}>{timeAgo(o.createdAt)}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -219,5 +236,7 @@
 		</Card>
 	</div>
 {:else}
-	<p class="text-sm text-gray-500">Unable to load dashboard.</p>
+	<div class="rounded border border-outline-variant bg-surface-container-lowest p-8 text-center text-sm text-secondary">
+		Unable to load dashboard.
+	</div>
 {/if}

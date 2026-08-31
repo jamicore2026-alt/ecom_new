@@ -6,6 +6,7 @@
 	import Button from '$lib/components/Button.svelte'
 	import Card from '$lib/components/Card.svelte'
 	import Badge from '$lib/components/Badge.svelte'
+	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import { titleCase } from '$lib/format'
 	import type { Address, NotificationSettings, PaymentProviderView, PaymentSettings, Permission, ShippingSettings, StaffMember, StoreSettings, TaxSettings } from '$lib/types'
@@ -354,19 +355,21 @@
 	]
 </script>
 
+<svelte:head><title>Settings — Merchant OS</title></svelte:head>
+
 {#if !isAdmin()}
-	<div class="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">
+	<div class="rounded-xl border border-warning/30 bg-warning/10 p-6 text-sm text-warning">
 		Settings require an <span class="font-semibold">admin</span> or <span class="font-semibold">owner</span> role.
 	</div>
 {:else}
 	<div class="space-y-5">
-		<div>
-			<h1 class="text-xl font-bold text-gray-900">Settings</h1>
+		<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+			<h1 class="font-display text-display text-on-surface">Settings</h1>
 		</div>
 
-		<div class="flex max-w-full gap-1 overflow-x-auto rounded-lg border border-gray-200 bg-white p-1 w-fit">
+		<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border border-outline-variant bg-surface-container-lowest p-1">
 			{#each sections as s (s.id)}
-				<button class="rounded-md px-3 py-1.5 text-sm font-medium" class:bg-indigo-600={section === s.id} class:text-white={section === s.id} class:text-gray-600={section !== s.id} onclick={() => switchSection(s.id)}>
+				<button class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {section === s.id ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => switchSection(s.id)}>
 					{s.label}
 				</button>
 			{/each}
@@ -377,34 +380,34 @@
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveStore() }}>
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div>
-							<label for="store-name" class="mb-1 block text-sm font-medium text-gray-700">Store name</label>
-							<input id="store-name" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={sName} required />
+							<label for="store-name" class="field-label">Store name</label>
+							<input id="store-name" class="field" bind:value={sName} required />
 						</div>
 						<div>
-							<label for="store-currency" class="mb-1 block text-sm font-medium text-gray-700">Currency</label>
-							<input id="store-currency" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm uppercase" bind:value={sCurrency} maxlength="10" />
+							<label for="store-currency" class="field-label">Currency</label>
+							<input id="store-currency" class="field uppercase" bind:value={sCurrency} maxlength="10" />
 						</div>
 						<div>
-							<label for="store-timezone" class="mb-1 block text-sm font-medium text-gray-700">Timezone</label>
-							<input id="store-timezone" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={sTimezone} placeholder="UTC" />
+							<label for="store-timezone" class="field-label">Timezone</label>
+							<input id="store-timezone" class="field" bind:value={sTimezone} placeholder="UTC" />
 						</div>
 						<div>
-							<label for="store-announcement" class="mb-1 block text-sm font-medium text-gray-700">Announcement</label>
-							<input id="store-announcement" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={sAnnouncement} />
+							<label for="store-announcement" class="field-label">Announcement</label>
+							<input id="store-announcement" class="field" bind:value={sAnnouncement} />
 						</div>
 					</div>
 
 					<div>
-						<p class="mb-2 text-sm font-medium text-gray-700">Address</p>
+						<p class="field-label mb-2">Address</p>
 						<div class="grid gap-3 sm:grid-cols-2">
-							<input class="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Name" bind:value={addr.name} />
-							<input class="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Line 1" bind:value={addr.line1} />
-							<input class="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Line 2" bind:value={addr.line2} />
-							<input class="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="City" bind:value={addr.city} />
-							<input class="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="State" bind:value={addr.state} />
-							<input class="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Postal code" bind:value={addr.postalCode} />
-							<input class="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Country" bind:value={addr.country} />
-							<input class="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Phone" bind:value={addr.phone} />
+							<input class="field" placeholder="Name" bind:value={addr.name} />
+							<input class="field" placeholder="Line 1" bind:value={addr.line1} />
+							<input class="field" placeholder="Line 2" bind:value={addr.line2} />
+							<input class="field" placeholder="City" bind:value={addr.city} />
+							<input class="field" placeholder="State" bind:value={addr.state} />
+							<input class="field" placeholder="Postal code" bind:value={addr.postalCode} />
+							<input class="field" placeholder="Country" bind:value={addr.country} />
+							<input class="field" placeholder="Phone" bind:value={addr.phone} />
 						</div>
 					</div>
 
@@ -419,29 +422,29 @@
 					<div class="flex flex-wrap items-start justify-between gap-3">
 						<div class="min-w-0">
 							<div class="flex items-center gap-2">
-								<h2 class="text-sm font-semibold text-gray-900">{p.label}</h2>
+								<h2 class="text-sm font-semibold text-on-surface">{p.label}</h2>
 								<Badge label={p.mode} />
-								<span class="text-[11px] font-medium {p.configured ? 'text-green-600' : 'text-gray-400'}">
+								<span class="text-[11px] font-medium {p.configured ? 'text-success' : 'text-outline'}">
 									{p.configured ? '● credentials saved' : '○ not configured'}
 								</span>
 							</div>
-							<p class="mt-1 max-w-xl text-xs text-gray-500">{p.description}</p>
+							<p class="mt-1 max-w-xl text-xs text-secondary">{p.description}</p>
 							{#if p.currencies.length}
-								<p class="mt-1 text-[11px] text-gray-400">Currencies: {p.currencies.join(', ')}</p>
+								<p class="mt-1 text-[11px] text-outline">Currencies: {p.currencies.join(', ')}</p>
 							{/if}
 						</div>
 						<label class="flex shrink-0 cursor-pointer items-center gap-2">
-							<input type="checkbox" class="h-4 w-4 rounded border-gray-300" checked={p.enabled} onchange={() => toggleProvider(p)} />
-							<span class="text-xs font-medium text-gray-600">{p.enabled ? 'Enabled' : 'Disabled'}</span>
+							<input type="checkbox" class="field-check" checked={p.enabled} onchange={() => toggleProvider(p)} />
+							<span class="text-xs font-medium text-secondary">{p.enabled ? 'Enabled' : 'Disabled'}</span>
 						</label>
 					</div>
 
 					<div class="mt-4 grid gap-3 sm:grid-cols-2">
 						<div>
-							<label class="mb-1 block text-xs font-medium text-gray-700" for={`${p.id}-mode`}>Mode</label>
+							<label class="field-label" for={`${p.id}-mode`}>Mode</label>
 							<select
 								id={`${p.id}-mode`}
-								class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+								class="field"
 								bind:value={p.mode}
 							>
 								<option value="test">Test / Sandbox</option>
@@ -450,10 +453,10 @@
 						</div>
 						{#if p.countries}
 							<div>
-								<label class="mb-1 block text-xs font-medium text-gray-700" for={`${p.id}-country`}>Account country</label>
+								<label class="field-label" for={`${p.id}-country`}>Account country</label>
 								<select
 									id={`${p.id}-country`}
-									class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+									class="field"
 									bind:value={p.country}
 								>
 									{#each p.countries as c (c)}
@@ -467,13 +470,13 @@
 					<div class="mt-3 grid gap-3 sm:grid-cols-2">
 						{#each p.credentialFields as f (f.key)}
 							<div>
-								<label class="mb-1 block text-xs font-medium text-gray-700" for={`${p.id}-${f.key}`}>
+								<label class="field-label" for={`${p.id}-${f.key}`}>
 									{f.label}{f.required ? ' *' : ''}
 								</label>
 								<input
 									id={`${p.id}-${f.key}`}
 									type={f.secret ? 'password' : 'text'}
-									class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+									class="field"
 									bind:value={providerCreds[p.id][f.key]}
 									placeholder={p.configured && f.secret ? '•••••••• (saved — leave blank to keep)' : ''}
 									autocomplete="off"
@@ -494,14 +497,14 @@
 			<Card title="Payment methods" headingLevel="h2">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); savePayments() }}>
 					<div>
-						<label for="payments-currency" class="mb-1 block text-sm font-medium text-gray-700">Currency</label>
-						<input id="payments-currency" class="w-40 rounded-lg border border-gray-300 px-3 py-2 text-sm uppercase" bind:value={pCurrency} maxlength="10" />
+						<label for="payments-currency" class="field-label">Currency</label>
+						<input id="payments-currency" class="field w-40 uppercase" bind:value={pCurrency} maxlength="10" />
 					</div>
 					<div class="space-y-2">
 						{#each methods as m, i (m.id)}
-							<div class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
-								<span class="text-sm text-gray-800">{m.label}</span>
-								<input type="checkbox" class="h-4 w-4 rounded border-gray-300" checked={m.enabled} onchange={() => (methods[i].enabled = !methods[i].enabled)} />
+							<div class="flex items-center justify-between rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-3">
+								<span class="text-sm text-on-surface-variant">{m.label}</span>
+								<input type="checkbox" class="field-check" checked={m.enabled} onchange={() => (methods[i].enabled = !methods[i].enabled)} />
 							</div>
 						{/each}
 					</div>
@@ -514,29 +517,29 @@
 			<Card title="Shipping" headingLevel="h2">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveShipping() }}>
 					<div>
-						<label for="free-shipping-threshold" class="mb-1 block text-sm font-medium text-gray-700">Free shipping threshold</label>
-						<input id="free-shipping-threshold" type="number" step="0.01" min="0" class="w-40 rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={freeShippingThreshold} />
+						<label for="free-shipping-threshold" class="field-label">Free shipping threshold</label>
+						<input id="free-shipping-threshold" type="number" step="0.01" min="0" class="field w-40" bind:value={freeShippingThreshold} />
 					</div>
 					<div>
 						<div class="mb-2 flex items-center justify-between">
-							<p class="text-sm font-medium text-gray-700">Zones</p>
-							<button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => zones = [...zones, { name: '', countriesText: '', rate: '0' }]}>
+							<p class="field-label">Zones</p>
+							<button type="button" class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => zones = [...zones, { name: '', countriesText: '', rate: '0' }]}>
 								+ Add zone
 							</button>
 						</div>
 						<div class="space-y-3">
 							{#each zones as z, i (i)}
-								<div class="rounded-lg border border-gray-200 p-3">
+								<div class="rounded-lg border border-outline-variant bg-surface-container-lowest p-3">
 									<div class="flex gap-2">
-										<input class="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm" placeholder="Zone name" bind:value={zones[i].name} />
-										<input type="number" step="0.01" min="0" class="w-28 rounded-lg border border-gray-300 px-3 py-1.5 text-sm" placeholder="Rate" bind:value={zones[i].rate} />
-										<button type="button" class="px-2 text-gray-400 hover:text-red-600" onclick={() => zones = zones.filter((_, j) => j !== i)}>×</button>
+										<input class="field flex-1" placeholder="Zone name" bind:value={zones[i].name} />
+										<input type="number" step="0.01" min="0" class="field w-28" placeholder="Rate" bind:value={zones[i].rate} />
+										<button type="button" class="rounded p-1.5 text-sm text-outline hover:bg-error-container/40 hover:text-error" onclick={() => zones = zones.filter((_, j) => j !== i)}>×</button>
 									</div>
-									<input class="mt-2 w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" placeholder="Countries (comma separated, e.g. US, CA)" bind:value={zones[i].countriesText} />
+									<input class="field mt-2 w-full" placeholder="Countries (comma separated, e.g. US, CA)" bind:value={zones[i].countriesText} />
 								</div>
 							{/each}
 							{#if zones.length === 0}
-								<p class="py-6 text-center text-sm text-gray-400">No shipping zones configured.</p>
+								<p class="py-6 text-center text-sm text-outline">No shipping zones configured.</p>
 							{/if}
 						</div>
 					</div>
@@ -548,27 +551,27 @@
 		{:else if section === 'taxes' && taxes}
 			<Card title="Taxes" headingLevel="h2">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveTaxes() }}>
-					<div class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
-						<span class="text-sm text-gray-700">Auto-calculate taxes</span>
-						<input type="checkbox" class="h-4 w-4 rounded border-gray-300" bind:checked={autoCalculate} />
+					<div class="flex items-center justify-between rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-3">
+						<span class="text-sm text-on-surface-variant">Auto-calculate taxes</span>
+						<input type="checkbox" class="field-check" bind:checked={autoCalculate} />
 					</div>
 					<div>
 						<div class="mb-2 flex items-center justify-between">
-							<p class="text-sm font-medium text-gray-700">Rates</p>
-							<button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => rates = [...rates, { region: '', rate: '0' }]}>
+							<p class="field-label">Rates</p>
+							<button type="button" class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => rates = [...rates, { region: '', rate: '0' }]}>
 								+ Add rate
 							</button>
 						</div>
 						<div class="space-y-2">
 							{#each rates as r, i (i)}
 								<div class="flex gap-2">
-									<input class="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm" placeholder="Region (e.g. CA)" bind:value={rates[i].region} />
-									<input type="number" step="0.01" min="0" max="100" class="w-28 rounded-lg border border-gray-300 px-3 py-1.5 text-sm" placeholder="%" bind:value={rates[i].rate} />
-									<button type="button" class="px-2 text-gray-400 hover:text-red-600" onclick={() => rates = rates.filter((_, j) => j !== i)}>×</button>
+									<input class="field flex-1" placeholder="Region (e.g. CA)" bind:value={rates[i].region} />
+									<input type="number" step="0.01" min="0" max="100" class="field w-28" placeholder="%" bind:value={rates[i].rate} />
+									<button type="button" class="rounded p-1.5 text-sm text-outline hover:bg-error-container/40 hover:text-error" onclick={() => rates = rates.filter((_, j) => j !== i)}>×</button>
 								</div>
 							{/each}
 							{#if rates.length === 0}
-								<p class="py-6 text-center text-sm text-gray-400">No tax rates configured.</p>
+								<p class="py-6 text-center text-sm text-outline">No tax rates configured.</p>
 							{/if}
 						</div>
 					</div>
@@ -580,30 +583,30 @@
 		{:else if section === 'notifications' && notifications}
 			<Card title="Email notifications" headingLevel="h2">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveNotifications() }}>
-					<div class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
-						<span class="text-sm text-gray-700">Send transactional emails</span>
-						<input type="checkbox" class="h-4 w-4 rounded border-gray-300" bind:checked={nEnabled} />
+					<div class="flex items-center justify-between rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-3">
+						<span class="text-sm text-on-surface-variant">Send transactional emails</span>
+						<input type="checkbox" class="field-check" bind:checked={nEnabled} />
 					</div>
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div>
-							<label for="notif-from-name" class="mb-1 block text-sm font-medium text-gray-700">Sender name</label>
-							<input id="notif-from-name" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Defaults to store name" bind:value={nFromName} />
+							<label for="notif-from-name" class="field-label">Sender name</label>
+							<input id="notif-from-name" class="field" placeholder="Defaults to store name" bind:value={nFromName} />
 						</div>
 						<div>
-							<label for="notif-from-email" class="mb-1 block text-sm font-medium text-gray-700">Reply-to / sender address</label>
-							<input id="notif-from-email" type="email" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="noreply@yourstore.com" bind:value={nFromEmail} />
+							<label for="notif-from-email" class="field-label">Reply-to / sender address</label>
+							<input id="notif-from-email" type="email" class="field" placeholder="noreply@yourstore.com" bind:value={nFromEmail} />
 						</div>
 					</div>
 				</form>
 
 				<div class="mt-5 space-y-2">
-					<p class="text-sm font-medium text-gray-700">Templates</p>
+					<p class="field-label">Templates</p>
 					{#each EMAIL_TEMPLATES as tpl (tpl.id)}
-						<div class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-2.5">
-							<span class="text-sm text-gray-700">{tpl.label}</span>
+						<div class="flex items-center justify-between rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-2.5">
+							<span class="text-sm text-on-surface-variant">{tpl.label}</span>
 							<input
 								type="checkbox"
-								class="h-4 w-4 rounded border-gray-300"
+								class="field-check"
 								checked={notifications.templates?.[tpl.id] !== false}
 								onchange={(e) => toggleTemplate(tpl.id, (e.currentTarget as HTMLInputElement).checked)}
 							/>
@@ -612,45 +615,48 @@
 				</div>
 
 				<div class="mt-5 flex items-center justify-between gap-3">
-					<p class="text-xs text-gray-400">Delivery runs via Resend when RESEND_API_KEY is configured; otherwise sends are logged only.</p>
+					<p class="text-xs text-outline">Delivery runs via Resend when RESEND_API_KEY is configured; otherwise sends are logged only.</p>
 					<Button loading={saving} onclick={saveNotifications}>Save</Button>
 				</div>
 			</Card>
 		{:else if section === 'staff'}
 			<Card padded={false}>
-				<div class="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-					<h2 class="text-sm font-semibold text-gray-900">Staff members</h2>
+				<div class="flex items-center justify-between border-b border-outline-variant px-5 py-4">
+					<h2 class="text-sm font-semibold text-on-surface">Staff members</h2>
 					<Button size="sm" onclick={openNewStaff}>Add staff</Button>
 				</div>
 				{#if staff.length === 0}
-					<p class="py-12 text-center text-sm text-gray-400">No staff members.</p>
+					<div class="flex flex-col items-center gap-2 py-14 text-center">
+						<Icon name="group" size="text-[32px]" class="text-outline" />
+						<p class="text-sm text-secondary">No staff members.</p>
+					</div>
 				{:else}
 					<div class="overflow-x-auto">
 						<table class="w-full text-sm">
-							<thead>
-								<tr class="border-b border-gray-100 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-									<th class="px-5 py-3">Name</th>
-									<th class="px-3 py-3">Email</th>
-									<th class="px-3 py-3">Role</th>
-									<th class="px-3 py-3">Permissions</th>
-									<th class="px-3 py-3">Status</th>
-									<th class="px-5 py-3 text-right">Actions</th>
+							<thead class="border-b border-outline-variant text-left font-table-header text-table-header uppercase tracking-wider text-secondary">
+								<tr>
+									<th class="px-5 py-3 font-semibold">Name</th>
+									<th class="px-3 py-3 font-semibold">Email</th>
+									<th class="px-3 py-3 font-semibold">Role</th>
+									<th class="px-3 py-3 font-semibold">Permissions</th>
+									<th class="px-3 py-3 font-semibold">Status</th>
+									<th class="px-5 py-3 text-right font-semibold">Actions</th>
 								</tr>
 							</thead>
 							<tbody>
 								{#each staff as m (m.id)}
-									<tr class="border-b border-gray-50 hover:bg-gray-50/60">
-										<td class="px-5 py-3 font-medium text-gray-900">{m.name}</td>
-										<td class="px-3 py-3 text-gray-600">{m.email}</td>
+									<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
+										<td class="px-5 py-3 font-medium text-on-surface">{m.name}</td>
+										<td class="px-3 py-3 text-on-surface-variant">{m.email}</td>
 										<td class="px-3 py-3"><Badge label={m.role} /></td>
-										<td class="px-3 py-3 text-gray-600">
+										<td class="px-3 py-3 text-on-surface-variant">
 											<span class="line-clamp-1">{m.permissions.length ? m.permissions.join(', ') : '—'}</span>
 										</td>
 										<td class="px-3 py-3"><Badge label={m.status} /></td>
 										<td class="px-5 py-3 text-right whitespace-nowrap">
-											<button class="text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => openEditStaff(m)}>Edit</button>
-											<span class="mx-1 text-gray-300">|</span>
-											<button class="text-xs font-medium text-gray-600 hover:text-gray-800" onclick={() => toggleStaff(m)}>{m.status === 'active' ? 'Disable' : 'Enable'}</button>
+											<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditStaff(m)}>Edit</button>
+											<span class="mx-1 text-outline">|</span>
+											<button class="rounded p-1.5 text-xs font-medium text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => toggleStaff(m)}>{m.status === 'active' ? 'Disable' : 'Enable'}</button>
 										</td>
 									</tr>
 								{/each}
@@ -667,30 +673,30 @@
 	<Modal title={editingStaff ? `Edit ${editingStaff.name}` : 'Add staff member'} open={true} width="sm" onClose={() => (staffOpen = false)}>
 		<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveStaff() }}>
 			<div>
-				<label for="staff-name" class="mb-1 block text-sm font-medium text-gray-700">Name *</label>
-				<input id="staff-name" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={staffName} required />
+				<label for="staff-name" class="field-label">Name *</label>
+				<input id="staff-name" class="field" bind:value={staffName} required />
 			</div>
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Email *</label>
-				<input type="email" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={staffEmail} required />
+				<label class="field-label">Email *</label>
+				<input type="email" class="field" bind:value={staffEmail} required />
 			</div>
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">{editingStaff ? 'New password (leave blank to keep)' : 'Password *'}</label>
-				<input type="password" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={staffPassword} minlength={editingStaff ? undefined : 10} required={!editingStaff} />
+				<label class="field-label">{editingStaff ? 'New password (leave blank to keep)' : 'Password *'}</label>
+				<input type="password" class="field" bind:value={staffPassword} minlength={editingStaff ? undefined : 10} required={!editingStaff} />
 			</div>
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Role</label>
-				<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={staffRole}>
+				<label class="field-label">Role</label>
+				<select class="field" bind:value={staffRole}>
 					<option value="admin">Admin</option>
 					<option value="staff">Staff</option>
 				</select>
 			</div>
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Permissions</label>
+				<label class="field-label">Permissions</label>
 				<div class="grid grid-cols-2 gap-2">
 					{#each PERMISSIONS as p (p)}
-						<label class="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700">
-							<input type="checkbox" class="h-4 w-4" checked={staffPerms.includes(p)} onchange={() => togglePerm(p)} />
+						<label class="flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface-variant">
+							<input type="checkbox" class="field-check" checked={staffPerms.includes(p)} onchange={() => togglePerm(p)} />
 							<span class="text-xs">{p}</span>
 						</label>
 					{/each}

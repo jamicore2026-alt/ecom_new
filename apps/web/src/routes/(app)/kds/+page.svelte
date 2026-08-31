@@ -8,11 +8,11 @@
 	const canManage = $derived(session.can('kds.manage'))
 
 	const STATUS_TONE: Record<string, string> = {
-		NEW: 'bg-amber-100 text-amber-800 ring-amber-200',
-		ACCEPTED: 'bg-sky-100 text-sky-800 ring-sky-200',
-		PREPARING: 'bg-indigo-100 text-indigo-800 ring-indigo-200',
-		READY: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
-		RECALLED: 'bg-rose-100 text-rose-800 ring-rose-200'
+		NEW: 'bg-warning/10 text-warning ring-warning',
+		ACCEPTED: 'bg-info/10 text-info ring-info',
+		PREPARING: 'bg-primary/10 text-primary ring-primary',
+		READY: 'bg-success/10 text-success ring-success',
+		RECALLED: 'bg-error/10 text-error ring-error'
 	}
 
 	let board = $state<KdsBoard>({ stations: [], delayedCount: 0 })
@@ -43,9 +43,9 @@
 	}
 
 	function ageClass(ticket: KdsTicket) {
-		if (ticket.delayed) return 'text-rose-600'
-		if (ticket.status === 'NEW' || ticket.status === 'ACCEPTED' || ticket.status === 'PREPARING') return 'text-gray-700'
-		return 'text-gray-400'
+		if (ticket.delayed) return 'text-error'
+		if (ticket.status === 'NEW' || ticket.status === 'ACCEPTED' || ticket.status === 'PREPARING') return 'text-on-surface'
+		return 'text-outline'
 	}
 
 	async function act(ticket: KdsTicket, status: KotStatus) {
@@ -100,39 +100,39 @@
 	})
 </script>
 
-<svelte:head><title>Kitchen Display</title></svelte:head>
+<svelte:head><title>Kitchen Display — Merchant OS</title></svelte:head>
 
 <div class="space-y-4">
-	<div class="flex items-center justify-between">
+	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 		<div>
-			<h1 class="text-2xl font-semibold text-gray-900">Kitchen Display</h1>
-			<p class="text-sm text-gray-500">Live preparation board by station.</p>
+			<h1 class="font-display text-display text-on-surface">Kitchen Display</h1>
+			<p class="mt-1 text-body-sm text-secondary">Live preparation board by station.</p>
 		</div>
 		{#if board.delayedCount > 0}
-			<span class="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800 ring-1 ring-inset ring-rose-200">{board.delayedCount} delayed</span>
+			<span class="inline-flex self-start rounded-full bg-error/10 px-2 py-0.5 text-xs font-medium text-error ring-1 ring-inset ring-error">{board.delayedCount} delayed</span>
 		{/if}
 	</div>
 
 	{#if loading && board.stations.length === 0}
-		<div class="py-10 text-center text-sm text-gray-500">Loading board…</div>
+		<div class="py-10 text-center text-sm text-secondary">Loading board…</div>
 	{/if}
 
 	<div class="grid gap-4 lg:grid-cols-3 xl:grid-cols-4">
 		{#each board.stations as station (station.id)}
 			{#if station.tickets.length > 0}
-				<section class="rounded-2xl border border-gray-200 bg-gray-50 p-3">
+				<section class="rounded border border-outline-variant bg-surface-container-low p-3">
 					<header class="mb-3 flex items-center justify-between">
-						<h2 class="font-bold text-gray-900">{station.name}</h2>
-						<span class="text-xs text-gray-500">{station.tickets.length} · SLA {station.prepSlaMin}m</span>
+						<h2 class="font-bold text-on-surface">{station.name}</h2>
+						<span class="text-xs text-secondary">{station.tickets.length} · SLA {station.prepSlaMin}m</span>
 					</header>
 					<div class="space-y-3">
 						{#each station.tickets as ticket (ticket.id)}
-							<article class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+							<article class="rounded border border-outline-variant bg-surface-container-lowest p-3">
 								<div class="flex items-start justify-between gap-2">
 									<div>
-										<div class="font-bold text-gray-900">#{ticket.orderNumber}</div>
-										<div class="text-xs text-gray-500">
-											<span class="font-mono {ageClass(ticket)}">{fmt(ticket.ageSec)}</span>
+										<div class="font-bold text-on-surface">#{ticket.orderNumber}</div>
+										<div class="text-xs text-secondary">
+											<span class="font-mono-label {ageClass(ticket)}">{fmt(ticket.ageSec)}</span>
 											{#if ticket.tableName}<span> · {ticket.tableName}</span>{/if}
 											<span class="ml-1">· {ticket.priority}</span>
 										</div>
@@ -144,13 +144,13 @@
 									{#each ticket.items as item (item.id)}
 										<li>
 											<div class="flex items-center justify-between">
-												<span class="font-medium text-gray-800">{item.quantity} × {item.name}</span>
+												<span class="font-medium text-on-surface-variant">{item.quantity} × {item.name}</span>
 												{#if canManage && ticket.status !== 'READY' && item.status === 'PENDING'}
-													<button type="button" class="rounded border border-emerald-300 px-1.5 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50" onclick={() => itemDone(ticket, item.id, 'READY')}>Done</button>
+													<button type="button" class="rounded border border-success/40 px-1.5 py-0.5 text-xs text-success hover:bg-success/10" onclick={() => itemDone(ticket, item.id, 'READY')}>Done</button>
 												{/if}
 											</div>
 											{#if item.modifiers.length > 0}
-												<div class="ml-4 text-xs text-gray-500">
+												<div class="ml-4 text-xs text-secondary">
 													{#each item.modifiers as m (m.name)}
 														<span class="mr-2">{m.quantity > 1 ? `${m.quantity}× ` : ''}{m.groupName}: {m.name}</span>
 													{/each}
@@ -161,22 +161,22 @@
 								</ul>
 
 								{#if canManage}
-									<div class="mt-3 flex flex-wrap gap-1.5 border-t border-gray-100 pt-2">
+									<div class="mt-3 flex flex-wrap gap-1.5 border-t border-outline-variant pt-2">
 										{#if ticket.status === 'NEW'}
-											<button type="button" class="rounded-lg bg-sky-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-sky-700" onclick={() => act(ticket, 'ACCEPTED')}>Accept</button>
+											<button type="button" class="rounded-lg bg-info px-2.5 py-1 text-xs font-medium text-on-primary hover:bg-on-primary-fixed-variant" onclick={() => act(ticket, 'ACCEPTED')}>Accept</button>
 										{/if}
 										{#if ticket.status === 'ACCEPTED'}
-											<button type="button" class="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700" onclick={() => act(ticket, 'PREPARING')}>Start</button>
+											<button type="button" class="rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-on-primary hover:bg-on-primary-fixed-variant" onclick={() => act(ticket, 'PREPARING')}>Start</button>
 										{/if}
 										{#if ticket.status === 'PREPARING' || ticket.status === 'ACCEPTED'}
-											<button type="button" class="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700" onclick={() => bump(ticket)}>Ready</button>
-											<button type="button" class="rounded-lg border border-rose-300 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50" onclick={() => recall(ticket)}>Recall</button>
+											<button type="button" class="rounded-lg bg-success px-2.5 py-1 text-xs font-medium text-on-success hover:bg-on-error-container" onclick={() => bump(ticket)}>Ready</button>
+											<button type="button" class="rounded-lg border border-error/40 px-2.5 py-1 text-xs font-medium text-error hover:bg-error/10" onclick={() => recall(ticket)}>Recall</button>
 										{/if}
 										{#if ticket.status === 'RECALLED'}
-											<button type="button" class="rounded-lg bg-sky-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-sky-700" onclick={() => act(ticket, 'ACCEPTED')}>Accept</button>
+											<button type="button" class="rounded-lg bg-info px-2.5 py-1 text-xs font-medium text-on-primary hover:bg-on-primary-fixed-variant" onclick={() => act(ticket, 'ACCEPTED')}>Accept</button>
 										{/if}
 										{#if ticket.status === 'READY'}
-											<button type="button" class="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50" onclick={() => act(ticket, 'PREPARING')}>Re-prep</button>
+											<button type="button" class="rounded-lg border border-outline-variant px-2.5 py-1 text-xs font-medium text-secondary hover:bg-surface-container" onclick={() => act(ticket, 'PREPARING')}>Re-prep</button>
 										{/if}
 									</div>
 								{/if}
@@ -189,6 +189,6 @@
 	</div>
 
 	{#if !loading && board.stations.every((s) => s.tickets.length === 0)}
-		<div class="py-10 text-center text-sm text-gray-500">No active tickets on the board.</div>
+		<div class="py-10 text-center text-sm text-secondary">No active tickets on the board.</div>
 	{/if}
 </div>

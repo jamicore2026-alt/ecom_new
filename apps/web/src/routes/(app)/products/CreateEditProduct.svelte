@@ -81,40 +81,35 @@
 	>
 		<div class="grid gap-4 sm:grid-cols-2">
 			<div class="sm:col-span-2">
-				<label for="product-name" class="mb-1 block text-sm font-medium text-gray-700">Name *</label>
-				<input
-					id="product-name"
-					class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-					bind:value={name}
-					required
-				/>
-				{#if fieldErrors.name}<p class="mt-1 text-xs text-red-600">{fieldErrors.name}</p>{/if}
+				<label for="product-name" class="field-label">Name *</label>
+				<input id="product-name" class="field" bind:value={name} required />
+				{#if fieldErrors.name}<p class="field-error">{fieldErrors.name}</p>{/if}
 			</div>
 
 			<div>
-				<label for="sku" class="mb-1 block text-sm font-medium text-gray-700">SKU</label>
-				<input id="sku" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={sku} />
+				<label for="sku" class="field-label">SKU</label>
+				<input id="sku" class="field" bind:value={sku} />
 			</div>
 			<div>
-				<label for="barcode" class="mb-1 block text-sm font-medium text-gray-700">Barcode</label>
-				<input id="barcode" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={barcode} />
+				<label for="barcode" class="field-label">Barcode</label>
+				<input id="barcode" class="field" bind:value={barcode} />
 			</div>
 
 			<div>
-				<label for="price" class="mb-1 block text-sm font-medium text-gray-700">Price *</label>
-				<input id="price" type="number" step="0.01" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={price} required />
+				<label for="price" class="field-label">Price *</label>
+				<input id="price" type="number" step="0.01" min="0" class="field" bind:value={price} required />
 			</div>
 			<div>
-				<label for="compare-at-price" class="mb-1 block text-sm font-medium text-gray-700">Compare-at price</label>
-				<input id="compare-at-price" type="number" step="0.01" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={compareAtPrice} />
+				<label for="compare-at-price" class="field-label">Compare-at price</label>
+				<input id="compare-at-price" type="number" step="0.01" min="0" class="field" bind:value={compareAtPrice} />
 			</div>
 			<div>
-				<label for="cost" class="mb-1 block text-sm font-medium text-gray-700">Cost</label>
-				<input id="cost" type="number" step="0.01" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={cost} />
+				<label for="cost" class="field-label">Cost</label>
+				<input id="cost" type="number" step="0.01" min="0" class="field" bind:value={cost} />
 			</div>
 			<div>
-				<label for="category" class="mb-1 block text-sm font-medium text-gray-700">Category</label>
-				<select id="category" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={category}>
+				<label for="category" class="field-label">Category</label>
+				<select id="category" class="field" bind:value={category}>
 					<option value="">None</option>
 					{#each categories as c (c.id)}
 						<option value={c.id}>{c.name}</option>
@@ -123,35 +118,30 @@
 			</div>
 
 			<div class="sm:col-span-2">
-				<label for="description" class="mb-1 block text-sm font-medium text-gray-700">Description</label>
-				<textarea
-					id="description"
-					rows="3"
-					class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-					bind:value={description}
-				></textarea>
+				<label for="description" class="field-label">Description</label>
+				<textarea id="description" rows="3" class="field" bind:value={description}></textarea>
 			</div>
 
 			<div class="sm:col-span-2">
-				<p class="mb-1 text-sm font-medium text-gray-700">Images</p>
+				<p class="field-label">Images</p>
 				<ImageManager bind:images />
 			</div>
 
-			<div class="sm:col-span-2 flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
-				<label for="track-inventory" class="text-sm font-medium text-gray-700">Track inventory</label>
-				<input id="track-inventory" type="checkbox" class="h-4 w-4 rounded border-gray-300" bind:checked={trackInventory} />
+			<div class="sm:col-span-2 flex items-center justify-between rounded border border-outline-variant bg-surface-container-lowest px-4 py-3">
+				<label for="track-inventory" class="text-sm font-medium text-on-surface">Track inventory</label>
+				<input id="track-inventory" type="checkbox" class="field-check" bind:checked={trackInventory} />
 			</div>
 
 			{#if trackInventory}
 				<div class="sm:col-span-2">
-					<label for="low-stock-threshold" class="mb-1 block text-sm font-medium text-gray-700">Low stock threshold</label>
-					<input id="low-stock-threshold" type="number" min="0" class="w-40 rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={lowStockThreshold} />
+					<label for="low-stock-threshold" class="field-label">Low stock threshold</label>
+					<input id="low-stock-threshold" type="number" min="0" class="field max-w-40" bind:value={lowStockThreshold} />
 				</div>
 			{/if}
 
 			<div>
-				<label for="status" class="mb-1 block text-sm font-medium text-gray-700">Status</label>
-				<select id="status" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={status}>
+				<label for="status" class="field-label">Status</label>
+				<select id="status" class="field" bind:value={status}>
 					<option value="active">Active</option>
 					<option value="draft">Draft</option>
 					<option value="archived">Archived</option>

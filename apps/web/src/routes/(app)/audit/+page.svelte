@@ -4,6 +4,7 @@
 	import { toast } from '$lib/toast.svelte'
 	import Card from '$lib/components/Card.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
+	import Icon from '$lib/components/Icon.svelte'
 	import { dateTimeFull } from '$lib/format'
 	import type { AuditEntry, PaginationMeta } from '$lib/types'
 
@@ -67,21 +68,25 @@
 	}
 </script>
 
-<div class="space-y-5">
-	<div>
-		<h1 class="text-xl font-bold text-gray-900">Audit Log</h1>
-		<p class="text-sm text-gray-500">{meta.total} recorded events</p>
+<svelte:head>
+	<title>Audit Log — Merchant OS</title>
+</svelte:head>
+
+<div class="space-y-6">
+	<div class="mb-8">
+		<h1 class="font-display text-display text-on-surface">Audit Log</h1>
+		<p class="mt-1 text-body-sm text-secondary">{meta.total} recorded events</p>
 	</div>
 
-	<Card padded={false}>
-		<div class="flex flex-wrap items-center gap-2 px-5 py-3">
-			<select class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={entityType} onchange={applyFilters}>
+	<div class="rounded border border-outline-variant bg-surface-container-lowest p-3">
+		<div class="flex flex-wrap items-center gap-2">
+			<select class="field w-auto" bind:value={entityType} onchange={applyFilters}>
 				<option value="">All entity types</option>
 				{#each entityTypes as t (t)}
 					<option value={t}>{t}</option>
 				{/each}
 			</select>
-			<select class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={action} onchange={applyFilters}>
+			<select class="field w-auto" bind:value={action} onchange={applyFilters}>
 				<option value="">All actions</option>
 				{#each [...new Set(items.map((i) => i.action))] as a (a)}
 					<option value={a}>{fmtAction(a)}</option>
@@ -89,70 +94,74 @@
 			</select>
 			<button
 				type="button"
-				class="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-800"
+				class="inline-flex items-center gap-1 rounded p-2 text-sm font-medium text-secondary hover:bg-surface-container hover:text-on-surface"
 				onclick={clearFilters}
 			>
+				<Icon name="filter_alt_off" size="text-[16px]" />
 				Clear
 			</button>
 		</div>
-	</Card>
+	</div>
 
 	<Card padded={false}>
 		{#if loading}
 			<div class="space-y-2 p-5">
 				{#each Array(5) as _}
-					<div class="h-14 animate-pulse rounded-lg bg-gray-100"></div>
+					<div class="h-14 animate-pulse rounded bg-surface-container"></div>
 				{/each}
 			</div>
 		{:else if items.length === 0}
-			<p class="py-14 text-center text-sm text-gray-400">No audit events found.</p>
+			<div class="flex flex-col items-center gap-2 py-16 text-center">
+				<Icon name="history" size="text-[32px]" class="text-outline" />
+				<p class="text-sm text-secondary">No audit events found.</p>
+			</div>
 		{:else}
 			<div class="overflow-x-auto">
 				<table class="w-full text-left text-sm">
-					<thead class="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-400">
+					<thead class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
 						<tr>
-							<th class="px-5 py-3 font-medium">Time</th>
-							<th class="px-5 py-3 font-medium">Actor</th>
-							<th class="px-5 py-3 font-medium">Action</th>
-							<th class="px-5 py-3 font-medium">Entity</th>
-							<th class="px-5 py-3 font-medium">Details</th>
-							<th class="px-5 py-3 font-medium">IP</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Time</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Actor</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Action</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Entity</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Details</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">IP</th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-gray-50">
+					<tbody class="divide-y divide-outline-variant/60">
 						{#each items as entry (entry.id)}
-							<tr class="align-top hover:bg-gray-50/60">
-								<td class="whitespace-nowrap px-5 py-3 text-gray-500">{dateTimeFull(entry.createdAt)}</td>
-								<td class="px-5 py-3">
-									<span class="font-medium text-gray-900">{entry.actorName ?? 'System'}</span>
+							<tr class="align-top transition-colors hover:bg-surface-container-low">
+								<td class="whitespace-nowrap px-table-cell-x py-table-cell-y text-secondary">{dateTimeFull(entry.createdAt)}</td>
+								<td class="px-table-cell-x py-table-cell-y">
+									<span class="font-medium text-on-surface">{entry.actorName ?? 'System'}</span>
 									{#if entry.actorUserId}
-										<span class="block text-xs text-gray-400">{entry.actorUserId}</span>
+										<span class="block text-xs text-outline">{entry.actorUserId}</span>
 									{/if}
 								</td>
-								<td class="px-5 py-3">
-									<span class="inline-flex rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+								<td class="px-table-cell-x py-table-cell-y">
+									<span class="inline-flex rounded-full bg-primary-fixed-dim/30 px-2.5 py-0.5 text-xs font-medium text-on-primary-fixed-variant">
 										{fmtAction(entry.action)}
 									</span>
 								</td>
-								<td class="px-5 py-3">
+								<td class="px-table-cell-x py-table-cell-y">
 									{#if entry.entityType}
-										<span class="text-xs font-medium capitalize text-gray-500">{entry.entityType}</span>
+										<span class="text-xs font-medium capitalize text-secondary">{entry.entityType}</span>
 										{#if entry.entityId}
-											<span class="block text-xs text-gray-400">{entry.entityId}</span>
+											<span class="block text-xs text-outline">{entry.entityId}</span>
 										{/if}
 									{:else}
-										<span class="text-gray-300">—</span>
+										<span class="text-outline">—</span>
 									{/if}
 								</td>
-								<td class="max-w-xs px-5 py-3">
+								<td class="max-w-xs px-table-cell-x py-table-cell-y">
 									{#if metaSummary(entry)}
-										<span class="block truncate text-xs text-gray-500" title={metaSummary(entry)}>{metaSummary(entry)}</span>
+										<span class="block truncate text-xs text-on-surface-variant" title={metaSummary(entry)}>{metaSummary(entry)}</span>
 									{:else}
-										<span class="text-gray-300">—</span>
+										<span class="text-outline">—</span>
 									{/if}
 								</td>
-								<td class="whitespace-nowrap px-5 py-3">
-									<span class="text-xs text-gray-400">{entry.ipAddress ?? '—'}</span>
+								<td class="whitespace-nowrap px-table-cell-x py-table-cell-y">
+									<span class="text-xs text-outline">{entry.ipAddress ?? '—'}</span>
 								</td>
 							</tr>
 						{/each}

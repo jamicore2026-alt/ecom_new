@@ -5,6 +5,7 @@
 	import { toast } from '$lib/toast.svelte'
 	import Button from '$lib/components/Button.svelte'
 	import Card from '$lib/components/Card.svelte'
+	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import { dateTime } from '$lib/format'
 	import type { DeliveryOrder, DeliveryStatus, DeliveryZone, Driver } from '$lib/types'
@@ -14,22 +15,22 @@
 	const canManageDrivers = $derived(session.can('drivers.manage'))
 
 	const STATUS_TONE: Record<string, string> = {
-		UNASSIGNED: 'bg-slate-100 text-slate-600 ring-slate-200',
-		ASSIGNED: 'bg-sky-100 text-sky-800 ring-sky-200',
-		ARRIVED_AT_PICKUP: 'bg-indigo-100 text-indigo-800 ring-indigo-200',
-		PICKED_UP: 'bg-amber-100 text-amber-800 ring-amber-200',
-		IN_TRANSIT: 'bg-violet-100 text-violet-800 ring-violet-200',
-		ARRIVED: 'bg-cyan-100 text-cyan-800 ring-cyan-200',
-		DELIVERED: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
-		FAILED: 'bg-rose-100 text-rose-800 ring-rose-200',
-		CANCELLED: 'bg-slate-100 text-slate-600 ring-slate-200'
+		UNASSIGNED: 'bg-secondary/10 text-secondary ring-secondary',
+		ASSIGNED: 'bg-info/10 text-info ring-info',
+		ARRIVED_AT_PICKUP: 'bg-primary/10 text-primary ring-primary',
+		PICKED_UP: 'bg-warning/10 text-warning ring-warning',
+		IN_TRANSIT: 'bg-tertiary/10 text-tertiary ring-tertiary',
+		ARRIVED: 'bg-info/10 text-info ring-info',
+		DELIVERED: 'bg-success/10 text-success ring-success',
+		FAILED: 'bg-error/10 text-error ring-error',
+		CANCELLED: 'bg-secondary/10 text-secondary ring-secondary'
 	}
 	const DRIVER_TONE: Record<string, string> = {
-		OFFLINE: 'bg-slate-100 text-slate-600 ring-slate-200',
-		ONLINE: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
-		BUSY: 'bg-amber-100 text-amber-800 ring-amber-200',
-		PAUSED: 'bg-sky-100 text-sky-800 ring-sky-200',
-		SUSPENDED: 'bg-rose-100 text-rose-800 ring-rose-200'
+		OFFLINE: 'bg-secondary/10 text-secondary ring-secondary',
+		ONLINE: 'bg-success/10 text-success ring-success',
+		BUSY: 'bg-warning/10 text-warning ring-warning',
+		PAUSED: 'bg-info/10 text-info ring-info',
+		SUSPENDED: 'bg-error/10 text-error ring-error'
 	}
 
 	let tab = $state<'deliveries' | 'drivers' | 'zones'>('deliveries')
@@ -195,24 +196,24 @@
 	onMount(loadAll)
 </script>
 
-<svelte:head><title>Delivery</title></svelte:head>
+<svelte:head><title>Delivery — Merchant OS</title></svelte:head>
 
 <div class="space-y-6">
-	<div class="flex items-center justify-between">
+	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 		<div>
-			<h1 class="text-2xl font-semibold text-gray-900">Delivery</h1>
-			<p class="text-sm text-gray-500">Zones, drivers and delivery order dispatch.</p>
+			<h1 class="font-display text-display text-on-surface">Delivery</h1>
+			<p class="mt-1 text-body-sm text-secondary">Zones, drivers and delivery order dispatch.</p>
 		</div>
 		{#if canAssign}
-			<Button onclick={() => (showNew = true)}>New delivery</Button>
+			<Button onclick={() => (showNew = true)}><Icon name="local_shipping" size="text-[18px]" /> New delivery</Button>
 		{/if}
 	</div>
 
-	<div class="flex gap-2 border-b border-gray-200">
+	<div class="flex gap-2 border-b border-outline-variant">
 		{#each (['deliveries', 'drivers', 'zones'] as const) as t (t)}
 			<button
 				type="button"
-				class="border-b-2 px-3 py-2 text-sm font-medium {tab === t ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
+				class="border-b-2 px-3 py-2 text-sm font-medium {tab === t ? 'border-primary text-primary' : 'border-transparent text-secondary hover:text-on-surface'}"
 				onclick={() => (tab = t)}
 			>
 				{t === 'deliveries' ? 'Deliveries' : t === 'drivers' ? 'Drivers' : 'Zones'}
@@ -221,40 +222,40 @@
 	</div>
 
 	{#if loading}
-		<div class="py-10 text-center text-sm text-gray-500">Loading delivery…</div>
+		<div class="py-10 text-center text-sm text-secondary">Loading delivery…</div>
 	{:else if tab === 'deliveries'}
 		<Card>
 			<div class="mb-3 flex flex-wrap items-center gap-2">
-				<h2 class="text-sm font-semibold text-gray-900">Active deliveries</h2>
-				<select bind:value={statusFilter} onchange={loadAll} class="ml-auto rounded-lg border border-gray-300 px-2 py-1 text-sm">
+				<h2 class="text-sm font-semibold text-on-surface">Active deliveries</h2>
+				<select bind:value={statusFilter} onchange={loadAll} class="field ml-auto w-auto">
 					<option value="">All statuses</option>
 					{#each deliveryStatuses as s (s)}<option value={s}>{s}</option>{/each}
 				</select>
 			</div>
 			{#if activeOrders.length === 0}
-				<p class="py-6 text-center text-sm text-gray-500">No active deliveries.</p>
+				<p class="py-6 text-center text-sm text-secondary">No active deliveries.</p>
 			{:else}
 				<div class="overflow-x-auto">
 					<table class="w-full text-left text-sm">
-						<thead class="text-xs text-gray-500">
+						<thead class="font-table-header text-table-header uppercase tracking-wider text-secondary">
 							<tr>
-								<th class="pb-2 font-medium">Order</th>
-								<th class="pb-2 font-medium">Outlet</th>
-								<th class="pb-2 font-medium">Driver</th>
-								<th class="pb-2 font-medium">Status</th>
-								<th class="pb-2 font-medium">Fee</th>
-								<th class="pb-2 font-medium">Created</th>
+								<th class="pb-2 font-semibold">Order</th>
+								<th class="pb-2 font-semibold">Outlet</th>
+								<th class="pb-2 font-semibold">Driver</th>
+								<th class="pb-2 font-semibold">Status</th>
+								<th class="pb-2 font-semibold">Fee</th>
+								<th class="pb-2 font-semibold">Created</th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each activeOrders as d (d.id)}
-								<tr class="cursor-pointer border-t border-gray-100 hover:bg-gray-50" onclick={() => (selected = d)}>
-									<td class="py-2 font-medium text-gray-900">#{d.orderNumber}</td>
-									<td class="py-2 text-gray-600">{d.outletName ?? '—'}</td>
-									<td class="py-2 text-gray-600">{d.driverName ?? '—'}</td>
+								<tr class="cursor-pointer border-t border-outline-variant transition-colors hover:bg-surface-container-low" onclick={() => (selected = d)}>
+									<td class="py-2 font-mono-label text-mono-label font-medium text-on-surface">#{d.orderNumber}</td>
+									<td class="py-2 text-on-surface-variant">{d.outletName ?? '—'}</td>
+									<td class="py-2 text-on-surface-variant">{d.driverName ?? '—'}</td>
 									<td class="py-2"><span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[d.status]}">{d.status}</span></td>
-									<td class="py-2 text-gray-600">${(d.fee ?? 0).toFixed(2)}</td>
-									<td class="py-2 text-gray-600">{dateTime(d.createdAt)}</td>
+									<td class="py-2 font-mono-label text-mono-label text-on-surface">${(d.fee ?? 0).toFixed(2)}</td>
+									<td class="py-2 text-secondary">{dateTime(d.createdAt)}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -264,27 +265,27 @@
 		</Card>
 
 		<Card>
-			<h2 class="mb-3 text-sm font-semibold text-gray-900">Past deliveries</h2>
+			<h2 class="mb-3 text-sm font-semibold text-on-surface">Past deliveries</h2>
 			{#if pastOrders.length === 0}
-				<p class="py-6 text-center text-sm text-gray-500">No completed deliveries.</p>
+				<p class="py-6 text-center text-sm text-secondary">No completed deliveries.</p>
 			{:else}
 				<div class="overflow-x-auto">
 					<table class="w-full text-left text-sm">
-						<thead class="text-xs text-gray-500">
+						<thead class="font-table-header text-table-header uppercase tracking-wider text-secondary">
 							<tr>
-								<th class="pb-2 font-medium">Order</th>
-								<th class="pb-2 font-medium">Driver</th>
-								<th class="pb-2 font-medium">Status</th>
-								<th class="pb-2 font-medium">Delivered</th>
+								<th class="pb-2 font-semibold">Order</th>
+								<th class="pb-2 font-semibold">Driver</th>
+								<th class="pb-2 font-semibold">Status</th>
+								<th class="pb-2 font-semibold">Delivered</th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each pastOrders as d (d.id)}
-								<tr class="border-t border-gray-100">
-									<td class="py-2 font-medium text-gray-900">#{d.orderNumber}</td>
-									<td class="py-2 text-gray-600">{d.driverName ?? '—'}</td>
+								<tr class="border-t border-outline-variant">
+									<td class="py-2 font-mono-label text-mono-label font-medium text-on-surface">#{d.orderNumber}</td>
+									<td class="py-2 text-on-surface-variant">{d.driverName ?? '—'}</td>
 									<td class="py-2"><span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[d.status]}">{d.status}</span></td>
-									<td class="py-2 text-gray-600">{d.deliveredAt ? dateTime(d.deliveredAt) : '—'}</td>
+									<td class="py-2 text-secondary">{d.deliveredAt ? dateTime(d.deliveredAt) : '—'}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -294,18 +295,18 @@
 		</Card>
 	{:else if tab === 'drivers'}
 		<Card>
-			<h2 class="mb-3 text-sm font-semibold text-gray-900">Drivers</h2>
+			<h2 class="mb-3 text-sm font-semibold text-on-surface">Drivers</h2>
 			{#if drivers.length === 0}
-				<p class="py-6 text-center text-sm text-gray-500">No drivers yet.</p>
+				<p class="py-6 text-center text-sm text-secondary">No drivers yet.</p>
 			{:else}
 				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each drivers as drv (drv.id)}
 						<Card>
 							<div class="flex items-center justify-between">
-								<h3 class="font-semibold text-gray-900">{drv.name}</h3>
+								<h3 class="font-semibold text-on-surface">{drv.name}</h3>
 								<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {DRIVER_TONE[drv.status]}">{drv.status}</span>
 							</div>
-							<div class="mt-2 space-y-1 text-xs text-gray-500">
+							<div class="mt-2 space-y-1 text-xs text-secondary">
 								<p>{drv.vehicleType ?? '—'} · {drv.vehiclePlate ?? '—'}</p>
 								<p>Outlet: {drv.outletName ?? '—'}</p>
 							</div>
@@ -324,37 +325,37 @@
 	{:else if tab === 'zones'}
 		<Card>
 			<div class="mb-3 flex items-center justify-between">
-				<h2 class="text-sm font-semibold text-gray-900">Delivery zones</h2>
+				<h2 class="text-sm font-semibold text-on-surface">Delivery zones</h2>
 				{#if canManageZones}
 					<Button size="sm" onclick={() => (showZone = true)}>Add zone</Button>
 				{/if}
 			</div>
 			{#if zones.length === 0}
-				<p class="py-6 text-center text-sm text-gray-500">No zones yet.</p>
+				<p class="py-6 text-center text-sm text-secondary">No zones yet.</p>
 			{:else}
 				<div class="overflow-x-auto">
 					<table class="w-full text-left text-sm">
-						<thead class="text-xs text-gray-500">
+						<thead class="font-table-header text-table-header uppercase tracking-wider text-secondary">
 							<tr>
-								<th class="pb-2 font-medium">Name</th>
-								<th class="pb-2 font-medium">Radius</th>
-								<th class="pb-2 font-medium">Fee</th>
-								<th class="pb-2 font-medium">Min order</th>
-								<th class="pb-2 font-medium">ETA</th>
-								<th class="pb-2 font-medium"></th>
+								<th class="pb-2 font-semibold">Name</th>
+								<th class="pb-2 font-semibold">Radius</th>
+								<th class="pb-2 font-semibold">Fee</th>
+								<th class="pb-2 font-semibold">Min order</th>
+								<th class="pb-2 font-semibold">ETA</th>
+								<th class="pb-2 font-semibold"></th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each zones as z (z.id)}
-								<tr class="border-t border-gray-100">
-									<td class="py-2 font-medium text-gray-900">{z.name}</td>
-									<td class="py-2 text-gray-600">{z.radiusKm} km</td>
-									<td class="py-2 text-gray-600">${(z.deliveryFee ?? 0).toFixed(2)}</td>
-									<td class="py-2 text-gray-600">${(z.minOrder ?? 0).toFixed(2)}</td>
-									<td class="py-2 text-gray-600">{z.etaMin} min</td>
+								<tr class="border-t border-outline-variant">
+									<td class="py-2 font-medium text-on-surface">{z.name}</td>
+									<td class="py-2 text-on-surface-variant">{z.radiusKm} km</td>
+									<td class="py-2 font-mono-label text-mono-label text-on-surface">${(z.deliveryFee ?? 0).toFixed(2)}</td>
+									<td class="py-2 font-mono-label text-mono-label text-on-surface">${(z.minOrder ?? 0).toFixed(2)}</td>
+									<td class="py-2 text-on-surface-variant">{z.etaMin} min</td>
 									<td class="py-2 text-right">
 										{#if canManageZones}
-											<button type="button" class="text-xs text-rose-600 hover:underline" onclick={() => removeZone(z)}>Remove</button>
+											<button type="button" class="rounded p-1.5 text-xs text-error hover:bg-error-container/40" onclick={() => removeZone(z)}>Remove</button>
 										{/if}
 									</td>
 								</tr>
@@ -372,12 +373,12 @@
 		<div class="space-y-4">
 			<div class="flex flex-wrap items-center gap-2">
 				<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[selected.status]}">{selected.status}</span>
-				<span class="text-sm text-gray-500">Outlet {selected.outletName ?? '—'} · ETA {selected.etaMin} min</span>
+				<span class="text-sm text-secondary">Outlet {selected.outletName ?? '—'} · ETA {selected.etaMin} min</span>
 			</div>
 
 			<div>
-				<span class="mb-1 block text-xs text-gray-500">Address</span>
-				<p class="rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
+				<span class="mb-1 block text-xs text-secondary">Address</span>
+				<p class="rounded border border-outline-variant bg-surface-container-low p-3 text-sm text-on-surface-variant">
 					{selected.address?.line1 ?? ''} {selected.address?.city ?? ''} {selected.address?.postalCode ?? ''}
 				</p>
 			</div>
@@ -387,12 +388,12 @@
 					<Button onclick={() => dispatch(selected!)}>Auto-dispatch</Button>
 				</div>
 				<div>
-					<span class="mb-1 block text-xs text-gray-500">Assign driver</span>
+					<span class="mb-1 block text-xs text-secondary">Assign driver</span>
 					<div class="grid gap-1">
 						{#each drivers.filter((d) => d.status === 'ONLINE') as drv (drv.id)}
 							<button
 								type="button"
-								class="rounded-lg border border-gray-200 px-3 py-2 text-left text-sm hover:bg-gray-50"
+								class="rounded border border-outline-variant px-3 py-2 text-left text-sm text-on-surface transition-colors hover:bg-surface-container-low"
 								onclick={() => assignTo(selected!, drv.id)}
 							>
 								{drv.name} · {drv.vehicleType ?? '—'}
@@ -430,12 +431,12 @@
 	<Modal title="New delivery" onClose={() => (showNew = false)}>
 		<div class="space-y-4">
 			<div>
-				<label for="dl-order" class="mb-1 block text-sm text-gray-600">Order id</label>
-				<input id="dl-order" bind:value={newOrderId} placeholder="Order id" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+				<label for="dl-order" class="field-label">Order id</label>
+				<input id="dl-order" class="field" bind:value={newOrderId} placeholder="Order id" />
 			</div>
 			<div>
-				<label for="dl-zone" class="mb-1 block text-sm text-gray-600">Zone (optional)</label>
-				<select id="dl-zone" bind:value={newZoneId} class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+				<label for="dl-zone" class="field-label">Zone (optional)</label>
+				<select id="dl-zone" class="field" bind:value={newZoneId}>
 					<option value="">No zone</option>
 					{#each zones as z (z.id)}<option value={z.id}>{z.name}</option>{/each}
 				</select>
@@ -449,43 +450,43 @@
 	<Modal title="Add delivery zone" onClose={() => (showZone = false)}>
 		<div class="space-y-4">
 			<div>
-				<label for="zn-name" class="mb-1 block text-sm text-gray-600">Zone name</label>
-				<input id="zn-name" bind:value={zoneName} placeholder="e.g. Downtown" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+				<label for="zn-name" class="field-label">Zone name</label>
+				<input id="zn-name" class="field" bind:value={zoneName} placeholder="e.g. Downtown" />
 			</div>
 			<div>
-				<label for="zn-outlet" class="mb-1 block text-sm text-gray-600">Outlet</label>
-				<select id="zn-outlet" bind:value={zoneOutlet} class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+				<label for="zn-outlet" class="field-label">Outlet</label>
+				<select id="zn-outlet" class="field" bind:value={zoneOutlet}>
 					<option value="">Any</option>
 					{#each outlets as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
 				</select>
 			</div>
 			<div class="grid grid-cols-2 gap-2">
 				<div>
-					<label for="zn-lat" class="mb-1 block text-sm text-gray-600">Latitude</label>
-					<input id="zn-lat" bind:value={zoneLat} class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+					<label for="zn-lat" class="field-label">Latitude</label>
+					<input id="zn-lat" class="field" bind:value={zoneLat} />
 				</div>
 				<div>
-					<label for="zn-lng" class="mb-1 block text-sm text-gray-600">Longitude</label>
-					<input id="zn-lng" bind:value={zoneLng} class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+					<label for="zn-lng" class="field-label">Longitude</label>
+					<input id="zn-lng" class="field" bind:value={zoneLng} />
 				</div>
 			</div>
 			<div class="grid grid-cols-3 gap-2">
 				<div>
-					<label for="zn-radius" class="mb-1 block text-sm text-gray-600">Radius km</label>
-					<input id="zn-radius" bind:value={zoneRadius} type="number" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+					<label for="zn-radius" class="field-label">Radius km</label>
+					<input id="zn-radius" class="field" bind:value={zoneRadius} type="number" min="0" />
 				</div>
 				<div>
-					<label for="zn-fee" class="mb-1 block text-sm text-gray-600">Fee</label>
-					<input id="zn-fee" bind:value={zoneFee} type="number" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+					<label for="zn-fee" class="field-label">Fee</label>
+					<input id="zn-fee" class="field" bind:value={zoneFee} type="number" min="0" />
 				</div>
 				<div>
-					<label for="zn-min" class="mb-1 block text-sm text-gray-600">Min order</label>
-					<input id="zn-min" bind:value={zoneMinOrder} type="number" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+					<label for="zn-min" class="field-label">Min order</label>
+					<input id="zn-min" class="field" bind:value={zoneMinOrder} type="number" min="0" />
 				</div>
 			</div>
 			<div>
-				<label for="zn-eta" class="mb-1 block text-sm text-gray-600">ETA (min)</label>
-				<input id="zn-eta" bind:value={zoneEta} type="number" min="1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+				<label for="zn-eta" class="field-label">ETA (min)</label>
+				<input id="zn-eta" class="field" bind:value={zoneEta} type="number" min="1" />
 			</div>
 			<Button onclick={addZone}>Add zone</Button>
 		</div>

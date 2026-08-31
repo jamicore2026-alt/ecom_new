@@ -5,6 +5,7 @@
 	import { toast } from '$lib/toast.svelte'
 	import Button from '$lib/components/Button.svelte'
 	import Card from '$lib/components/Card.svelte'
+	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import { dateTime } from '$lib/format'
 	import type { KitchenStation, KitchenTicket, KotStatus } from '$lib/types'
@@ -12,17 +13,17 @@
 	const canManage = $derived(session.can('kitchen.manage'))
 
 	const STATUS_TONE: Record<string, string> = {
-		NEW: 'bg-amber-100 text-amber-800 ring-amber-200',
-		ACCEPTED: 'bg-sky-100 text-sky-800 ring-sky-200',
-		PREPARING: 'bg-indigo-100 text-indigo-800 ring-indigo-200',
-		READY: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
-		RECALLED: 'bg-rose-100 text-rose-800 ring-rose-200',
-		CANCELLED: 'bg-slate-100 text-slate-600 ring-slate-200'
+		NEW: 'bg-warning/10 text-warning ring-warning',
+		ACCEPTED: 'bg-info/10 text-info ring-info',
+		PREPARING: 'bg-primary/10 text-primary ring-primary',
+		READY: 'bg-success/10 text-success ring-success',
+		RECALLED: 'bg-error/10 text-error ring-error',
+		CANCELLED: 'bg-secondary/10 text-secondary ring-secondary'
 	}
 	const PRIORITY_TONE: Record<string, string> = {
-		LOW: 'bg-slate-100 text-slate-600 ring-slate-200',
-		NORMAL: 'bg-slate-100 text-slate-700 ring-slate-300',
-		HIGH: 'bg-rose-100 text-rose-800 ring-rose-300'
+		LOW: 'bg-secondary/10 text-secondary ring-secondary',
+		NORMAL: 'bg-secondary/10 text-on-surface ring-outline-variant',
+		HIGH: 'bg-error/10 text-error ring-error'
 	}
 
 	let stations = $state<KitchenStation[]>([])
@@ -141,40 +142,40 @@
 	onMount(load)
 </script>
 
-<svelte:head><title>Kitchen</title></svelte:head>
+<svelte:head><title>Kitchen — Merchant OS</title></svelte:head>
 
 <div class="space-y-6">
-	<div class="flex items-center justify-between">
+	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 		<div>
-			<h1 class="text-2xl font-semibold text-gray-900">Kitchen</h1>
-			<p class="text-sm text-gray-500">Stations, prep SLAs and kitchen tickets (KOT).</p>
+			<h1 class="font-display text-display text-on-surface">Kitchen</h1>
+			<p class="mt-1 text-body-sm text-secondary">Stations, prep SLAs and kitchen tickets (KOT).</p>
 		</div>
 		{#if canManage}
-			<Button onclick={openManage}>Manage stations</Button>
+			<Button onclick={openManage}><Icon name="settings" size="text-[18px]" /> Manage stations</Button>
 		{/if}
 	</div>
 
 	{#if loading}
-		<div class="py-10 text-center text-sm text-gray-500">Loading kitchen…</div>
+		<div class="py-10 text-center text-sm text-secondary">Loading kitchen…</div>
 	{:else}
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 			{#each stations as station (station.id)}
 				<Card>
 					<div class="flex items-center justify-between">
 						<div class="flex items-center gap-2">
-							<span class="h-2.5 w-2.5 rounded-full {station.status === 'active' ? 'bg-emerald-500' : 'bg-slate-300'}" aria-hidden="true"></span>
-							<h2 class="font-semibold text-gray-900">{station.name}</h2>
+							<span class="h-2.5 w-2.5 rounded-full {station.status === 'active' ? 'bg-success' : 'bg-outline'}" aria-hidden="true"></span>
+							<h2 class="font-semibold text-on-surface">{station.name}</h2>
 						</div>
 						{#if canManage}
 							<div class="flex gap-1">
-								<button type="button" class="text-xs text-indigo-600 hover:underline" onclick={() => toggleStation(station)}>
+								<button type="button" class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => toggleStation(station)}>
 									{station.status === 'active' ? 'Pause' : 'Activate'}
 								</button>
-								<button type="button" class="text-xs text-rose-600 hover:underline" onclick={() => removeStation(station)}>Remove</button>
+								<button type="button" class="rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => removeStation(station)}>Remove</button>
 							</div>
 						{/if}
 					</div>
-					<div class="mt-2 text-xs text-gray-500">
+					<div class="mt-2 text-xs text-secondary">
 						<span>SLA {station.prepSlaMin} min</span>
 						<span class="mx-1">·</span>
 						<span>{station.openTickets} open ticket(s)</span>
@@ -182,47 +183,47 @@
 				</Card>
 			{:else}
 				<Card>
-					<div class="py-6 text-center text-sm text-gray-500">No stations yet.</div>
+					<div class="py-6 text-center text-sm text-secondary">No stations yet.</div>
 				</Card>
 			{/each}
 		</div>
 
 		<Card>
 			<div class="mb-3 flex flex-wrap items-center gap-2">
-				<h2 class="text-sm font-semibold text-gray-900">Kitchen tickets</h2>
-				<select bind:value={statusFilter} onchange={load} class="rounded-lg border border-gray-300 px-2 py-1 text-sm">
+				<h2 class="text-sm font-semibold text-on-surface">Kitchen tickets</h2>
+				<select bind:value={statusFilter} onchange={load} class="field ml-auto w-auto">
 					<option value="">All statuses</option>
 					{#each statuses as s (s)}<option value={s}>{s}</option>{/each}
 				</select>
-				<select bind:value={stationFilter} onchange={load} class="rounded-lg border border-gray-300 px-2 py-1 text-sm">
+				<select bind:value={stationFilter} onchange={load} class="field w-auto">
 					<option value="">All stations</option>
 					{#each stations as st (st.id)}<option value={st.id}>{st.name}</option>{/each}
 				</select>
 			</div>
 			{#if filteredTickets.length === 0}
-				<p class="py-6 text-center text-sm text-gray-500">No tickets.</p>
+				<p class="py-6 text-center text-sm text-secondary">No tickets.</p>
 			{:else}
 				<div class="overflow-x-auto">
 					<table class="w-full text-left text-sm">
-						<thead class="text-xs text-gray-500">
+						<thead class="font-table-header text-table-header uppercase tracking-wider text-secondary">
 							<tr>
-								<th class="pb-2 font-medium">Order</th>
-								<th class="pb-2 font-medium">Station</th>
-								<th class="pb-2 font-medium">Status</th>
-								<th class="pb-2 font-medium">Priority</th>
-								<th class="pb-2 font-medium">Age</th>
-								<th class="pb-2 font-medium">Received</th>
+								<th class="pb-2 font-semibold">Order</th>
+								<th class="pb-2 font-semibold">Station</th>
+								<th class="pb-2 font-semibold">Status</th>
+								<th class="pb-2 font-semibold">Priority</th>
+								<th class="pb-2 font-semibold">Age</th>
+								<th class="pb-2 font-semibold">Received</th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each filteredTickets as t (t.id)}
-								<tr class="cursor-pointer border-t border-gray-100 hover:bg-gray-50" onclick={() => (selected = t)}>
-									<td class="py-2 font-medium text-gray-900">#{t.orderNumber}</td>
-									<td class="py-2 text-gray-600">{t.stationName}</td>
+								<tr class="cursor-pointer border-t border-outline-variant transition-colors hover:bg-surface-container-low" onclick={() => (selected = t)}>
+									<td class="py-2 font-mono-label text-mono-label font-medium text-on-surface">#{t.orderNumber}</td>
+									<td class="py-2 text-on-surface-variant">{t.stationName}</td>
 									<td class="py-2"><span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[t.status]}">{t.status}</span></td>
 									<td class="py-2"><span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {PRIORITY_TONE[t.priority]}">{t.priority}</span></td>
-									<td class="py-2 text-gray-600">{Math.floor(t.ageSec / 60)}m</td>
-									<td class="py-2 text-gray-600">{dateTime(t.receivedAt)}</td>
+									<td class="py-2 font-mono-label text-mono-label text-on-surface-variant">{Math.floor(t.ageSec / 60)}m</td>
+									<td class="py-2 text-secondary">{dateTime(t.receivedAt)}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -238,16 +239,16 @@
 		<div class="space-y-4">
 			<div class="flex flex-wrap items-center gap-2">
 				<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[selected.status]}">{selected.status}</span>
-				<span class="text-sm text-gray-500">
+				<span class="text-sm text-secondary">
 					{selected.orderType} · received {dateTime(selected.receivedAt)} · {Math.floor(selected.ageSec / 60)}m old
 				</span>
 				{#if selected.delayed}
-					<span class="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-800 ring-1 ring-inset ring-rose-200">Delayed</span>
+					<span class="inline-flex rounded-full bg-error/10 px-2 py-0.5 text-[10px] font-medium text-error ring-1 ring-inset ring-error">Delayed</span>
 				{/if}
 			</div>
 
 			<div>
-				<span class="mb-1 block text-xs text-gray-500">Priority</span>
+				<span class="mb-1 block text-xs text-secondary">Priority</span>
 				<div class="flex gap-2">
 					<Button size="sm" variant={selected.priority === 'HIGH' ? 'primary' : 'secondary'} onclick={() => setPriority('HIGH')}>High</Button>
 					<Button size="sm" variant={selected.priority === 'NORMAL' ? 'primary' : 'secondary'} onclick={() => setPriority('NORMAL')}>Normal</Button>
@@ -256,12 +257,12 @@
 			</div>
 
 			<div>
-				<span class="mb-1 block text-xs text-gray-500">Items</span>
-				<ul class="space-y-1 rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
+				<span class="mb-1 block text-xs text-secondary">Items</span>
+				<ul class="space-y-1 rounded border border-outline-variant bg-surface-container-low p-3 text-sm text-on-surface-variant">
 					{#each selected.items as item (item.name)}
 						<li class="flex items-center justify-between">
 							<span>{item.quantity} × {item.name}</span>
-							<span class="text-xs text-gray-400">{item.status}</span>
+							<span class="text-xs text-outline">{item.status}</span>
 						</li>
 					{/each}
 				</ul>
@@ -286,23 +287,23 @@
 	<Modal title="Manage stations" onClose={() => (showManage = false)}>
 		<div class="space-y-4">
 			<div>
-				<label for="mk-outlet" class="mb-1 block text-sm text-gray-600">Outlet</label>
-				<select id="mk-outlet" bind:value={newStationOutlet} class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+				<label for="mk-outlet" class="field-label">Outlet</label>
+				<select id="mk-outlet" class="field" bind:value={newStationOutlet}>
 					{#each outlets as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
 				</select>
 			</div>
 			<div>
-				<label for="mk-name" class="mb-1 block text-sm text-gray-600">Station name</label>
-				<input id="mk-name" bind:value={newStationName} placeholder="e.g. Expo" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+				<label for="mk-name" class="field-label">Station name</label>
+				<input id="mk-name" class="field" bind:value={newStationName} placeholder="e.g. Expo" />
 			</div>
 			<div class="flex gap-2">
 				<div class="flex-1">
-					<label for="mk-sla" class="mb-1 block text-sm text-gray-600">Prep SLA (min)</label>
-					<input id="mk-sla" bind:value={newStationSla} type="number" min="1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+					<label for="mk-sla" class="field-label">Prep SLA (min)</label>
+					<input id="mk-sla" class="field" bind:value={newStationSla} type="number" min="1" />
 				</div>
 				<div class="w-24">
-					<label for="mk-sort" class="mb-1 block text-sm text-gray-600">Sort</label>
-					<input id="mk-sort" bind:value={newStationSort} type="number" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+					<label for="mk-sort" class="field-label">Sort</label>
+					<input id="mk-sort" class="field" bind:value={newStationSort} type="number" />
 				</div>
 				<div class="flex items-end">
 					<Button onclick={addStation}>Add</Button>

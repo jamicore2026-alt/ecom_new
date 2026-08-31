@@ -8,6 +8,7 @@
 	import Badge from '$lib/components/Badge.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
+	import Icon from '$lib/components/Icon.svelte'
 	import { currency, dateTime, number } from '$lib/format'
 	import type { Category, PaginationMeta, Product, ProductListItem } from '$lib/types'
 	import CreateEditProduct from './CreateEditProduct.svelte'
@@ -173,38 +174,47 @@
 	}
 </script>
 
-<div class="space-y-5">
-	<div class="flex flex-wrap items-center justify-between gap-3">
+<svelte:head>
+	<title>Products — Merchant OS</title>
+</svelte:head>
+
+<div class="space-y-6">
+	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 		<div>
-			<h1 class="text-xl font-bold text-gray-900">Products</h1>
-			<p class="text-sm text-gray-500">{meta.total} total</p>
+			<h1 class="font-display text-display text-on-surface">Products</h1>
+			<p class="mt-1 text-body-sm text-secondary">{meta.total} total</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
 			<Button variant="secondary" loading={exporting} onclick={exportCsv}>Export CSV</Button>
 			{#if canWrite()}
 				<Button variant="secondary" onclick={() => { importResult = null; importFile = null; importOpen = true }}>Import CSV</Button>
 				<Button variant="secondary" onclick={() => (catModal = true)}>Categories</Button>
-				<Button onclick={() => { editProduct = null; editOpen = true }}>Add product</Button>
+				<Button onclick={() => { editProduct = null; editOpen = true }}><Icon name="add" size="text-[18px]" /> Add product</Button>
 			{/if}
 		</div>
 	</div>
 
 	<!-- Filters -->
-	<Card padded={false}>
-		<div class="flex flex-wrap items-center gap-3 px-5 py-3">
-			<input
-				class="w-56 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-				placeholder="Search name or SKU…"
-				bind:value={search}
-				onkeydown={(e) => e.key === 'Enter' && applyFilters()}
-			/>
-			<select class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={status}>
+	<div class="rounded border border-outline-variant bg-surface-container-lowest p-3">
+		<div class="flex flex-wrap items-center gap-3">
+			<div class="relative min-w-[200px] flex-1">
+				<div class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-secondary">
+					<Icon name="search" size="text-[18px]" />
+				</div>
+				<input
+					class="field pl-9"
+					placeholder="Search name or SKU…"
+					bind:value={search}
+					onkeydown={(e) => e.key === 'Enter' && applyFilters()}
+				/>
+			</div>
+			<select class="field w-auto" bind:value={status}>
 				<option value="">All statuses</option>
 				<option value="active">Active</option>
 				<option value="draft">Draft</option>
 				<option value="archived">Archived</option>
 			</select>
-			<select class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={categoryId}>
+			<select class="field w-auto" bind:value={categoryId}>
 				<option value="">All categories</option>
 				{#each categories as c (c.id)}
 					<option value={c.id}>{c.name}</option>
@@ -212,84 +222,86 @@
 			</select>
 			<Button variant="secondary" size="sm" onclick={applyFilters}>Apply</Button>
 			{#if selected.length > 0 && canWrite()}
-				<span class="text-sm text-gray-500">{selected.length} selected</span>
+				<span class="text-sm text-secondary">{selected.length} selected</span>
 				<Button variant="secondary" size="sm" onclick={() => (bulkModal = true)}>Bulk edit</Button>
 			{/if}
 		</div>
-	</Card>
+	</div>
 
 	<!-- Table -->
 	<Card padded={false}>
 		{#if loading}
 			<div class="space-y-2 p-5">
 				{#each Array(6) as _}
-					<div class="h-12 animate-pulse rounded-lg bg-gray-100"></div>
+					<div class="h-12 animate-pulse rounded bg-surface-container"></div>
 				{/each}
 			</div>
 		{:else if items.length === 0}
-			<p class="py-14 text-center text-sm text-gray-400">No products found.</p>
+			<div class="flex flex-col items-center gap-2 py-16 text-center">
+				<Icon name="inventory_2" size="text-[32px]" class="text-outline" />
+				<p class="text-sm text-secondary">No products found.</p>
+			</div>
 		{:else}
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
+				<table class="w-full text-left text-sm">
 					<thead>
-						<tr class="border-b border-gray-100 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
 							{#if canWrite()}
-								<th class="w-10 px-5 py-3">
-									<input type="checkbox" checked={selected.length === items.length} onchange={toggleAll} />
+								<th class="w-10 px-table-cell-x py-table-cell-y font-semibold">
+									<input type="checkbox" class="field-check" checked={selected.length === items.length} onchange={toggleAll} />
 								</th>
 							{/if}
-							<th class="w-12 px-3 py-3"></th>
-							<th class="px-3 py-3">Name</th>
-							<th class="px-3 py-3">SKU</th>
-							<th class="px-3 py-3">Price</th>
-							<th class="px-3 py-3">Stock</th>
-							<th class="px-3 py-3">Status</th>
-							<th class="px-3 py-3">Updated</th>
-							<th class="px-5 py-3 text-right">Actions</th>
+							<th class="w-12 px-table-cell-x py-table-cell-y font-semibold"></th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Name</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">SKU</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Price</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Stock</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Updated</th>
+							<th class="px-table-cell-x py-table-cell-y text-right font-semibold">Actions</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each items as p (p.id)}
-							<tr class="border-b border-gray-50 hover:bg-gray-50/60">
+							<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
 								{#if canWrite()}
-									<td class="px-5 py-3">
-										<input type="checkbox" checked={selected.includes(p.id)} onchange={() => toggle(p.id)} />
+									<td class="px-table-cell-x py-table-cell-y">
+										<input type="checkbox" class="field-check" checked={selected.includes(p.id)} onchange={() => toggle(p.id)} />
 									</td>
 								{/if}
-								<td class="px-3 py-3">
+								<td class="px-table-cell-x py-table-cell-y">
 									<div class="flex items-center gap-3">
-										<div class="h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50">
+										<div class="h-9 w-9 shrink-0 overflow-hidden rounded border border-outline-variant bg-surface-container-low">
 											{#if p.primaryImage}
 												<img src={p.primaryImage} alt="" class="h-full w-full object-cover" />
 											{/if}
 										</div>
 										<div>
-											<a href="/products/{p.id}" class="inline-block py-1 font-medium text-indigo-600 hover:text-indigo-800">{p.name}</a>
+											<a href="/products/{p.id}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{p.name}</a>
 											{#if p.category}
-												<span class="ml-1 text-xs text-gray-400">· {p.category.name}</span>
+												<span class="ml-1 text-xs text-outline">· {p.category.name}</span>
 											{/if}
 										</div>
 									</div>
 								</td>
-								<td class="px-3 py-3 text-gray-600">{p.sku ?? '—'}</td>
-								<td class="px-3 py-3 font-medium">{currency(p.price)}</td>
-								<td class="px-3 py-3">
-									<span class:font-semibold={p.stock > 0} class:text-red-600={p.stock <= 0 && p.trackInventory} class:text-gray-700={p.stock > 0}>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{p.sku ?? '—'}</td>
+								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{currency(p.price)}</td>
+								<td class="px-table-cell-x py-table-cell-y">
+									<span class:font-semibold={p.stock > 0} class:text-error={p.stock <= 0 && p.trackInventory} class:text-on-surface-variant={p.stock > 0}>
 										{number(p.stock)}
 									</span>
 									{#if p.variantCount > 1}
-										<span class="text-xs text-gray-400"> ({p.variantCount} variants)</span>
+										<span class="text-xs text-outline"> ({p.variantCount} variants)</span>
 									{/if}
 								</td>
-								<td class="px-3 py-3"><Badge label={p.status} /></td>
-								<td class="px-3 py-3 text-gray-500">{dateTime(p.updatedAt)}</td>
-								<td class="px-5 py-3 text-right">
+								<td class="px-table-cell-x py-table-cell-y"><Badge label={p.status} /></td>
+								<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTime(p.updatedAt)}</td>
+								<td class="px-table-cell-x py-table-cell-y text-right">
 									{#if canWrite()}
-										<button class="inline-block py-1 text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => { editProduct = p; editOpen = true }}>
+										<button class="inline-block rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => { editProduct = p; editOpen = true }}>
 											Edit
 										</button>
-										<span class="mx-1 text-gray-300">|</span>
-										<button class="inline-block py-1 text-xs font-medium text-red-600 hover:text-red-800" onclick={() => archiveProduct(p)}>
+										<button class="inline-block rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => archiveProduct(p)}>
 											Archive
 										</button>
 									{/if}
@@ -323,8 +335,8 @@
 	<Modal title="Bulk edit products" open={true} width="sm" onClose={() => (bulkModal = false)}>
 		<div class="space-y-4">
 			<div>
-				<label for="bulk-action" class="mb-1 block text-sm font-medium text-gray-700">Action</label>
-				<select id="bulk-action" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={bulkAction}>
+				<label for="bulk-action" class="field-label">Action</label>
+				<select id="bulk-action" class="field" bind:value={bulkAction}>
 					<option value="set_status">Set status</option>
 					<option value="set_category">Set category</option>
 					<option value="multiply_price">Multiply price</option>
@@ -333,8 +345,8 @@
 			</div>
 			{#if bulkAction === 'set_status'}
 				<div>
-					<label for="bulk-status" class="mb-1 block text-sm font-medium text-gray-700">Status</label>
-					<select id="bulk-status" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={bulkStatus}>
+					<label for="bulk-status" class="field-label">Status</label>
+					<select id="bulk-status" class="field" bind:value={bulkStatus}>
 						<option value="active">Active</option>
 						<option value="draft">Draft</option>
 						<option value="archived">Archived</option>
@@ -342,8 +354,8 @@
 				</div>
 			{:else if bulkAction === 'set_category'}
 				<div>
-					<label for="bulk-category" class="mb-1 block text-sm font-medium text-gray-700">Category</label>
-					<select id="bulk-category" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={bulkCategory}>
+					<label for="bulk-category" class="field-label">Category</label>
+					<select id="bulk-category" class="field" bind:value={bulkCategory}>
 						<option value="">None</option>
 						{#each categories as c (c.id)}
 							<option value={c.id}>{c.name}</option>
@@ -352,13 +364,13 @@
 				</div>
 			{:else}
 				<div>
-					<label for="bulk-value" class="mb-1 block text-sm font-medium text-gray-700">
+					<label for="bulk-value" class="field-label">
 						{bulkAction === 'multiply_price' ? 'Multiplier (e.g. 1.1)' : 'New inventory count'}
 					</label>
 					<input
 						id="bulk-value"
 						type="number"
-						class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+						class="field"
 						bind:value={bulkValue}
 						placeholder={bulkAction === 'multiply_price' ? '1.1' : '50'}
 					/>
@@ -381,13 +393,13 @@
 {#if importOpen && canWrite()}
 	<Modal title="Import products from CSV" open={true} width="sm" onClose={() => (importOpen = false)}>
 		<div class="space-y-4">
-			<p class="text-sm text-gray-500">
+			<p class="text-sm text-secondary">
 				One row per variant. Existing products are matched by SKU and updated — nothing is deleted.
 			</p>
 			<input
 				type="file"
 				accept=".csv,text/csv"
-				class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700"
+				class="field py-2 file:mr-3 file:rounded file:border-0 file:bg-primary-fixed file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-on-primary-fixed"
 				onchange={(e) => {
 					const files = (e.currentTarget as HTMLInputElement).files
 					importFile = files && files.length > 0 ? files[0] : null
@@ -395,14 +407,14 @@
 				}}
 			/>
 			{#if importResult}
-				<div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+				<div class="rounded border border-outline-variant bg-surface-container-low p-3 text-sm">
 					<p>
-						<span class="font-semibold text-green-700">{importResult.created} created</span> ·
-						<span class="font-semibold text-indigo-700">{importResult.updated} updated</span> ·
-						<span class="font-semibold {importResult.failed > 0 ? 'text-red-700' : 'text-gray-500'}">{importResult.failed} failed</span>
+						<span class="font-semibold text-success">{importResult.created} created</span> ·
+						<span class="font-semibold text-primary">{importResult.updated} updated</span> ·
+						<span class="font-semibold {importResult.failed > 0 ? 'text-error' : 'text-secondary'}">{importResult.failed} failed</span>
 					</p>
 					{#if importResult.errors.length > 0}
-						<ul class="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-red-600">
+						<ul class="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-error">
 							{#each importResult.errors as err (err.line)}
 								<li>Line {err.line}: {err.message}</li>
 							{/each}

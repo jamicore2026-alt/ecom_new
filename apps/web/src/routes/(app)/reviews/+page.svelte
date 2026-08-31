@@ -5,6 +5,7 @@
 	import Badge from '$lib/components/Badge.svelte'
 	import Button from '$lib/components/Button.svelte'
 	import Card from '$lib/components/Card.svelte'
+	import Icon from '$lib/components/Icon.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import { dateTime } from '$lib/format'
 	import type { PaginationMeta, Review } from '$lib/types'
@@ -77,28 +78,34 @@
 	const stars = (value: number) => '★★★★★'.slice(0, value) + '☆☆☆☆☆'.slice(0, 5 - value)
 </script>
 
+<svelte:head><title>Reviews — Merchant OS</title></svelte:head>
+
 <div class="space-y-5">
-	<div class="flex flex-wrap items-center justify-between gap-3">
+	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 		<div>
-			<h1 class="text-xl font-bold text-gray-900">Reviews</h1>
-			<p class="text-sm text-gray-500">{meta.total} in “{status}”</p>
+			<h1 class="font-display text-display text-on-surface">Reviews</h1>
+			<p class="mt-1 text-body-sm text-secondary">{meta.total} in “{status}”</p>
 		</div>
+	</div>
+
+	<div class="flex w-fit max-w-full gap-1 rounded-lg border border-outline-variant bg-surface-container-lowest p-1">
+		{#each ['pending', 'approved', 'rejected'] as const as s}
+			<button
+				type="button"
+				class="rounded-md px-4 py-1.5 text-sm font-medium transition-colors {status === s
+					? 'bg-primary text-on-primary'
+					: 'text-secondary hover:bg-surface-container hover:text-on-surface'}"
+				onclick={() => setStatus(s)}
+			>
+				{s.charAt(0).toUpperCase() + s.slice(1)}
+			</button>
+		{/each}
 	</div>
 
 	<Card padded={false}>
 		<div class="flex flex-wrap items-center gap-2 px-5 py-3">
-			{#each ['pending', 'approved', 'rejected'] as const as s}
-				<button
-					type="button"
-					class="rounded-full px-4 py-1.5 text-sm font-medium transition {status === s
-						? 'bg-gray-900 text-white'
-						: 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
-					onclick={() => setStatus(s)}
-				>
-					{s.charAt(0).toUpperCase() + s.slice(1)}
-				</button>
-			{/each}
-			<select class="ml-auto rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={rating} onchange={applyFilters}>
+			<span class="text-sm text-secondary">Filter by rating</span>
+			<select class="field w-auto" bind:value={rating} onchange={applyFilters}>
 				<option value="">All ratings</option>
 				{#each [5, 4, 3, 2, 1] as r (r)}
 					<option value={String(r)}>{r} star{r === 1 ? '' : 's'}</option>
@@ -111,35 +118,38 @@
 		{#if loading}
 			<div class="space-y-2 p-5">
 				{#each Array(5) as _}
-					<div class="h-16 animate-pulse rounded-lg bg-gray-100"></div>
+					<div class="h-16 animate-pulse rounded bg-surface-container"></div>
 				{/each}
 			</div>
 		{:else if items.length === 0}
-			<p class="py-14 text-center text-sm text-gray-400">No {status} reviews.</p>
+			<div class="flex flex-col items-center gap-2 py-16 text-center">
+				<Icon name="rate_review" size="text-[32px]" class="text-outline" />
+				<p class="text-sm text-secondary">No {status} reviews.</p>
+			</div>
 		{:else}
-			<ul class="divide-y divide-gray-100">
+			<ul class="divide-y divide-outline-variant/60">
 				{#each items as review (review.id)}
-					<li class="px-5 py-4 hover:bg-gray-50/60">
+					<li class="px-5 py-4 transition-colors hover:bg-surface-container-low">
 						<div class="flex flex-wrap items-start gap-x-6 gap-y-2">
 							<div class="min-w-0 flex-1">
 								<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-									<span class="text-sm font-semibold text-amber-500" aria-hidden="true">{stars(review.rating)}</span>
-									<span class="text-xs font-medium uppercase tracking-wide text-gray-400">{review.rating}/5</span>
+									<span class="text-sm font-semibold text-warning" aria-hidden="true">{stars(review.rating)}</span>
+									<span class="text-xs font-medium uppercase tracking-wide text-outline">{review.rating}/5</span>
 									<Badge label={review.status} />
-									<span class="text-xs text-gray-400">{dateTime(review.createdAt)}</span>
+									<span class="text-xs text-secondary">{dateTime(review.createdAt)}</span>
 								</div>
-								<p class="mt-1.5 text-sm font-medium text-gray-900">
+								<p class="mt-1.5 text-sm font-medium text-on-surface">
 									{review.title ?? '(no title)'}
 								</p>
 								{#if review.body}
-									<p class="mt-1 max-w-3xl whitespace-pre-line text-sm text-gray-600">{review.body}</p>
+									<p class="mt-1 max-w-3xl whitespace-pre-line text-sm text-on-surface-variant">{review.body}</p>
 								{/if}
 							</div>
 							<div class="w-full sm:w-52">
-								<a href="/products/{review.productId}" class="block truncate text-sm font-medium text-indigo-600 hover:text-indigo-800">
+								<a href="/products/{review.productId}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">
 									{review.productName ?? review.productId}
 								</a>
-								<p class="mt-0.5 truncate text-xs text-gray-500">
+								<p class="mt-0.5 truncate text-xs text-secondary">
 									by {review.authorName}{review.customerEmail ? ` · ${review.customerEmail}` : ''}
 								</p>
 							</div>

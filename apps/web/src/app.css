@@ -68,6 +68,7 @@
 	--radius-xl: 0.5rem;
 	--radius-full: 0.75rem;
 	--radius-2xl: 0.75rem;
+	--radius: 0.125rem;
 
 	--spacing-unit: 4px;
 	--spacing-sidebar-width: 240px;
@@ -125,5 +126,60 @@
 	:focus-visible {
 		outline: 2px solid var(--color-primary);
 		outline-offset: 2px;
+	}
+}
+
+@layer components {
+	.field {
+		width: 100%;
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--color-outline-variant);
+		background-color: var(--color-surface-container-lowest);
+		padding: 7px 12px;
+		font-size: 14px;
+		line-height: 20px;
+		color: var(--color-on-surface);
+		transition: border-color 0.12s ease;
+	}
+
+	.field::placeholder {
+		color: var(--color-secondary);
+	}
+
+	.field:focus {
+		outline: none;
+		border-color: var(--color-primary);
+	}
+
+	select.field {
+		appearance: none;
+		padding-right: 32px;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23737686' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+		background-repeat: no-repeat;
+		background-position: right 8px center;
+		background-size: 16px;
+	}
+
+	.field-label {
+		display: block;
+		margin-bottom: 4px;
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--color-on-surface);
+	}
+
+	.field-error {
+		margin-top: 4px;
+		font-size: 12px;
+		color: var(--color-error);
+	}
+
+	input[type='checkbox'].field-check {
+		width: 16px;
+		height: 16px;
+		border-radius: 2px;
+		border: 1px solid var(--color-outline);
+		background-color: var(--color-surface-container-lowest);
+		accent-color: var(--color-primary);
 	}
 }

@@ -6,6 +6,7 @@
 	import Button from '$lib/components/Button.svelte'
 	import Card from '$lib/components/Card.svelte'
 	import Badge from '$lib/components/Badge.svelte'
+	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import { currency, dateTime, dateTimeFull, number, titleCase } from '$lib/format'
@@ -100,23 +101,21 @@
 	]
 </script>
 
-<div class="space-y-5">
-	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div>
-			<h1 class="text-xl font-bold text-gray-900">Inventory</h1>
-			<p class="text-sm text-gray-500">{meta.total} variants</p>
-		</div>
+<svelte:head>
+	<title>Inventory — Merchant OS</title>
+</svelte:head>
+
+<div class="space-y-6">
+	<div class="mb-8">
+		<h1 class="font-display text-display text-on-surface">Inventory</h1>
+		<p class="mt-1 text-body-sm text-secondary">{meta.total} variants</p>
 	</div>
 
 	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div class="flex gap-1 rounded-lg border border-gray-200 bg-white p-1">
+		<div class="flex w-fit gap-1 rounded border border-outline-variant bg-surface-container-lowest p-1">
 			{#each tabs as t (t.id)}
 				<button
-					class="rounded-md px-3 py-1.5 text-sm font-medium"
-					class:bg-indigo-600={tab === t.id}
-					class:text-white={tab === t.id}
-					class:text-gray-600={tab !== t.id}
-					class:hover:bg-gray-100={tab !== t.id}
+					class="rounded px-3 py-1.5 text-sm font-medium transition-colors {tab === t.id ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}"
 					onclick={() => switchTab(t.id)}
 				>
 					{t.label}
@@ -126,13 +125,13 @@
 
 		{#if tab === 'all'}
 			<div class="flex flex-wrap gap-2">
-				<input
-					class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm sm:w-56"
-					placeholder="Search product or SKU…"
-					bind:value={search}
-					onkeydown={(e) => e.key === 'Enter' && load()}
-				/>
-				<select class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={status}>
+				<div class="relative min-w-[180px]">
+					<div class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-secondary">
+						<Icon name="search" size="text-[16px]" />
+					</div>
+					<input class="field pl-9" placeholder="Search product or SKU…" bind:value={search} onkeydown={(e) => e.key === 'Enter' && load()} />
+				</div>
+				<select class="field w-auto" bind:value={status}>
 					<option value="">All statuses</option>
 					<option value="active">Active</option>
 					<option value="draft">Draft</option>
@@ -147,41 +146,44 @@
 		{#if loading}
 			<div class="space-y-2 p-5">
 				{#each Array(6) as _}
-					<div class="h-12 animate-pulse rounded-lg bg-gray-100"></div>
+					<div class="h-12 animate-pulse rounded bg-surface-container"></div>
 				{/each}
 			</div>
 		{:else if (tab === 'history' ? history.length : items.length) === 0}
-			<p class="py-14 text-center text-sm text-gray-400">Nothing here.</p>
+			<div class="flex flex-col items-center gap-2 py-16 text-center">
+				<Icon name="inventory_2" size="text-[32px]" class="text-outline" />
+				<p class="text-sm text-secondary">Nothing here.</p>
+			</div>
 		{:else if tab === 'history'}
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
+				<table class="w-full text-left text-sm">
 					<thead>
-						<tr class="border-b border-gray-100 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-							<th class="px-5 py-3">Product</th>
-							<th class="px-3 py-3">Variant</th>
-							<th class="px-3 py-3">Change</th>
-							<th class="px-3 py-3">Before</th>
-							<th class="px-3 py-3">After</th>
-							<th class="px-3 py-3">Reason</th>
-							<th class="px-5 py-3">When</th>
+						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Product</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Variant</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Change</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Before</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">After</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Reason</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">When</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each history as h (h.id)}
-							<tr class="border-b border-gray-50 hover:bg-gray-50/60">
-								<td class="px-5 py-3">
-									<a href="/products/{h.productId}" class="font-medium text-indigo-600 hover:text-indigo-800">{h.productName}</a>
+							<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
+								<td class="px-table-cell-x py-table-cell-y">
+									<a href="/products/{h.productId}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{h.productName}</a>
 								</td>
-								<td class="px-3 py-3 text-gray-600">{h.sku ?? '—'}</td>
-								<td class="px-3 py-3 font-semibold" class:text-emerald-600={h.change > 0} class:text-red-600={h.change < 0}>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{h.sku ?? '—'}</td>
+								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label font-semibold" class:text-success={h.change > 0} class:text-error={h.change < 0}>
 									{h.change > 0 ? `+${h.change}` : h.change}
 								</td>
-								<td class="px-3 py-3 text-gray-600">{number(h.beforeValue)}</td>
-								<td class="px-3 py-3 font-medium">{number(h.afterValue)}</td>
-								<td class="px-3 py-3">
-									<span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{titleCase(h.reason)}</span>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{number(h.beforeValue)}</td>
+								<td class="px-table-cell-x py-table-cell-y font-medium text-on-surface">{number(h.afterValue)}</td>
+								<td class="px-table-cell-x py-table-cell-y">
+									<span class="rounded-full bg-secondary/10 px-2 py-0.5 text-xs text-secondary">{titleCase(h.reason)}</span>
 								</td>
-								<td class="px-5 py-3 text-gray-500" title={dateTimeFull(h.createdAt)}>{dateTime(h.createdAt)}</td>
+								<td class="px-table-cell-x py-table-cell-y text-secondary" title={dateTimeFull(h.createdAt)}>{dateTime(h.createdAt)}</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -190,55 +192,55 @@
 			<Pagination {meta} {onPage} />
 		{:else}
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
+				<table class="w-full text-left text-sm">
 					<thead>
-						<tr class="border-b border-gray-100 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-							<th class="px-5 py-3">Product</th>
-							<th class="px-3 py-3">Variant</th>
-							<th class="px-3 py-3">SKU</th>
-							<th class="px-3 py-3">Price</th>
-							<th class="px-3 py-3">Inventory</th>
-							<th class="px-3 py-3">Status</th>
+						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Product</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Variant</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">SKU</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Price</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Inventory</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
 							{#if canWrite()}
-								<th class="px-5 py-3 text-right">Actions</th>
+								<th class="px-table-cell-x py-table-cell-y text-right font-semibold">Actions</th>
 							{/if}
 						</tr>
 					</thead>
 					<tbody>
 						{#each items as it (it.id)}
-							<tr class="border-b border-gray-50 hover:bg-gray-50/60">
-								<td class="px-5 py-3">
-									<a href="/products/{it.productId}" class="font-medium text-indigo-600 hover:text-indigo-800">{it.productName}</a>
-									{#if it.categoryName}<span class="ml-1 text-xs text-gray-400">· {it.categoryName}</span>{/if}
+							<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
+								<td class="px-table-cell-x py-table-cell-y">
+									<a href="/products/{it.productId}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{it.productName}</a>
+									{#if it.categoryName}<span class="ml-1 text-xs text-outline">· {it.categoryName}</span>{/if}
 								</td>
-								<td class="px-3 py-3 text-gray-600">
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">
 									{#if it.image}
 										<img src={it.image} alt="" class="mr-2 inline h-7 w-7 rounded object-cover" />
 									{/if}
 									{#if Object.keys(it.optionValues ?? {}).length}
 										{Object.entries(it.optionValues).map(([k, v]) => `${k}: ${v}`).join(', ')}
 									{:else}
-										<span class="text-gray-400">Default</span>
+										<span class="text-outline">Default</span>
 									{/if}
 								</td>
-								<td class="px-3 py-3 text-gray-600">{it.sku ?? '—'}</td>
-								<td class="px-3 py-3 font-medium">{currency(it.price)}</td>
-								<td class="px-3 py-3">
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{it.sku ?? '—'}</td>
+								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{currency(it.price)}</td>
+								<td class="px-table-cell-x py-table-cell-y">
 									<span
 										class:font-semibold={true}
-										class:text-red-600={it.inventory === 0}
-										class:text-amber-600={it.inventory > 0 && it.trackInventory && it.inventory <= it.lowStockThreshold}
+										class:text-error={it.inventory === 0}
+										class:text-warning={it.inventory > 0 && it.trackInventory && it.inventory <= it.lowStockThreshold}
 									>
 										{number(it.inventory)}
 									</span>
 									{#if it.trackInventory && it.inventory <= it.lowStockThreshold}
-										<span class="ml-1 text-xs text-gray-400">(threshold {it.lowStockThreshold})</span>
+										<span class="ml-1 text-xs text-outline">(threshold {it.lowStockThreshold})</span>
 									{/if}
 								</td>
-								<td class="px-3 py-3"><Badge label={it.productStatus} /></td>
+								<td class="px-table-cell-x py-table-cell-y"><Badge label={it.productStatus} /></td>
 								{#if canWrite()}
-									<td class="px-5 py-3 text-right">
-										<button class="text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => { adjustTarget = it; adjustChange = '1'; adjustReason = 'adjustment' }}>
+									<td class="px-table-cell-x py-table-cell-y text-right">
+										<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => { adjustTarget = it; adjustChange = '1'; adjustReason = 'adjustment' }}>
 											Adjust
 										</button>
 									</td>
@@ -255,21 +257,15 @@
 
 {#if adjustTarget && canWrite()}
 	<Modal title={`Adjust inventory — ${adjustTarget.productName}`} open={true} width="sm" onClose={() => (adjustTarget = null)}>
-		<form
-			class="space-y-4"
-			onsubmit={(e) => {
-				e.preventDefault()
-				applyAdjust()
-			}}
-		>
-			<p class="text-sm text-gray-500">Current stock: <span class="font-semibold text-gray-900">{number(adjustTarget.inventory)}</span></p>
+		<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); applyAdjust() }}>
+			<p class="text-sm text-secondary">Current stock: <span class="font-semibold text-on-surface">{number(adjustTarget.inventory)}</span></p>
 			<div>
-				<label for="adjust-change" class="mb-1 block text-sm font-medium text-gray-700">Change (+ add / − remove)</label>
-				<input id="adjust-change" type="number" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={adjustChange} required />
+				<label for="adjust-change" class="field-label">Change (+ add / − remove)</label>
+				<input id="adjust-change" type="number" class="field" bind:value={adjustChange} required />
 			</div>
 			<div>
-				<label for="adjust-reason" class="mb-1 block text-sm font-medium text-gray-700">Reason</label>
-				<select id="adjust-reason" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={adjustReason}>
+				<label for="adjust-reason" class="field-label">Reason</label>
+				<select id="adjust-reason" class="field" bind:value={adjustReason}>
 					<option value="adjustment">Adjustment</option>
 					<option value="purchase">Purchase</option>
 					<option value="return">Return</option>

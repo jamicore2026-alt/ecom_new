@@ -6,6 +6,7 @@
 	import Button from '$lib/components/Button.svelte'
 	import Card from '$lib/components/Card.svelte'
 	import Badge from '$lib/components/Badge.svelte'
+	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import { currency, dateTime, titleCase } from '$lib/format'
@@ -273,31 +274,40 @@
 	}
 </script>
 
-<div class="space-y-5">
-	<div class="flex flex-wrap items-center justify-between gap-3">
+<svelte:head>
+	<title>Discounts — Merchant OS</title>
+</svelte:head>
+
+<div class="space-y-6">
+	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 		<div>
-			<h1 class="text-xl font-bold text-gray-900">Discounts</h1>
-			<p class="text-sm text-gray-500">{meta.total} total</p>
+			<h1 class="font-display text-display text-on-surface">Discounts</h1>
+			<p class="mt-1 text-body-sm text-secondary">{meta.total} total</p>
 		</div>
 		{#if canWrite()}
-			<Button onclick={() => openCreate(section)}>Add {section === 'coupons' ? 'coupon' : 'promotion'}</Button>
+			<Button onclick={() => openCreate(section)}><Icon name="add" size="text-[18px]" /> Add {section === 'coupons' ? 'coupon' : 'promotion'}</Button>
 		{/if}
 	</div>
 
 	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div class="flex gap-1 rounded-lg border border-gray-200 bg-white p-1">
-			<button class="rounded-md px-3 py-1.5 text-sm font-medium" class:bg-indigo-600={section === 'coupons'} class:text-white={section === 'coupons'} class:text-gray-600={section !== 'coupons'} onclick={() => switchSection('coupons')}>
+		<div class="flex w-fit gap-1 rounded border border-outline-variant bg-surface-container-lowest p-1">
+			<button class="rounded px-3 py-1.5 text-sm font-medium transition-colors {section === 'coupons' ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => switchSection('coupons')}>
 				Coupons
 			</button>
-			<button class="rounded-md px-3 py-1.5 text-sm font-medium" class:bg-indigo-600={section === 'promotions'} class:text-white={section === 'promotions'} class:text-gray-600={section !== 'promotions'} onclick={() => switchSection('promotions')}>
+			<button class="rounded px-3 py-1.5 text-sm font-medium transition-colors {section === 'promotions' ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => switchSection('promotions')}>
 				Promotions
 			</button>
 		</div>
 		<div class="flex flex-wrap gap-2">
 			{#if section === 'coupons'}
-				<input class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm sm:w-48" placeholder="Search code…" bind:value={search} onkeydown={(e) => { if (e.key === 'Enter') { page = 1; load() } }} />
+				<div class="relative min-w-[180px]">
+					<div class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-secondary">
+						<Icon name="search" size="text-[16px]" />
+					</div>
+					<input class="field pl-9" placeholder="Search code…" bind:value={search} onkeydown={(e) => { if (e.key === 'Enter') { page = 1; load() } }} />
+				</div>
 			{/if}
-			<select class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={statusFilter}>
+			<select class="field w-auto" bind:value={statusFilter}>
 				<option value="">All statuses</option>
 				<option value="active">Active</option>
 				<option value="disabled">Disabled</option>
@@ -310,49 +320,53 @@
 		{#if loading}
 			<div class="space-y-2 p-5">
 				{#each Array(6) as _}
-					<div class="h-12 animate-pulse rounded-lg bg-gray-100"></div>
+					<div class="h-12 animate-pulse rounded bg-surface-container"></div>
 				{/each}
 			</div>
 		{:else if section === 'coupons' && coupons.length === 0}
-			<p class="py-14 text-center text-sm text-gray-400">No coupons found.</p>
+			<div class="flex flex-col items-center gap-2 py-16 text-center">
+				<Icon name="percent" size="text-[32px]" class="text-outline" />
+				<p class="text-sm text-secondary">No coupons found.</p>
+			</div>
 		{:else if section === 'promotions' && promotions.length === 0}
-			<p class="py-14 text-center text-sm text-gray-400">No promotions found.</p>
+			<div class="flex flex-col items-center gap-2 py-16 text-center">
+				<Icon name="campaign" size="text-[32px]" class="text-outline" />
+				<p class="text-sm text-secondary">No promotions found.</p>
+			</div>
 		{:else if section === 'coupons'}
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
+				<table class="w-full text-left text-sm">
 					<thead>
-						<tr class="border-b border-gray-100 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-							<th class="px-5 py-3">Code</th>
-							<th class="px-3 py-3">Type</th>
-							<th class="px-3 py-3">Value</th>
-							<th class="px-3 py-3">Min subtotal</th>
-							<th class="px-3 py-3">Usage</th>
-							<th class="px-3 py-3">Dates</th>
-							<th class="px-3 py-3">Status</th>
-							{#if canWrite()}<th class="px-5 py-3 text-right">Actions</th>{/if}
+						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Code</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Type</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Value</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Min subtotal</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Usage</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Dates</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
+							{#if canWrite()}<th class="px-table-cell-x py-table-cell-y text-right font-semibold">Actions</th>{/if}
 						</tr>
 					</thead>
 					<tbody>
 						{#each coupons as c (c.id)}
-							<tr class="border-b border-gray-50 hover:bg-gray-50/60">
-								<td class="px-5 py-3 font-mono font-medium text-indigo-600">{c.code}</td>
-								<td class="px-3 py-3"><Badge label={c.type} /></td>
-								<td class="px-3 py-3">{c.type === 'free_shipping' ? '—' : c.type === 'percentage' ? `${c.value}%` : currency(c.value)}</td>
-								<td class="px-3 py-3 text-gray-600">{c.minSubtotal ? currency(c.minSubtotal) : '—'}</td>
-								<td class="px-3 py-3 text-gray-600">{c.usedCount}{c.usageLimit != null ? ` / ${c.usageLimit}` : ''}</td>
-								<td class="px-3 py-3 text-gray-500">
+							<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
+								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label font-medium text-primary">{c.code}</td>
+								<td class="px-table-cell-x py-table-cell-y"><Badge label={c.type} /></td>
+								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{c.type === 'free_shipping' ? '—' : c.type === 'percentage' ? `${c.value}%` : currency(c.value)}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{c.minSubtotal ? currency(c.minSubtotal) : '—'}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{c.usedCount}{c.usageLimit != null ? ` / ${c.usageLimit}` : ''}</td>
+								<td class="px-table-cell-x py-table-cell-y text-secondary">
 									{#if c.startsAt || c.endsAt}
 										{c.startsAt ? dateTime(c.startsAt) : '∞'} → {c.endsAt ? dateTime(c.endsAt) : '∞'}
 									{:else}Always{/if}
 								</td>
-								<td class="px-3 py-3"><Badge label={c.status} /></td>
+								<td class="px-table-cell-x py-table-cell-y"><Badge label={c.status} /></td>
 								{#if canWrite()}
-									<td class="px-5 py-3 text-right whitespace-nowrap">
-										<button class="text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => openEditCoupon(c)}>Edit</button>
-										<span class="mx-1 text-gray-300">|</span>
-										<button class="text-xs font-medium text-gray-600 hover:text-gray-800" onclick={() => toggleCoupon(c)}>{c.status === 'active' ? 'Disable' : 'Enable'}</button>
-										<span class="mx-1 text-gray-300">|</span>
-										<button class="text-xs font-medium text-red-600 hover:text-red-800" onclick={() => removeCoupon(c)}>Delete</button>
+									<td class="whitespace-nowrap px-table-cell-x py-table-cell-y text-right">
+										<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditCoupon(c)}>Edit</button>
+										<button class="rounded p-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container" onclick={() => toggleCoupon(c)}>{c.status === 'active' ? 'Disable' : 'Enable'}</button>
+										<button class="rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => removeCoupon(c)}>Delete</button>
 									</td>
 								{/if}
 							</tr>
@@ -363,40 +377,38 @@
 			<Pagination {meta} {onPage} />
 		{:else}
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
+				<table class="w-full text-left text-sm">
 					<thead>
-						<tr class="border-b border-gray-100 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-							<th class="px-5 py-3">Name</th>
-							<th class="px-3 py-3">Type</th>
-							<th class="px-3 py-3">Discount</th>
-							<th class="px-3 py-3">Applies to</th>
-							<th class="px-3 py-3">Dates</th>
-							<th class="px-3 py-3">Status</th>
-							{#if canWrite()}<th class="px-5 py-3 text-right">Actions</th>{/if}
+						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Name</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Type</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Discount</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Applies to</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Dates</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
+							{#if canWrite()}<th class="px-table-cell-x py-table-cell-y text-right font-semibold">Actions</th>{/if}
 						</tr>
 					</thead>
 					<tbody>
 						{#each promotions as p (p.id)}
-							<tr class="border-b border-gray-50 hover:bg-gray-50/60">
-								<td class="px-5 py-3 font-medium text-gray-900">{p.name}</td>
-								<td class="px-3 py-3 text-gray-700">{titleCase(p.type)}</td>
-								<td class="px-3 py-3 font-medium">{p.discountPercent}%</td>
-								<td class="px-3 py-3 text-gray-600">
-									{p.appliesTo.scope}{#if p.appliesTo.scope === 'products'}<span class="text-gray-400"> · {p.appliesTo.productIds?.length ?? 0} products</span>{/if}
+							<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
+								<td class="px-table-cell-x py-table-cell-y font-medium text-on-surface">{p.name}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{titleCase(p.type)}</td>
+								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{p.discountPercent}%</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">
+									{p.appliesTo.scope}{#if p.appliesTo.scope === 'products'}<span class="text-outline"> · {p.appliesTo.productIds?.length ?? 0} products</span>{/if}
 								</td>
-								<td class="px-3 py-3 text-gray-500">
+								<td class="px-table-cell-x py-table-cell-y text-secondary">
 									{#if p.startsAt || p.endsAt}
 										{p.startsAt ? dateTime(p.startsAt) : '∞'} → {p.endsAt ? dateTime(p.endsAt) : '∞'}
 									{:else}Always{/if}
 								</td>
-								<td class="px-3 py-3"><Badge label={p.status} /></td>
+								<td class="px-table-cell-x py-table-cell-y"><Badge label={p.status} /></td>
 								{#if canWrite()}
-									<td class="px-5 py-3 text-right whitespace-nowrap">
-										<button class="text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => openEditPromotion(p)}>Edit</button>
-										<span class="mx-1 text-gray-300">|</span>
-										<button class="text-xs font-medium text-gray-600 hover:text-gray-800" onclick={() => togglePromotion(p)}>{p.status === 'active' ? 'Disable' : 'Enable'}</button>
-										<span class="mx-1 text-gray-300">|</span>
-										<button class="text-xs font-medium text-red-600 hover:text-red-800" onclick={() => removePromotion(p)}>Delete</button>
+									<td class="whitespace-nowrap px-table-cell-x py-table-cell-y text-right">
+										<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditPromotion(p)}>Edit</button>
+										<button class="rounded p-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container" onclick={() => togglePromotion(p)}>{p.status === 'active' ? 'Disable' : 'Enable'}</button>
+										<button class="rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => removePromotion(p)}>Delete</button>
 									</td>
 								{/if}
 							</tr>
@@ -414,26 +426,26 @@
 		<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); submit() }}>
 			{#if isPromotion}
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">Name *</label>
-					<input class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={pName} required />
-					{#if fieldErrors.name}<p class="mt-1 text-xs text-red-600">{fieldErrors.name}</p>{/if}
+					<label class="field-label">Name *</label>
+					<input class="field" bind:value={pName} required />
+					{#if fieldErrors.name}<p class="field-error">{fieldErrors.name}</p>{/if}
 				</div>
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">Type</label>
-						<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={pType}>
+						<label class="field-label">Type</label>
+						<select class="field" bind:value={pType}>
 							<option value="discount_on_products">Discount on products</option>
 							<option value="buy_x_get_y">Buy X get Y</option>
 						</select>
 					</div>
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">Discount %</label>
-						<input type="number" min="0" max="100" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={pDiscount} required />
+						<label class="field-label">Discount %</label>
+						<input type="number" min="0" max="100" class="field" bind:value={pDiscount} required />
 					</div>
 				</div>
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">Applies to</label>
-					<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={pScope}>
+					<label class="field-label">Applies to</label>
+					<select class="field" bind:value={pScope}>
 						<option value="all">All products</option>
 						<option value="products">Specific products</option>
 						<option value="category">Category</option>
@@ -441,11 +453,11 @@
 				</div>
 				{#if pScope === 'products'}
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">Products</label>
-						<div class="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-2">
+						<label class="field-label">Products</label>
+						<div class="max-h-40 space-y-1 overflow-y-auto rounded border border-outline-variant bg-surface-container-lowest p-2">
 							{#each products as p (p.id)}
-								<label class="flex items-center gap-2 text-sm text-gray-700">
-									<input type="checkbox" class="h-4 w-4" checked={pProductIds.includes(p.id)} onchange={() => { pProductIds = pProductIds.includes(p.id) ? pProductIds.filter((x) => x !== p.id) : [...pProductIds, p.id] }} />
+								<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+									<input type="checkbox" class="field-check" checked={pProductIds.includes(p.id)} onchange={() => { pProductIds = pProductIds.includes(p.id) ? pProductIds.filter((x) => x !== p.id) : [...pProductIds, p.id] }} />
 									<span class="truncate">{p.name}</span>
 								</label>
 							{/each}
@@ -453,8 +465,8 @@
 					</div>
 				{:else if pScope === 'category'}
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">Category</label>
-						<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={pCategoryId}>
+						<label class="field-label">Category</label>
+						<select class="field" bind:value={pCategoryId}>
 							<option value="">Select…</option>
 							{#each categories as c (c.id)}
 								<option value={c.id}>{c.name}</option>
@@ -465,13 +477,13 @@
 			{:else}
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">Code *</label>
-						<input class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono uppercase" bind:value={code} placeholder="SAVE10" disabled={!!editingCoupon} required />
-						{#if fieldErrors.code}<p class="mt-1 text-xs text-red-600">{fieldErrors.code}</p>{/if}
+						<label class="field-label">Code *</label>
+						<input class="field font-mono-label uppercase" bind:value={code} placeholder="SAVE10" disabled={!!editingCoupon} required />
+						{#if fieldErrors.code}<p class="field-error">{fieldErrors.code}</p>{/if}
 					</div>
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">Type</label>
-						<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={type}>
+						<label class="field-label">Type</label>
+						<select class="field" bind:value={type}>
 							<option value="percentage">Percentage</option>
 							<option value="fixed">Fixed amount</option>
 							<option value="free_shipping">Free shipping</option>
@@ -480,22 +492,22 @@
 				</div>
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">{type === 'percentage' ? 'Percent' : 'Amount'}</label>
-						<input type="number" step="0.01" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={value} required />
+						<label class="field-label">{type === 'percentage' ? 'Percent' : 'Amount'}</label>
+						<input type="number" step="0.01" min="0" class="field" bind:value={value} required />
 					</div>
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">Min subtotal</label>
-						<input type="number" step="0.01" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={minSubtotal} />
+						<label class="field-label">Min subtotal</label>
+						<input type="number" step="0.01" min="0" class="field" bind:value={minSubtotal} />
 					</div>
 				</div>
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">Usage limit</label>
-						<input type="number" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={usageLimit} placeholder="Unlimited" />
+						<label class="field-label">Usage limit</label>
+						<input type="number" min="0" class="field" bind:value={usageLimit} placeholder="Unlimited" />
 					</div>
 					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-700">Status</label>
-						<select class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={cStatus}>
+						<label class="field-label">Status</label>
+						<select class="field" bind:value={cStatus}>
 							<option value="active">Active</option>
 							<option value="disabled">Disabled</option>
 						</select>
@@ -505,12 +517,12 @@
 
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">Start date</label>
-					<input type="date" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={startsAt} />
+					<label class="field-label">Start date</label>
+					<input type="date" class="field" bind:value={startsAt} />
 				</div>
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-700">End date</label>
-					<input type="date" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={endsAt} />
+					<label class="field-label">End date</label>
+					<input type="date" class="field" bind:value={endsAt} />
 				</div>
 			</div>
 

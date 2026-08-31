@@ -3,6 +3,7 @@
 	import { toast } from '$lib/toast.svelte'
 	import Button from '$lib/components/Button.svelte'
 	import Modal from '$lib/components/Modal.svelte'
+	import Icon from '$lib/components/Icon.svelte'
 	import type { Category } from '$lib/types'
 
 	let { categories, onClose, onSaved } = $props<{
@@ -89,22 +90,22 @@
 <Modal title="Categories" open={true} width="md" onClose={onClose}>
 	<div class="space-y-5">
 		<form
-			class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4"
+			class="space-y-3 rounded border border-outline-variant bg-surface-container-low p-4"
 			onsubmit={(e) => {
 				e.preventDefault()
 				submit()
 			}}
 		>
-			<h3 class="text-sm font-semibold text-gray-800">{editing ? 'Edit category' : 'New category'}</h3>
+			<h3 class="text-sm font-semibold text-on-surface">{editing ? 'Edit category' : 'New category'}</h3>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div>
-					<label for="cat-name" class="mb-1 block text-sm font-medium text-gray-700">Name *</label>
-					<input id="cat-name" class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={name} required />
-					{#if fieldErrors.name}<p class="mt-1 text-xs text-red-600">{fieldErrors.name}</p>{/if}
+					<label for="cat-name" class="field-label">Name *</label>
+					<input id="cat-name" class="field" bind:value={name} required />
+					{#if fieldErrors.name}<p class="field-error">{fieldErrors.name}</p>{/if}
 				</div>
 				<div>
-					<label for="cat-parent" class="mb-1 block text-sm font-medium text-gray-700">Parent</label>
-					<select id="cat-parent" class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={parentId}>
+					<label for="cat-parent" class="field-label">Parent</label>
+					<select id="cat-parent" class="field" bind:value={parentId}>
 						<option value="">None (top level)</option>
 						{#each flatten(categories) as c (c.id)}
 							{#if c.id !== editing?.id}
@@ -114,19 +115,19 @@
 					</select>
 				</div>
 				<div>
-					<label for="cat-sort-order" class="mb-1 block text-sm font-medium text-gray-700">Sort order</label>
-					<input id="cat-sort-order" type="number" class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={sortOrder} />
+					<label for="cat-sort-order" class="field-label">Sort order</label>
+					<input id="cat-sort-order" type="number" class="field" bind:value={sortOrder} />
 				</div>
 				<div>
-					<label for="cat-status" class="mb-1 block text-sm font-medium text-gray-700">Status</label>
-					<select id="cat-status" class="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" bind:value={status}>
+					<label for="cat-status" class="field-label">Status</label>
+					<select id="cat-status" class="field" bind:value={status}>
 						<option value="active">Active</option>
 						<option value="archived">Archived</option>
 					</select>
 				</div>
 			</div>
 			<div class="flex items-center justify-between">
-				<button type="button" class="text-xs font-medium text-gray-500 hover:text-gray-700" onclick={reset}>
+				<button type="button" class="text-xs font-medium text-secondary hover:text-on-surface" onclick={reset}>
 					Clear form
 				</button>
 				<div class="flex gap-2">
@@ -138,19 +139,20 @@
 
 		<ul class="space-y-1">
 			{#each flatten(categories) as c (c.id)}
-				<li class="flex items-center gap-2 rounded-lg border border-gray-100 px-3 py-2" style="margin-left:{c.depth * 12}px">
-					<span class="min-w-0 flex-1 text-sm text-gray-800">
-						<span class="font-medium">{c.name}</span>
+				<li class="flex items-center gap-2 rounded border border-outline-variant bg-surface-container-lowest px-3 py-2" style="margin-left:{c.depth * 12}px">
+					<Icon name="folder" size="text-[16px]" class="shrink-0 text-secondary" />
+					<span class="min-w-0 flex-1 truncate text-sm text-on-surface-variant">
+						<span class="font-medium text-on-surface">{c.name}</span>
 						{#if c.status !== 'active'}
-							<span class="ml-1 text-xs text-gray-400">({c.status})</span>
+							<span class="ml-1 text-xs text-outline">({c.status})</span>
 						{/if}
 					</span>
-					<button class="text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => startEdit(c)}>Edit</button>
-					<button class="text-xs font-medium text-red-600 hover:text-red-800" onclick={() => remove(c)}>Delete</button>
+					<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => startEdit(c)}>Edit</button>
+					<button class="rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => remove(c)}>Delete</button>
 				</li>
 			{/each}
 			{#if categories.length === 0}
-				<li class="rounded-lg border border-dashed border-gray-200 p-4 text-center text-sm text-gray-400">
+				<li class="rounded border border-dashed border-outline-variant p-4 text-center text-sm text-secondary">
 					No categories yet.
 				</li>
 			{/if}
