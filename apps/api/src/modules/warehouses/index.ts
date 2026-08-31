@@ -11,6 +11,7 @@ const warehouseBody = t.Object({
 })
 
 const warehouseParams = t.Object({ id: t.String() })
+const transferParams = t.Object({ id: t.String() })
 
 const setInventoryBody = t.Object({
   variantId: t.String(),
@@ -32,6 +33,7 @@ export const warehousesModule = new Elysia({ prefix: '/api' })
   .get('/warehouses/:id', async ({ auth, params }) => WarehousesService.get(auth.merchant.id, params.id), { params: warehouseParams })
   .get('/warehouses/:id/inventory', async ({ auth, params }) => WarehousesService.listInventory(auth.merchant.id, params.id), { params: warehouseParams })
   .get('/transfers', async ({ auth }) => WarehousesService.listTransfers(auth.merchant.id))
+  .get('/transfers/:id', async ({ auth, params }) => WarehousesService.getTransfer(auth.merchant.id, params.id), { params: transferParams })
 
   .use(requirePermission('inventory.manage'))
   .put('/warehouses/:id/inventory', async ({ auth, params, body }) => WarehousesService.setInventory(auth.merchant.id, params.id, body.variantId, body.quantity), { params: warehouseParams, body: setInventoryBody })

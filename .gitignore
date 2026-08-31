@@ -16,3 +16,5 @@ build/
 
 # Local file uploads (product images)
 apps/api/uploads/
+
+.opencode/

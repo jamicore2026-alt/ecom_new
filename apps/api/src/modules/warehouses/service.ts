@@ -1,6 +1,12 @@
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../database/client'
-import { stockTransfers, warehouseInventory, warehouses, productVariants } from '../../database/schema'
+import {
+  stockTransfers,
+  warehouseInventory,
+  warehouses,
+  productVariants,
+  products
+} from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
 
@@ -97,11 +103,28 @@ export class WarehousesService {
     if (!warehouse) throw notFound('WAREHOUSE_NOT_FOUND', 'Warehouse not found')
 
     const rows = await db
-      .select()
+      .select({
+        id: warehouseInventory.id,
+        warehouseId: warehouseInventory.warehouseId,
+        variantId: warehouseInventory.variantId,
+        quantity: warehouseInventory.quantity,
+        updatedAt: warehouseInventory.updatedAt,
+        sku: productVariants.sku,
+        optionValues: productVariants.optionValues,
+        price: productVariants.price,
+        productId: products.id,
+        productName: products.name,
+        productSku: products.sku
+      })
       .from(warehouseInventory)
+      .innerJoin(productVariants, eq(warehouseInventory.variantId, productVariants.id))
+      .innerJoin(products, eq(productVariants.productId, products.id))
       .where(eq(warehouseInventory.warehouseId, warehouseId))
 
-    return ok({ warehouse, items: rows })
+    const skus = rows.filter((r) => r.quantity > 0).length
+    const stockValue = rows.reduce((sum, r) => sum + r.quantity * (r.price ?? 0), 0)
+
+    return ok({ warehouse, items: rows, skuCount: skus, stockValue })
   }
 
   /** Set absolute stock for a variant in a warehouse. */
@@ -228,10 +251,106 @@ export class WarehousesService {
 
   static async listTransfers(merchantId: string) {
     const rows = await db
-      .select()
+      .select({
+        id: stockTransfers.id,
+        fromWarehouseId: stockTransfers.fromWarehouseId,
+        toWarehouseId: stockTransfers.toWarehouseId,
+        variantId: stockTransfers.variantId,
+        quantity: stockTransfers.quantity,
+        status: stockTransfers.status,
+        createdAt: stockTransfers.createdAt,
+        completedAt: stockTransfers.completedAt
+      })
       .from(stockTransfers)
       .where(eq(stockTransfers.merchantId, merchantId))
       .orderBy(desc(stockTransfers.createdAt))
-    return ok({ items: rows })
+
+    const enriched = await this.enrichTransfers(merchantId, rows)
+    return ok({ items: enriched })
+  }
+
+  static async getTransfer(merchantId: string, id: string) {
+    const [row] = await db
+      .select()
+      .from(stockTransfers)
+      .where(and(eq(stockTransfers.id, id), eq(stockTransfers.merchantId, merchantId)))
+    if (!row) throw notFound('TRANSFER_NOT_FOUND', 'Transfer not found')
+
+    const [enriched] = await this.enrichTransfers(merchantId, [row])
+    return ok(enriched)
+  }
+
+  /** Join warehouse and product/variant names onto raw transfer rows. */
+  private static async enrichTransfers(
+    merchantId: string,
+    rows: Array<{
+      id: string
+      fromWarehouseId: string | null
+      toWarehouseId: string | null
+      variantId: string
+      quantity: number
+      status: string | null
+      createdAt: Date
+      completedAt: Date | null
+    }>
+  ) {
+    if (rows.length === 0) return []
+
+    const warehouseIds = new Set<string>()
+    const variantIds = new Set<string>()
+    for (const r of rows) {
+      if (r.fromWarehouseId) warehouseIds.add(r.fromWarehouseId)
+      if (r.toWarehouseId) warehouseIds.add(r.toWarehouseId)
+      variantIds.add(r.variantId)
+    }
+
+    const warehouseRows = warehouseIds.size
+      ? await db
+          .select({ id: warehouses.id, name: warehouses.name, code: warehouses.code, status: warehouses.status })
+          .from(warehouses)
+          .where(and(eq(warehouses.merchantId, merchantId), inArray(warehouses.id, Array.from(warehouseIds))))
+      : []
+    const variantRows = variantIds.size
+      ? await db
+          .select({
+            id: productVariants.id,
+            sku: productVariants.sku,
+            optionValues: productVariants.optionValues,
+            productId: products.id,
+            productName: products.name,
+            productSku: products.sku
+          })
+          .from(productVariants)
+          .innerJoin(products, eq(productVariants.productId, products.id))
+          .where(and(eq(products.merchantId, merchantId), inArray(productVariants.id, Array.from(variantIds))))
+      : []
+
+    const whMap = new Map(warehouseRows.map((w) => [w.id, w]))
+    const variantMap = new Map(variantRows.map((v) => [v.id, v]))
+
+    return rows.map((r) => {
+      const from = r.fromWarehouseId ? whMap.get(r.fromWarehouseId) : undefined
+      const to = r.toWarehouseId ? whMap.get(r.toWarehouseId) : undefined
+      const variant = variantMap.get(r.variantId)
+      return {
+        id: r.id,
+        fromWarehouseId: r.fromWarehouseId,
+        toWarehouseId: r.toWarehouseId,
+        variantId: r.variantId,
+        quantity: r.quantity,
+        status: r.status,
+        createdAt: r.createdAt,
+        completedAt: r.completedAt,
+        sourceName: from?.name ?? null,
+        sourceCode: from?.code ?? null,
+        destinationName: to?.name ?? null,
+        destinationCode: to?.code ?? null,
+        variantSku: variant?.sku ?? null,
+        optionValues: variant?.optionValues ?? {},
+        productId: variant?.productId ?? null,
+        productName: variant?.productName ?? null,
+        productSku: variant?.productSku ?? null
+      }
+    })
   }
 }

@@ -879,3 +879,60 @@ export interface DeliveryOrder {
 	updatedAt: string
 }
 
+export type WarehouseStatus = 'active' | 'maintenance' | 'inactive'
+
+export interface Warehouse {
+	id: string
+	merchantId: string
+	name: string
+	code: string
+	address: Address
+	isDefault: boolean
+	status: WarehouseStatus
+	createdAt: string
+	updatedAt: string
+}
+
+export interface WarehouseInventoryRow {
+	id: string
+	warehouseId: string
+	variantId: string
+	quantity: number
+	updatedAt: string
+	sku: string | null
+	optionValues: Record<string, string>
+	price: number
+	productId: string
+	productName: string
+	productSku: string | null
+}
+
+export interface WarehouseInventory {
+	warehouse: Warehouse
+	items: WarehouseInventoryRow[]
+	skuCount: number
+	stockValue: number
+}
+
+export type TransferStatus = 'pending' | 'in_transit' | 'completed' | 'cancelled'
+
+export interface StockTransfer {
+	id: string
+	fromWarehouseId: string | null
+	toWarehouseId: string | null
+	variantId: string
+	quantity: number
+	status: TransferStatus | string | null
+	createdAt: string
+	completedAt: string | null
+	sourceName: string | null
+	sourceCode: string | null
+	destinationName: string | null
+	destinationCode: string | null
+	variantSku: string | null
+	optionValues: Record<string, string>
+	productId: string | null
+	productName: string | null
+	productSku: string | null
+}
+

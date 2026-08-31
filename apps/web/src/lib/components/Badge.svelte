@@ -21,6 +21,8 @@
 		restocked: 'bg-primary/10 text-primary',
 		completed: 'bg-success/10 text-success',
 		active: 'bg-success/10 text-success',
+		maintenance: 'bg-warning/10 text-warning',
+		inactive: 'bg-secondary/10 text-secondary',
 		draft: 'bg-secondary/10 text-secondary',
 		archived: 'bg-secondary/10 text-secondary',
 		disabled: 'bg-secondary/10 text-secondary',
