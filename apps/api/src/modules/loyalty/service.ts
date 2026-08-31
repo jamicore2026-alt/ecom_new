@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from 'drizzle-orm'
+import { and, eq, gte, lt, sql } from 'drizzle-orm'
 import { db } from '../../database/client'
 import { customers, loyaltyAccounts, loyaltyLedger } from '../../database/schema'
 import { ok } from '../../shared/response'
@@ -104,5 +104,42 @@ export class LoyaltyService {
       .orderBy(loyaltyLedger.createdAt)
       .limit(100)
     return ok({ items: rows })
+  }
+
+  /**
+   * Merchant-wide loyalty program overview aggregated from the loyalty tables.
+   * Returns member counts, outstanding/redeemable balance, lifetime points issued,
+   * total redeemed, and a tier distribution.
+   */
+  static async overview(merchantId: string) {
+    const [counts] = await db
+      .select({
+        members: sql<number>`count(*)::int`,
+        totalPoints: sql<number>`coalesce(sum(${loyaltyAccounts.points}), 0)::int`,
+        lifetimePoints: sql<number>`coalesce(sum(${loyaltyAccounts.lifetimePoints}), 0)::int`
+      })
+      .from(loyaltyAccounts)
+      .where(eq(loyaltyAccounts.merchantId, merchantId))
+
+    const [redeemed] = await db
+      .select({ total: sql<number>`coalesce(sum(-${loyaltyLedger.points}), 0)::int` })
+      .from(loyaltyLedger)
+      .where(and(eq(loyaltyLedger.merchantId, merchantId), lt(loyaltyLedger.points, 0)))
+
+    const tierRows = await db
+      .select({ tier: loyaltyAccounts.tier, count: sql<number>`count(*)::int` })
+      .from(loyaltyAccounts)
+      .where(eq(loyaltyAccounts.merchantId, merchantId))
+      .groupBy(loyaltyAccounts.tier)
+
+    const tiers = tierRows.map((r) => ({ tier: r.tier, count: r.count }))
+
+    return ok({
+      memberCount: counts?.members ?? 0,
+      totalPoints: counts?.totalPoints ?? 0,
+      lifetimePoints: counts?.lifetimePoints ?? 0,
+      totalRedeemed: redeemed?.total ?? 0,
+      tiers
+    })
   }
 }

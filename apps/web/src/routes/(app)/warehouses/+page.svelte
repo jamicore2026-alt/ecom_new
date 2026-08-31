@@ -208,7 +208,7 @@
 </div>
 
 {#if selected}
-	<Modal title={`${selected.name} — stock`} onClose={() => (selected = null)} width="lg">
+	<Modal title={`${selected.name} — stock`} open={true} onClose={() => (selected = null)} width="lg">
 		{#if !inventoryMap[selected.id]}
 			<div class="py-10 text-center text-sm text-secondary">Loading stock…</div>
 		{:else if inventoryMap[selected.id].items.length === 0}

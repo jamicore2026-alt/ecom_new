@@ -914,6 +914,190 @@ export interface WarehouseInventory {
 	stockValue: number
 }
 
+// ---- marketing: campaigns ----
+
+export type CampaignType = 'email' | 'sms' | 'push'
+export type CampaignStatus = 'draft' | 'sent'
+
+export interface Campaign {
+	id: string
+	merchantId: string
+	name: string
+	type: CampaignType | string
+	audience: Record<string, unknown>
+	subject: string | null
+	content: string | null
+	triggerType: string | null
+	triggerDelayHours: number
+	status: CampaignStatus | string
+	sentCount: number
+	openedCount: number
+	clickedCount: number
+	convertedCount: number
+	scheduledAt: string | null
+	sentAt: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+// ---- marketing: segments ----
+
+export interface SegmentDefinition {
+	minSpent?: number
+	minOrders?: number
+}
+
+export interface Segment {
+	id: string
+	merchantId: string
+	name: string
+	definition: SegmentDefinition
+	customerCount: number
+	createdAt: string
+	updatedAt: string
+}
+
+// ---- insights: profit ----
+
+export interface ProfitMetrics {
+	revenue: number
+	cogs: number
+	grossProfit: number
+	margin: number
+	orderCount: number
+}
+
+export interface ProfitReport {
+	range: { from: string | null; to: string | null }
+	metrics: ProfitMetrics
+}
+
+// ---- staff & roles ----
+
+export type RoleScope = 'GLOBAL' | 'MERCHANT' | 'OUTLET' | 'OWN'
+
+export interface Role {
+	id: string
+	merchantId: string
+	name: string
+	isSystem: boolean
+	permissions: Permission[]
+	scope: RoleScope
+	status: string
+	createdAt: string
+	updatedAt: string
+}
+
+// ---- developer: outbound webhooks ----
+
+export interface WebhookEndpoint {
+	id: string
+	merchantId: string
+	name: string
+	url: string
+	secret: string
+	enabled: boolean
+	events: string[]
+	status: string
+	createdAt: string
+	updatedAt: string
+	lastDeliveryAt?: string | null
+}
+
+export type WebhookDeliveryStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'skipped'
+
+export interface WebhookDelivery {
+	id: string
+	merchantId: string
+	endpointId: string
+	event: string
+	payload: Record<string, unknown>
+	signature: string | null
+	attempts: number
+	status: WebhookDeliveryStatus | string
+	responseCode: number | null
+	responseBody: string | null
+	lastError: string | null
+	nextRetryAt: string | null
+	sentAt: string | null
+	createdAt: string
+}
+
+export interface BackgroundJob {
+	id: string
+	merchantId: string
+	type: string
+	payload: Record<string, unknown>
+	status: string
+	attempts: number
+	maxAttempts: number
+	lastError: string | null
+	nextRetryAt: string | null
+	lockedUntil: string | null
+	createdAt: string
+	completedAt: string | null
+	updatedAt: string
+}
+
+// ---- developer: api keys ----
+
+export interface ApiKey {
+	id: string
+	name: string
+	keyPrefix: string
+	scopes: string[]
+	status: 'active' | 'revoked' | string
+	lastUsedAt: string | null
+	expiresAt: string | null
+	revokedAt: string | null
+	createdAt: string
+}
+
+export interface ApiKeyCreated {
+	key: ApiKey
+	secret: string
+}
+
+// ---- loyalty & rewards ----
+
+export type LoyaltyLedgerType = 'earn' | 'redeem' | 'adjust' | 'expire' | 'refund'
+
+export interface LoyaltyAccount {
+	id: string
+	merchantId: string
+	customerId: string
+	points: number
+	lifetimePoints: number
+	tier: string
+	createdAt: string
+	updatedAt: string
+}
+
+export interface LoyaltyLedgerEntry {
+	id: string
+	merchantId: string
+	customerId: string
+	type: LoyaltyLedgerType | string
+	points: number
+	balanceAfter: number
+	reference: string | null
+	meta: Record<string, unknown>
+	createdAt: string
+}
+
+export interface LoyaltyTierCount {
+	tier: string
+	count: number
+}
+
+export interface LoyaltyOverview {
+	memberCount: number
+	totalPoints: number
+	lifetimePoints: number
+	totalRedeemed: number
+	tiers: LoyaltyTierCount[]
+}
+
 export type TransferStatus = 'pending' | 'in_transit' | 'completed' | 'cancelled'
 
 export interface StockTransfer {
