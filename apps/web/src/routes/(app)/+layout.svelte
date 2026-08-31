@@ -3,7 +3,8 @@
 	import { page } from '$app/state'
 	import { goto } from '$app/navigation'
 	import { initials } from '$lib/format'
-	import { NAV_ICONS } from '$lib/navigation'
+	import { NAV_GROUP_ICONS } from '$lib/navigation'
+	import Icon from '$lib/components/Icon.svelte'
 
 	let { children } = $props<{ children?: import('svelte').Snippet }>()
 
@@ -21,108 +22,88 @@
 </script>
 
 {#if !session.ready}
-	<div class="flex min-h-screen items-center justify-center bg-gray-50">
-		<div class="h-8 w-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent"></div>
+	<div class="flex min-h-screen items-center justify-center bg-surface">
+		<div class="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
 	</div>
 {:else if !user}
-	<div class="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-50">
+	<div class="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface px-4">
 		{#if session.bootError === 'RATE_LIMITED'}
-			<p class="text-sm text-gray-500">Too many requests — please wait a few seconds and try again.</p>
+			<p class="text-sm text-on-surface-variant">Too many requests — please wait a few seconds and try again.</p>
 			<button
 				onclick={() => session.bootstrap()}
-				class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+				class="rounded bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:bg-on-primary-fixed-variant"
 			>
 				Retry
 			</button>
 		{:else}
-			<p class="text-sm text-gray-500">Your session has expired.</p>
+			<p class="text-sm text-on-surface-variant">Your session has expired.</p>
 			<a
 				href="/login"
-				class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+				class="rounded bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:bg-on-primary-fixed-variant"
 			>
 				Sign in
 			</a>
 		{/if}
 	</div>
+{:else if !merchant}
+	<div class="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface px-4">
+		<p class="text-sm text-on-surface-variant">No store is linked to this account.</p>
+		<a
+			href="/login"
+			class="rounded bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:bg-on-primary-fixed-variant"
+		>
+			Sign in
+		</a>
+	</div>
 {:else}
-	<div class="min-h-screen bg-gray-50">
-		<!-- Mobile sidebar toggle -->
-		<div class="sticky top-0 z-20 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 lg:hidden">
-			<div class="flex items-center gap-2">
-				<button class="rounded-lg p-2.5 text-gray-600 hover:bg-gray-100" onclick={() => (sidebarOpen = !sidebarOpen)} aria-label="Toggle navigation">
-					<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-						<path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" />
-					</svg>
-				</button>
-				<span class="text-sm font-semibold text-gray-900">{merchant?.name ?? 'Dashboard'}</span>
-			</div>
-			<button class="rounded-lg p-2.5 text-gray-600 hover:bg-gray-100" onclick={handleLogout} aria-label="Sign out">
-				<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-				</svg>
-			</button>
-		</div>
+	<div class="min-h-screen bg-background">
+		<!-- Mobile drawer backdrop -->
+		{#if sidebarOpen}
+			<div class="fixed inset-0 z-20 bg-black/30 lg:hidden" onclick={() => (sidebarOpen = false)} aria-hidden="true"></div>
+		{/if}
 
 		<div class="lg:grid lg:grid-cols-[240px_1fr]">
 			<!-- Sidebar -->
 			<aside
-				class="fixed inset-y-0 left-0 z-30 flex w-60 flex-col transform border-r border-gray-200 bg-white transition-transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0"
+				class="fixed inset-y-0 left-0 z-30 flex w-sidebar-width flex-col transform border-r border-outline-variant bg-surface transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0"
 				class:translate-x-0={sidebarOpen}
 				class:-translate-x-full={!sidebarOpen}
 			>
-				<div class="flex h-16 items-center gap-3 border-b border-gray-100 px-5">
-					<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-sm font-bold text-white">
-						{merchant ? initials(merchant.name) : 'S'}
+				<!-- Brand -->
+				<div class="flex h-16 shrink-0 items-center gap-3 border-b border-outline-variant px-container-padding">
+					<div class="flex h-10 w-10 items-center justify-center rounded bg-primary-container text-on-primary-container">
+						<Icon name="storefront" size="text-[20px]" />
 					</div>
 					<div class="min-w-0">
-						<p class="truncate text-sm font-semibold text-gray-900">{merchant?.name ?? 'Store'}</p>
-						<p class="truncate text-xs text-gray-500">{merchant?.currency ?? ''} {merchant?.slug ?? ''}</p>
+						<p class="truncate text-sm font-semibold tracking-tight text-on-surface">{merchant?.name}</p>
+						<p class="truncate text-xs text-secondary">Merchant OS</p>
 					</div>
 				</div>
 
-				{#if session.allowedOutlets.length > 1}
-					<div class="px-3 pb-1 pt-2">
-						<label for="outlet-select" class="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
-							Outlet
-						</label>
-						<select
-							id="outlet-select"
-							class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-							value={session.selectedOutletId ?? ''}
-							onchange={(e) => session.switchOutlet((e.currentTarget as HTMLSelectElement).value || null)}
-						>
-							<option value="">All outlets</option>
-							{#each session.allowedOutlets as outlet}
-								<option value={outlet.id}>{outlet.name}</option>
-							{/each}
-						</select>
-					</div>
-				{/if}
-
-				<nav class="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+				<nav class="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-stack-comfortable">
 					{#each Object.entries(navGroups) as [group, items]}
 						<div>
-							<p class="mb-1 px-3 text-xs font-medium uppercase tracking-wide text-gray-400">{group}</p>
+							<p
+								class="mb-1.5 flex items-center gap-2 px-3 text-[11px] font-semibold uppercase tracking-widest text-secondary"
+							>
+								<Icon name={NAV_GROUP_ICONS[group] ?? 'menu'} size="text-[14px]" />
+								{group}
+							</p>
 							<div class="space-y-0.5">
 								{#each items as item}
 									<a
 										href={item.route}
 										onclick={() => (sidebarOpen = false)}
-										class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors"
-										class:bg-indigo-50={active === item.route || active.startsWith(item.route + '/')}
-										class:text-indigo-700={active === item.route || active.startsWith(item.route + '/')}
-										class:text-gray-600={!(active === item.route || active.startsWith(item.route + '/'))}
-										class:hover:bg-gray-100={!(active === item.route || active.startsWith(item.route + '/'))}
+										title={item.label}
+										class="flex items-center gap-3 rounded border-l-2 px-3 py-2.5 text-sm font-medium transition-colors"
+										class:bg-surface-container={active === item.route || active.startsWith(item.route + '/')}
+										class:text-primary={active === item.route || active.startsWith(item.route + '/')}
+										class:border-primary={active === item.route || active.startsWith(item.route + '/')}
+										class:border-transparent={!(active === item.route || active.startsWith(item.route + '/'))}
+										class:text-secondary={!(active === item.route || active.startsWith(item.route + '/'))}
+										class:hover:bg-surface-container-low={!(active === item.route || active.startsWith(item.route + '/'))}
 									>
-										<svg
-											class="h-4 w-4 shrink-0"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-											stroke-width="1.8"
-										>
-											<path stroke-linecap="round" stroke-linejoin="round" d={NAV_ICONS[item.icon]} />
-										</svg>
+										<Icon name={item.icon} size="text-[18px]" />
 										{item.label}
 									</a>
 								{/each}
@@ -131,35 +112,106 @@
 					{/each}
 				</nav>
 
-				<div class="border-t border-gray-100 p-3">
+				<!-- Footer: user + actions -->
+				<div class="mt-auto space-y-1 border-t border-outline-variant p-3">
+					<a
+						href="/settings"
+						onclick={() => (sidebarOpen = false)}
+						class="flex items-center gap-3 rounded border-l-2 border-transparent px-3 py-2.5 text-sm font-medium text-secondary transition-colors hover:bg-surface-container-low"
+						class:bg-surface-container={active.startsWith('/settings')}
+						class:text-primary={active.startsWith('/settings')}
+					>
+						<Icon name="settings" size="text-[18px]" />
+						Settings
+					</a>
 					<div class="flex items-center gap-3 rounded-lg px-3 py-2">
 						<div
-							class="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-xs font-bold text-gray-700"
+							class="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-surface-variant text-xs font-semibold text-on-surface"
 						>
-							{initials(user?.name)}
+							{initials(user?.name ?? merchant.name)}
 						</div>
 						<div class="min-w-0">
-							<p class="truncate text-sm font-medium text-gray-900">{user?.name}</p>
-							<p class="truncate text-xs capitalize text-gray-500">{user?.role}</p>
+							<p class="truncate text-sm font-medium text-on-surface">{user?.name}</p>
+							<p class="truncate text-xs capitalize text-secondary">{user?.role}</p>
 						</div>
-						<button class="ml-auto rounded-lg p-2.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600" onclick={handleLogout} title="Sign out" aria-label="Sign out">
-							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-							</svg>
+						<button
+							class="ml-auto flex h-11 w-11 items-center justify-center rounded text-secondary transition-colors hover:bg-surface-container hover:text-on-surface"
+							onclick={handleLogout}
+							title="Sign out"
+							aria-label="Sign out"
+						>
+							<Icon name="logout" size="text-[18px]" />
 						</button>
 					</div>
 				</div>
 			</aside>
 
 			<!-- Main -->
-			<div class="min-w-0">
-				<header class="sticky top-0 z-10 hidden items-center justify-end gap-4 border-b border-gray-200 bg-white/80 px-6 py-3 backdrop-blur lg:flex">
-					<div class="flex items-center gap-3">
-						<span class="text-xs text-gray-500">Signed in as</span>
-						<span class="text-sm font-medium text-gray-900">{user?.email}</span>
+			<div class="flex min-w-0 flex-col">
+				<!-- Top bar -->
+				<header class="sticky top-0 z-10 flex h-16 items-center justify-between gap-4 border-b border-outline-variant bg-surface px-4 sm:px-container-padding">
+					<div class="flex min-w-0 items-center gap-3">
+						<!-- Mobile toggle -->
+						<button
+							class="flex h-11 w-11 items-center justify-center rounded text-secondary transition-colors hover:bg-surface-container lg:hidden"
+							onclick={() => (sidebarOpen = !sidebarOpen)}
+							aria-label="Toggle navigation"
+						>
+							<Icon name="menu" size="text-[22px]" />
+						</button>
+						<span class="truncate text-headline-sm font-bold tracking-tight text-primary">{merchant.name}</span>
+						{#if session.allowedOutlets.length > 0}
+							<div class="hidden h-6 w-px bg-outline-variant sm:block"></div>
+							{#if session.allowedOutlets.length > 1}
+								<label class="hidden sm:block" for="outlet-select">
+									<span class="sr-only">Outlet</span>
+									<select
+										id="outlet-select"
+										class="rounded border border-outline-variant bg-surface-container-lowest px-3 py-1.5 text-sm text-on-surface focus:outline-2 focus:outline-primary"
+										value={session.selectedOutletId ?? ''}
+										onchange={(e) =>
+											session.switchOutlet((e.currentTarget as HTMLSelectElement).value || null)}
+									>
+										<option value="">All outlets</option>
+										{#each session.allowedOutlets as outlet}
+											<option value={outlet.id}>{outlet.name}</option>
+										{/each}
+									</select>
+								</label>
+							{:else}
+								<span class="hidden items-center gap-2 text-sm text-secondary sm:flex">
+									<Icon name="location_on" size="text-[16px]" />
+									{session.allowedOutlets[0].name}
+								</span>
+							{/if}
+						{/if}
+					</div>
+
+					<div class="flex items-center gap-1.5">
+						<a
+							href="/settings"
+							class="flex h-11 w-11 items-center justify-center rounded text-secondary transition-colors hover:bg-surface-container"
+							title="Settings"
+							aria-label="Settings"
+						>
+							<Icon name="settings" size="text-[18px]" />
+						</a>
+						<a
+							href="/analytics"
+							class="flex h-11 w-11 items-center justify-center rounded text-secondary transition-colors hover:bg-surface-container"
+							title="Analytics"
+							aria-label="Analytics"
+						>
+							<Icon name="insights" size="text-[18px]" />
+						</a>
+						<div class="mx-1 hidden h-8 w-8 items-center justify-center rounded bg-surface-variant text-xs font-semibold text-on-surface lg:flex">
+							{initials(user?.name ?? merchant.name)}
+						</div>
 					</div>
 				</header>
-				<main class="p-4 sm:p-6 lg:p-8">
+
+				<!-- Canvas -->
+				<main class="mx-auto w-full max-w-[1600px] flex-1 p-4 sm:p-container-padding">
 					{@render children?.()}
 				</main>
 			</div>

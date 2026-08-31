@@ -24,16 +24,16 @@
 		}}
 	>
 		<div
-			class="w-full {widthClass[width]} rounded-2xl bg-white shadow-2xl"
+			class="w-full {widthClass[width]} rounded border border-outline-variant bg-surface-container-lowest shadow-2xl"
 			role="dialog"
 			aria-modal="true"
 			aria-label={title ?? 'Dialog'}
 			tabindex="-1"
 		>
-			<div class="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-				<h3 class="text-base font-semibold text-gray-900">{title ?? 'Dialog'}</h3>
+			<div class="flex items-center justify-between border-b border-outline-variant px-5 py-4">
+				<h3 class="text-[15px] font-semibold text-on-surface">{title ?? 'Dialog'}</h3>
 				<button
-					class="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+					class="flex h-9 w-9 items-center justify-center rounded text-secondary hover:bg-surface-container hover:text-on-surface"
 					onclick={() => onClose?.()}
 					aria-label="Close"
 					type="button"

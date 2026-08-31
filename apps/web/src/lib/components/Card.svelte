@@ -11,12 +11,12 @@
 	const titleTag = headingLevel
 </script>
 
-<div class="rounded-xl border border-gray-200 bg-white shadow-sm {className ?? ''}">
+<div class="overflow-hidden rounded border border-outline-variant bg-surface-container-lowest {className ?? ''}">
 	{#if title}
-		<div class="border-b border-gray-100 px-5 py-4">
-			<svelte:element this={titleTag} class="text-base font-semibold text-gray-900">{title}</svelte:element>
+		<div class="border-b border-outline-variant px-5 py-4">
+			<svelte:element this={titleTag} class="text-[15px] font-semibold tracking-tight text-on-surface">{title}</svelte:element>
 			{#if subtitle}
-				<p class="mt-0.5 text-xs text-gray-500">{subtitle}</p>
+				<p class="mt-0.5 text-xs text-secondary">{subtitle}</p>
 			{/if}
 		</div>
 	{/if}

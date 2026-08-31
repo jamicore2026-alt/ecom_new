@@ -12,11 +12,12 @@
 	}>()
 
 	const classes: Record<string, string> = {
-		primary: 'bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:ring-indigo-500 shadow-sm',
+		primary:
+			'bg-primary text-on-primary hover:bg-on-primary-fixed-variant focus-visible:ring-primary',
 		secondary:
-			'bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus-visible:ring-indigo-500',
-		danger: 'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 shadow-sm',
-		ghost: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-gray-400'
+			'bg-white text-on-surface ring-1 ring-inset ring-outline-variant hover:bg-surface-container-low focus-visible:ring-primary',
+		danger: 'bg-error text-on-error hover:bg-on-error-container focus-visible:ring-error',
+		ghost: 'text-secondary hover:bg-surface-container hover:text-on-surface focus-visible:ring-primary'
 	}
 
 	const sizeClasses: Record<string, string> = {
@@ -29,7 +30,7 @@
 	{type}
 	{disabled}
 	{onclick}
-	class="inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 {classes[variant]} {sizeClasses[size]} {className} disabled:opacity-50 disabled:cursor-not-allowed"
+	class="inline-flex items-center justify-center gap-1.5 rounded font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 {classes[variant]} {sizeClasses[size]} {className} disabled:cursor-not-allowed disabled:opacity-50"
 >
 	{#if loading}
 		<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
