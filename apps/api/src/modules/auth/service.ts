@@ -20,7 +20,8 @@ const publicUser = (user: User) => ({
   email: user.email,
   role: user.role,
   permissions: user.permissions,
-  status: user.status
+  status: user.status,
+  isAdmin: user.role === 'owner' || user.role === 'admin'
 })
 
 const publicMerchant = (merchant: Merchant) => ({

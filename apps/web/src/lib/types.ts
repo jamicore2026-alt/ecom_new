@@ -30,6 +30,7 @@ export interface AuthUser {
 	role: 'owner' | 'admin' | 'staff'
 	permissions: string[]
 	status: string
+	isAdmin: boolean
 }
 
 export interface AuthMerchant {

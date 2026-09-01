@@ -30,6 +30,16 @@ export interface AuthContext {
   merchant: Merchant
 }
 
+/**
+ * Minimal identity view needed to attribute audit activity. Deliberately omits
+ * credentials and permissions — the full AuthContext (full DB row) is never
+ * required to just record who did what.
+ */
+export interface AuthIdentity {
+  user: { id: string; name: string }
+  merchant: { id: string }
+}
+
 export const isAdmin = (auth: AuthContext): boolean =>
   auth.user.role === 'owner' || auth.user.role === 'admin'
 

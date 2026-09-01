@@ -45,11 +45,16 @@ interface MeData {
 	enabledModules?: ModuleId[]
 }
 
+/** Canonical frontend admin check — mirrors the server's isAdmin flag. */
+function currentIsAdmin(): boolean {
+	return user?.isAdmin === true
+}
+
 function navVisible(item: NavItem): boolean {
 	if (item.module && !enabledModules.includes(item.module)) return false
 	if (!item.permission) return true
 	if (!user) return false
-	if (user.role === 'owner' || user.role === 'admin') return true
+	if (currentIsAdmin()) return true
 	const perms = Array.isArray(item.permission) ? item.permission : [item.permission]
 	return perms.some((p) => user!.permissions.includes(p))
 }
@@ -107,11 +112,11 @@ export const session = {
 		return !!user && !!getAccessToken()
 	},
 	get isAdmin() {
-		return !!user && (user.role === 'owner' || user.role === 'admin')
+		return !!user && currentIsAdmin()
 	},
 	can(perm: Permission) {
 		if (!user) return false
-		if (user.role === 'owner' || user.role === 'admin') return true
+		if (currentIsAdmin()) return true
 		return user.permissions.includes(perm)
 	},
 	async bootstrap() {

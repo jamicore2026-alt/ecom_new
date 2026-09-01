@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia'
 import { t } from 'elysia'
-import type { AuthContext } from '../../plugins/auth'
+import type { AuthIdentity } from '../../plugins/auth'
 import { authPlugin, requirePermission } from '../../plugins/auth'
 import { AuditService } from './service'
 import { auditQuery } from './model'
@@ -11,7 +11,7 @@ export const auditParams = t.Object({ id: t.String() })
 
 /** Build + fire an audit record from an authenticated request context. */
 export const auditFromRequest = (
-  auth: AuthContext,
+  auth: AuthIdentity,
   request: Request,
   opts: {
     action: string

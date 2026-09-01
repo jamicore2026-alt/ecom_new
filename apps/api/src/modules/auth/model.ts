@@ -20,7 +20,8 @@ export const authUser = t.Object({
   email: t.String(),
   role: t.String(),
   permissions: t.Array(t.String()),
-  status: t.String()
+  status: t.String(),
+  isAdmin: t.Boolean()
 })
 
 export const authMerchant = t.Object({
