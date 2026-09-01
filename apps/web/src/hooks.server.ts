@@ -13,6 +13,7 @@ const PROTECTED_PREFIXES = [
 	'/discounts',
 	'/reviews',
 	'/menu',
+	'/pos',
 	'/food-orders',
 	'/tables',
 	'/kitchen',

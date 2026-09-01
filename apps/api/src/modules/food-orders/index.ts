@@ -7,6 +7,7 @@ import {
   foodOrderCreateBody,
   foodOrderUpdateBody,
   foodOrderStatusBody,
+  foodOrderPayBody,
   foodOrderParams,
   foodOrderQuery
 } from './model'
@@ -40,6 +41,14 @@ export const foodOrdersModule = new Elysia({ prefix: '/api' })
     auditFromRequest(auth, request, { action: 'food_order.update', entityType: 'order', entityId: params.id })
     return result
   }, { params: foodOrderParams, body: foodOrderUpdateBody })
+
+  .use(outletGuard({ module: 'restaurant', permissions: ['payments.create'] }))
+  .post('/food-orders/:id/pay', async ({ params, body, auth, request }) => {
+    const result = await FoodOrdersService.pay(auth.merchant.id, params.id, body.paymentMethod)
+    auditFromRequest(auth, request, { action: 'food_order.payment', entityType: 'order', entityId: params.id, metadata: { paymentMethod: body.paymentMethod ?? null } })
+    return result
+  }, { params: foodOrderParams, body: foodOrderPayBody })
+
   .post('/food-orders/:id/status', async ({ params, body, auth, request }) => {
     const result = await FoodOrdersService.transition(auth.merchant.id, params.id, body.status)
     auditFromRequest(auth, request, { action: 'food_order.status', entityType: 'order', entityId: params.id, metadata: { status: body.status } })

@@ -176,6 +176,13 @@
       "when": 1788160150159,
       "tag": "0024_fuzzy_killer_shrike",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788250351545,
+      "tag": "0025_rare_garia",
+      "breakpoints": true
     }
   ]
 }

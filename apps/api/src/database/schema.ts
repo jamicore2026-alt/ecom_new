@@ -451,6 +451,8 @@ export const orders = pgTable(
       onDelete: 'set null'
     }),
     expiresAt: timestamp('expires_at'),
+    /** Client-generated key so a POS double-submit/retry can never create a duplicate order. */
+    idempotencyKey: varchar('idempotency_key', { length: 80 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
@@ -459,7 +461,11 @@ export const orders = pgTable(
     index('orders_merchant_status_idx').on(t.merchantId, t.status),
     index('orders_merchant_type_status_idx').on(t.merchantId, t.orderType, t.status),
     index('orders_outlet_idx').on(t.outletId),
-    index('orders_warehouse_idx').on(t.warehouseId)
+    index('orders_warehouse_idx').on(t.warehouseId),
+    index('orders_idempotency_idx').on(t.idempotencyKey),
+    uniqueIndex('orders_merchant_idempotency_unique_idx')
+      .on(t.merchantId, t.idempotencyKey)
+      .where(sql`${t.idempotencyKey} IS NOT NULL`)
   ]
 )
 

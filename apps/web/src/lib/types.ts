@@ -615,6 +615,7 @@ export interface MenuItem {
 		sku: string
 		price: number
 		image?: string | null
+		categoryId: string | null
 	}
 	modifierGroups?: MenuModifierGroup[]
 }

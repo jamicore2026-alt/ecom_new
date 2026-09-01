@@ -87,8 +87,26 @@ export class FoodOrdersService {
     items: { menuItemId: string; quantity: number; modifiers?: { modifierId: string; quantity?: number }[] }[]
     notes?: string
     scheduledFor?: string
+    idempotencyKey?: string
   }) {
     if (!isFoodOrderType(input.orderType)) throw badRequest('INVALID_ORDER_TYPE', `${input.orderType} is not a food order type`)
+
+    // Idempotent replay: a POS double-submit/retry carrying the same key returns
+    // the original order instead of creating a duplicate. The (merchant_id,
+    // idempotency_key) unique index is the hard guarantee against concurrent
+    // duplicates; this pre-check covers the common sequential retry.
+    if (input.idempotencyKey) {
+      const [existing] = await db
+        .select({ id: orders.id })
+        .from(orders)
+        .where(
+          and(
+            eq(orders.merchantId, merchantId),
+            eq(orders.idempotencyKey, input.idempotencyKey)
+          )
+        )
+      if (existing) return this.get(merchantId, existing.id)
+    }
 
     const [outlet] = await db.select().from(outlets).where(and(eq(outlets.id, input.outletId), eq(outlets.merchantId, merchantId)))
     if (!outlet) throw notFound('OUTLET_NOT_FOUND', 'Outlet not found')
@@ -126,7 +144,8 @@ export class FoodOrdersService {
         total: 0,
         currency: 'USD',
         notes: input.notes ?? null,
-        scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null
+        scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
+        idempotencyKey: input.idempotencyKey ?? null
       }).returning()
 
       const { subtotal, taxTotal, lines } = this.computeLines(merchantId, order.id, byId, ctx, input.items)
@@ -159,6 +178,35 @@ export class FoodOrdersService {
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
     if (order.status === 'COMPLETED') throw conflict('INVALID_TRANSITION', 'A completed order cannot be cancelled')
     return this.transition(merchantId, id, 'CANCELLED')
+  }
+
+  /**
+   * Record payment for a POS/food order. Only an unpaid order may be paid, and
+   * the flip is atomic (guarded by `WHERE payment_status='unpaid'`) so a
+   * double-click/race can never record two payments. Money totals always come
+   * from the server-computed order; the client only supplies the method.
+   */
+  static async pay(merchantId: string, id: string, paymentMethod?: string) {
+    const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
+    if (!order) throw notFound('NOT_FOUND', 'Food order not found')
+    if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
+    if (['refunded', 'partially_refunded', 'failed'].includes(order.paymentStatus)) {
+      throw conflict('INVALID_TRANSITION', `A ${order.paymentStatus} order cannot be paid`)
+    }
+
+    const values: Partial<typeof orders.$inferSelect> = { paymentStatus: 'paid', expiresAt: null }
+    if (paymentMethod) values.paymentMethod = paymentMethod
+
+    const [paid] = await db
+      .update(orders)
+      .set(values)
+      .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId), eq(orders.paymentStatus, 'unpaid')))
+      .returning()
+
+    if (!paid) throw conflict('ALREADY_PAID', 'This order has already been paid')
+
+    const refetched = await this.get(merchantId, id)
+    return refetched
   }
 
   static async update(merchantId: string, id: string, input: { items?: { menuItemId: string; quantity: number; modifiers?: { modifierId: string; quantity?: number }[] }[]; notes?: string; scheduledFor?: string }) {

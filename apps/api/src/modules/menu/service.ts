@@ -46,7 +46,33 @@ export class MenuService {
       .limit(limit)
       .offset(offset)
 
-    return ok({ items: rows, meta: makeMeta(page, limit, total) })
+    const groupsById = await this.attachGroups(merchantId, rows)
+    const items = groupsById.size
+      ? rows.map((r) => ({ ...r, modifierGroups: groupsById.get(r.id) ?? [] }))
+      : rows
+
+    return ok({ items, meta: makeMeta(page, limit, total) })
+  }
+
+  private static async attachGroups(merchantId: string, items: { id: string }[]) {
+    if (items.length === 0) return new Map<string, (typeof modifierGroups.$inferSelect & { modifiers: (typeof modifiers.$inferSelect)[] })[]>()
+    const menuIds = items.map((i) => i.id)
+    const links = await db
+      .select({ menuItemId: menuItemModifiers.menuItemId, group: modifierGroups, sortOrder: menuItemModifiers.sortOrder })
+      .from(menuItemModifiers)
+      .innerJoin(modifierGroups, eq(menuItemModifiers.modifierGroupId, modifierGroups.id))
+      .where(and(inArray(menuItemModifiers.menuItemId, menuIds), eq(modifierGroups.merchantId, merchantId)))
+      .orderBy(desc(menuItemModifiers.sortOrder))
+    if (links.length === 0) return new Map()
+    const groupIds = [...new Set(links.map((l) => l.group.id))]
+    const mods = await db.select().from(modifiers).where(and(inArray(modifiers.modifierGroupId, groupIds), eq(modifiers.merchantId, merchantId)))
+    const out = new Map<string, (typeof modifierGroups.$inferSelect & { modifiers: (typeof modifiers.$inferSelect)[] })[]>()
+    for (const l of links) {
+      const entry = { ...l.group, modifiers: mods.filter((m) => m.modifierGroupId === l.group.id) }
+      if (!out.has(l.menuItemId)) out.set(l.menuItemId, [])
+      out.get(l.menuItemId)!.push(entry)
+    }
+    return out
   }
 
   static async get(merchantId: string, id: string) {

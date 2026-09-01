@@ -27,7 +27,8 @@ export const foodOrderCreateBody = t.Object({
   notes: t.Optional(t.String({ maxLength: 2000 })),
   scheduledFor: t.Optional(t.String()),
   customerName: t.Optional(t.String({ maxLength: 120 })),
-  customerPhone: t.Optional(t.String({ maxLength: 30 }))
+  customerPhone: t.Optional(t.String({ maxLength: 30 })),
+  idempotencyKey: t.Optional(t.String({ maxLength: 80 }))
 })
 
 export const foodOrderUpdateBody = t.Partial(
@@ -47,6 +48,11 @@ export const foodOrderStatusBody = t.Object({
     COMPLETED: 'COMPLETED',
     CANCELLED: 'CANCELLED'
   })
+})
+
+/** POS payment capture — only the payment method is client-supplied; money totals stay server-computed. */
+export const foodOrderPayBody = t.Object({
+  paymentMethod: t.Optional(t.String({ maxLength: 50 }))
 })
 
 export const foodOrderParams = t.Object({ id: t.String() })
