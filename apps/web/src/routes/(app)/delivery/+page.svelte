@@ -369,7 +369,7 @@
 </div>
 
 {#if selected && canAssign}
-	<Modal title={`Delivery #${selected.orderNumber}`} onClose={() => (selected = null)}>
+	<Modal open={true} title={`Delivery #${selected.orderNumber}`} onClose={() => (selected = null)}>
 		<div class="space-y-4">
 			<div class="flex flex-wrap items-center gap-2">
 				<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[selected.status]}">{selected.status}</span>
@@ -428,7 +428,7 @@
 {/if}
 
 {#if showNew && canAssign}
-	<Modal title="New delivery" onClose={() => (showNew = false)}>
+	<Modal open={true} title="New delivery" onClose={() => (showNew = false)}>
 		<div class="space-y-4">
 			<div>
 				<label for="dl-order" class="field-label">Order id</label>
@@ -447,7 +447,7 @@
 {/if}
 
 {#if showZone && canManageZones}
-	<Modal title="Add delivery zone" onClose={() => (showZone = false)}>
+	<Modal open={true} title="Add delivery zone" onClose={() => (showZone = false)}>
 		<div class="space-y-4">
 			<div>
 				<label for="zn-name" class="field-label">Zone name</label>

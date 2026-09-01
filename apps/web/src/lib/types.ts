@@ -1098,6 +1098,47 @@ export interface LoyaltyOverview {
 	tiers: LoyaltyTierCount[]
 }
 
+export interface LoyaltyTier {
+	id: string
+	merchantId: string
+	name: string
+	minPoints: number
+	perks: Record<string, unknown>
+	isDefault: boolean
+	status: string
+	memberCount?: number
+	createdAt: string
+	updatedAt: string
+}
+
+export interface LoyaltyEarningRule {
+	id: string
+	merchantId: string
+	name: string
+	trigger: string
+	awardType: string
+	awardValue: number
+	enabled: boolean
+	triggerCount: number
+	createdAt: string
+	updatedAt: string
+}
+
+export type RewardType = 'product' | 'discount' | 'experience'
+
+export interface LoyaltyReward {
+	id: string
+	merchantId: string
+	name: string
+	description: string | null
+	type: RewardType | string
+	pointsCost: number
+	status: string
+	stock: number | null
+	createdAt: string
+	updatedAt: string
+}
+
 export type TransferStatus = 'pending' | 'in_transit' | 'completed' | 'cancelled'
 
 export interface StockTransfer {

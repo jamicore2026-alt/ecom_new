@@ -216,7 +216,7 @@
 </div>
 
 {#if showCreate && canWrite}
-	<Modal onClose={() => (showCreate = false)}>
+	<Modal open={true} onClose={() => (showCreate = false)}>
 		<h2 class="mb-4 text-lg font-semibold text-on-surface">Add a product to the menu</h2>
 		<div class="space-y-4">
 			<div>

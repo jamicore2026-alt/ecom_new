@@ -256,7 +256,7 @@
 </div>
 
 {#if selected}
-	<Modal title={`Order ${selected.orderNumber}`} onClose={() => (selected = null)}>
+	<Modal open={true} title={`Order ${selected.orderNumber}`} onClose={() => (selected = null)}>
 		<div class="space-y-4">
 			<div class="flex items-center justify-between">
 				<div class="flex items-center gap-2">
@@ -306,7 +306,7 @@
 {/if}
 
 {#if showNew && canWrite}
-	<Modal title="New food order" onClose={() => (showNew = false)}>
+	<Modal open={true} title="New food order" onClose={() => (showNew = false)}>
 		<div class="space-y-4">
 			<div class="flex gap-4">
 				<div class="flex-1">

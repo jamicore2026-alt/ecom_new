@@ -1468,6 +1468,56 @@ export const loyaltyLedger = pgTable(
   ]
 )
 
+export const loyaltyTiers = pgTable(
+  'loyalty_tiers',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 50 }).notNull(),
+    minPoints: integer('min_points').notNull().default(0),
+    perks: jsonb('perks').notNull().default({}),
+    isDefault: boolean('is_default').notNull().default(false),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [index('loyalty_tiers_merchant_idx').on(t.merchantId)]
+)
+
+export const loyaltyEarningRules = pgTable(
+  'loyalty_earning_rules',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 100 }).notNull(),
+    trigger: varchar('trigger', { length: 50 }).notNull(),
+    awardType: varchar('award_type', { length: 20 }).notNull().default('points'),
+    awardValue: integer('award_value').notNull().default(0),
+    enabled: boolean('enabled').notNull().default(true),
+    triggerCount: integer('trigger_count').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [index('loyalty_rules_merchant_idx').on(t.merchantId)]
+)
+
+export const loyaltyRewards = pgTable(
+  'loyalty_rewards',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 150 }).notNull(),
+    description: text('description'),
+    type: varchar('type', { length: 20 }).notNull().default('product'),
+    pointsCost: integer('points_cost').notNull().default(0),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    stock: integer('stock'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [index('loyalty_rewards_merchant_status_idx').on(t.merchantId, t.status)]
+)
+
 /* ------------------------------ affiliates ------------------------------ */
 
 export const affiliates = pgTable(
@@ -1737,6 +1787,9 @@ export const table = {
   customerSegments,
   loyaltyAccounts,
   loyaltyLedger,
+  loyaltyTiers,
+  loyaltyEarningRules,
+  loyaltyRewards,
   affiliates,
   referrals,
   contentPages,
@@ -1858,6 +1911,12 @@ export type LoyaltyAccount = typeof loyaltyAccounts.$inferSelect
 export type NewLoyaltyAccount = typeof loyaltyAccounts.$inferInsert
 export type LoyaltyEntry = typeof loyaltyLedger.$inferSelect
 export type NewLoyaltyEntry = typeof loyaltyLedger.$inferInsert
+export type LoyaltyTier = typeof loyaltyTiers.$inferSelect
+export type NewLoyaltyTier = typeof loyaltyTiers.$inferInsert
+export type LoyaltyEarningRule = typeof loyaltyEarningRules.$inferSelect
+export type NewLoyaltyEarningRule = typeof loyaltyEarningRules.$inferInsert
+export type LoyaltyReward = typeof loyaltyRewards.$inferSelect
+export type NewLoyaltyReward = typeof loyaltyRewards.$inferInsert
 export type Affiliate = typeof affiliates.$inferSelect
 export type NewAffiliate = typeof affiliates.$inferInsert
 export type Referral = typeof referrals.$inferSelect

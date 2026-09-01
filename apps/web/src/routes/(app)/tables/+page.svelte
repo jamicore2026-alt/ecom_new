@@ -258,7 +258,7 @@
 </div>
 
 {#if selected}
-	<Modal title={`${selected.name} — ${selected.status}`} onClose={() => (selected = null)}>
+	<Modal open={true} title={`${selected.name} — ${selected.status}`} onClose={() => (selected = null)}>
 		<div class="space-y-4">
 			<div class="flex items-center justify-between text-sm text-on-surface-variant">
 				<span>{selected.code} · {selected.seats} seats</span>
@@ -316,7 +316,7 @@
 {/if}
 
 {#if showSeat && selected && !selected.openSession}
-	<Modal title={`Seat ${selected.name}`} onClose={() => (showSeat = false)}>
+	<Modal open={true} title={`Seat ${selected.name}`} onClose={() => (showSeat = false)}>
 		<div class="space-y-4">
 			<label for="seat-guests-2" class="field-label">Guests</label>
 			<input id="seat-guests-2" class="field" bind:value={seatGuests} type="number" min="1" max={selected.seats} />
@@ -328,7 +328,7 @@
 {/if}
 
 {#if showQr && qr}
-	<Modal title="Table QR" onClose={() => (showQr = false)} width="sm">
+	<Modal open={true} title="Table QR" onClose={() => (showQr = false)} width="sm">
 		<div class="space-y-3 text-center">
 			<div class="mx-auto flex h-40 w-40 items-center justify-center rounded-lg bg-surface-container-low text-4xl text-on-surface-variant" aria-hidden="true">▦</div>
 			<p class="break-all text-xs text-secondary">{qr.url}</p>
@@ -338,7 +338,7 @@
 {/if}
 
 {#if showCreate && canManage}
-	<Modal title="Manage floor" onClose={() => (showCreate = false)}>
+	<Modal open={true} title="Manage floor" onClose={() => (showCreate = false)}>
 		<div class="space-y-6">
 			<div>
 				<label for="cr-outlet" class="field-label">Outlet</label>

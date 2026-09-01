@@ -235,7 +235,7 @@
 </div>
 
 {#if selected && canManage}
-	<Modal title={`Ticket #${selected.orderNumber} — ${selected.stationName}`} onClose={() => (selected = null)}>
+	<Modal open={true} title={`Ticket #${selected.orderNumber} — ${selected.stationName}`} onClose={() => (selected = null)}>
 		<div class="space-y-4">
 			<div class="flex flex-wrap items-center gap-2">
 				<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[selected.status]}">{selected.status}</span>
@@ -284,7 +284,7 @@
 {/if}
 
 {#if showManage && canManage}
-	<Modal title="Manage stations" onClose={() => (showManage = false)}>
+	<Modal open={true} title="Manage stations" onClose={() => (showManage = false)}>
 		<div class="space-y-4">
 			<div>
 				<label for="mk-outlet" class="field-label">Outlet</label>
