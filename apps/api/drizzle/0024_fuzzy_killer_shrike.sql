@@ -41,5 +41,4 @@ ALTER TABLE "loyalty_rewards" ADD CONSTRAINT "loyalty_rewards_merchant_id_mercha
 ALTER TABLE "loyalty_tiers" ADD CONSTRAINT "loyalty_tiers_merchant_id_merchants_id_fk" FOREIGN KEY ("merchant_id") REFERENCES "public"."merchants"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "loyalty_rules_merchant_idx" ON "loyalty_earning_rules" USING btree ("merchant_id");--> statement-breakpoint
 CREATE INDEX "loyalty_rewards_merchant_status_idx" ON "loyalty_rewards" USING btree ("merchant_id","status");--> statement-breakpoint
-CREATE INDEX "loyalty_tiers_merchant_idx" ON "loyalty_tiers" USING btree ("merchant_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "refunds_merchant_idempotency_unique_idx" ON "refunds" USING btree ("merchant_id","idempotency_key");
+CREATE INDEX "loyalty_tiers_merchant_idx" ON "loyalty_tiers" USING btree ("merchant_id");
