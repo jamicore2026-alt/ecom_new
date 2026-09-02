@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { cart } from '$lib/cart.svelte'
 	import { account } from '$lib/account.svelte'
+	import { handleImageError } from '$lib/format'
 	import type { Category, StoreInfo } from '$lib/types'
 
 	interface Props {
@@ -34,6 +35,7 @@
 					src={store.settings.logo}
 					alt={store.settings.name}
 					class="h-9 w-9 rounded-full object-cover"
+					onerror={handleImageError}
 				/>
 			{:else}
 				<span

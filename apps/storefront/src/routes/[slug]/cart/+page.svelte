@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cart } from '$lib/cart.svelte'
-	import { money, placeholderImage } from '$lib/format'
+	import { money, placeholderImage, handleImageError } from '$lib/format'
 	import type { PageProps } from './$types'
 
 	let { data }: PageProps = $props()
@@ -41,6 +41,7 @@
 									src={line.image ?? placeholderImage()}
 									alt={line.name}
 									class="h-20 w-20 rounded-lg border border-gray-200 object-cover"
+									onerror={handleImageError}
 								/>
 							</div>
 							<div class="flex flex-1 flex-col justify-between">

@@ -9,7 +9,7 @@
 	import Modal from '$lib/components/Modal.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import Icon from '$lib/components/Icon.svelte'
-	import { currency, dateTime, number } from '$lib/format'
+	import { currency, dateTime, number, handleImageError } from '$lib/format'
 	import type { Category, PaginationMeta, Product, ProductListItem } from '$lib/types'
 	import CreateEditProduct from './CreateEditProduct.svelte'
 	import CategoriesManager from './CategoriesManager.svelte'
@@ -273,7 +273,7 @@
 									<div class="flex items-center gap-3">
 										<div class="h-9 w-9 shrink-0 overflow-hidden rounded border border-outline-variant bg-surface-container-low">
 											{#if p.primaryImage}
-												<img src={p.primaryImage} alt="" class="h-full w-full object-cover" />
+												<img src={p.primaryImage} alt="" class="h-full w-full object-cover" onerror={handleImageError} />
 											{/if}
 										</div>
 										<div>

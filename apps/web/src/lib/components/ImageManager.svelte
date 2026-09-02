@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api'
 	import { toast } from '$lib/toast.svelte'
+	import { handleImageError } from '$lib/format'
 	import type { ProductImage } from '$lib/types'
 
 	let {
@@ -59,7 +60,7 @@
 		{#each images as img, i (img.url + String(i))}
 			<div class="group relative w-24">
 				<div class="h-24 w-24 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-					<img src={img.url} alt={img.altText ?? ''} class="h-full w-full object-cover" />
+					<img src={img.url} alt={img.altText ?? ''} class="h-full w-full object-cover" onerror={handleImageError} />
 					{#if i === 0}
 						<span class="absolute top-1 left-1 rounded bg-gray-900/80 px-1.5 py-0.5 text-[10px] font-medium text-white">Cover</span>
 					{/if}

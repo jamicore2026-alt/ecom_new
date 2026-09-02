@@ -7,7 +7,7 @@
 	import Badge from '$lib/components/Badge.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import ImageManager from '$lib/components/ImageManager.svelte'
-	import { currency, dateTimeFull, number } from '$lib/format'
+	import { currency, dateTimeFull, number, handleImageError } from '$lib/format'
 	import type { ProductDetail, ProductImage, ProductVariant } from '$lib/types'
 	import { page } from '$app/state'
 
@@ -212,7 +212,7 @@
 										<tr class="border-b border-gray-50 hover:bg-gray-50/60">
 											<td class="px-5 py-3">
 												{#if v.image}
-													<img src={v.image} alt="" class="mr-2 inline h-8 w-8 rounded object-cover" />
+													<img src={v.image} alt="" class="mr-2 inline h-8 w-8 rounded object-cover" onerror={handleImageError} />
 												{/if}
 												{#if Object.keys(v.optionValues ?? {}).length}
 													<span class="text-gray-700">

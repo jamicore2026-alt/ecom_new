@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { ProductSummary } from '$lib/types'
-	import { money, inStock, placeholderImage } from '$lib/format'
+	import { money, inStock, placeholderImage, handleImageError } from '$lib/format'
 
 	interface Props {
 		product: ProductSummary
@@ -23,6 +23,7 @@
 			alt={product.name}
 			class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
 			loading="lazy"
+			onerror={handleImageError}
 		/>
 		{#if product.compareAtPrice && product.compareAtPrice > product.price}
 			<span

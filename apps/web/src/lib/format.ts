@@ -55,3 +55,12 @@ export const titleCase = (s: string) =>
 		.join(' ')
 
 export const pct = (n: number | null | undefined) => `${(n ?? 0).toFixed(1)}%`
+
+export const placeholderImage = () => '/images/placeholder.svg'
+
+export const handleImageError = (e: { currentTarget: EventTarget }) => {
+	const img = e.currentTarget as HTMLImageElement
+	if (!img || img.dataset.fallback) return
+	img.dataset.fallback = '1'
+	if (img.src !== placeholderImage()) img.src = placeholderImage()
+}

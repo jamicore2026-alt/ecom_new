@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { app } from '../src/app'
 import { db } from '../src/database/client'
-import { customers, loyaltyAccounts, loyaltyLedger, merchants } from '../src/database/schema'
+import { loyaltyAccounts, loyaltyLedger, merchants } from '../src/database/schema'
 
 const call = async (path: string, init?: RequestInit) => {
   const res = await app.handle(new Request(`http://localhost${path}`, init))

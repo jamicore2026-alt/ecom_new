@@ -5,7 +5,7 @@
 	import { ApiError, storefrontApi } from '$lib/api'
 	import { cart } from '$lib/cart.svelte'
 	import { account } from '$lib/account.svelte'
-	import { money, placeholderImage } from '$lib/format'
+	import { money, placeholderImage, handleImageError } from '$lib/format'
 	import { track } from '$lib/analytics'
 	import type { CheckoutSummary } from '$lib/types'
 	import type { PageProps } from './$types'
@@ -426,6 +426,7 @@
 									src={line.image ?? placeholderImage()}
 									alt={line.name}
 									class="h-14 w-14 rounded-lg border border-gray-200 object-cover"
+									onerror={handleImageError}
 								/>
 								<span
 									class="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-gray-900 px-1 text-[10px] font-bold text-white"

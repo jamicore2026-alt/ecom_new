@@ -3,7 +3,7 @@
 	import { cart } from '$lib/cart.svelte'
 	import { account } from '$lib/account.svelte'
 	import { storefrontApi } from '$lib/api'
-	import { money, inStock, placeholderImage } from '$lib/format'
+	import { money, inStock, placeholderImage, handleImageError } from '$lib/format'
 	import { track } from '$lib/analytics'
 	import { absoluteImageUrl, metaDescription, siteUrl } from '$lib/seo'
 	import { untrack } from 'svelte'
@@ -259,7 +259,7 @@
 	<div class="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-2">
 	<div class="space-y-3">
 		<div class="aspect-square overflow-hidden rounded-2xl border border-gray-200 bg-gray-100">
-			<img src={mainImage ?? placeholderImage()} alt={product.name} class="h-full w-full object-cover" />
+			<img src={mainImage ?? placeholderImage()} alt={product.name} class="h-full w-full object-cover" onerror={handleImageError} />
 		</div>
 		{#if gallery.length > 1}
 			<div class="flex flex-wrap gap-2">
@@ -271,7 +271,7 @@
 						onclick={() => (activeImage = i)}
 						aria-label={`View image ${i + 1}`}
 					>
-						<img src={img} alt="" class="h-full w-full object-cover" />
+						<img src={img} alt="" class="h-full w-full object-cover" onerror={handleImageError} />
 					</button>
 				{/each}
 			</div>

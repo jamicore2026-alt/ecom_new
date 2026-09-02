@@ -2,7 +2,7 @@
 	import { ApiError } from '$lib/api'
 	import { account } from '$lib/account.svelte'
 	import { cart } from '$lib/cart.svelte'
-	import { money } from '$lib/format'
+	import { money, handleImageError } from '$lib/format'
 	import type { WishListItem } from '$lib/types'
 	import type { PageProps } from './$types'
 
@@ -108,7 +108,7 @@
 					<li class="flex overflow-hidden rounded-2xl border border-gray-200 bg-white transition hover:border-indigo-300 hover:shadow-sm">
 						<a href={`/${slug}/products/${item.slug}`} class="w-24 shrink-0 bg-gray-100 sm:w-28">
 							{#if item.image}
-								<img src={item.image} alt={item.name} class="h-full w-full object-cover" loading="lazy" />
+								<img src={item.image} alt={item.name} class="h-full w-full object-cover" loading="lazy" onerror={handleImageError} />
 							{:else}
 								<span class="flex h-full w-full items-center justify-center text-xl text-gray-300">✦</span>
 							{/if}

@@ -9,7 +9,7 @@
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
-	import { currency, dateTime, dateTimeFull, number, titleCase } from '$lib/format'
+	import { currency, dateTime, dateTimeFull, number, titleCase, handleImageError } from '$lib/format'
 	import type { InventoryHistoryRow, InventoryRow, PaginationMeta } from '$lib/types'
 
 	type Tab = 'all' | 'low' | 'out' | 'history'
@@ -215,7 +215,7 @@
 								</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">
 									{#if it.image}
-										<img src={it.image} alt="" class="mr-2 inline h-7 w-7 rounded object-cover" />
+										<img src={it.image} alt="" class="mr-2 inline h-7 w-7 rounded object-cover" onerror={handleImageError} />
 									{/if}
 									{#if Object.keys(it.optionValues ?? {}).length}
 										{Object.entries(it.optionValues).map(([k, v]) => `${k}: ${v}`).join(', ')}
