@@ -8,6 +8,7 @@
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import { currency } from '$lib/format'
+	import { t } from '$lib/i18n'
 	import type { FoodOrder, MenuItem, MenuModifierGroup } from '$lib/types'
 
 	// One-time idempotency key per logical sale — reused across retries so a
@@ -220,7 +221,7 @@
 	})
 </script>
 
-<svelte:head><title>POS — Merchant OS</title></svelte:head>
+<svelte:head><title>{t('pos.title')} — Merchant OS</title></svelte:head>
 
 <div class="space-y-6">
 	<div class="mb-4 flex flex-col justify-between gap-4 md:flex-row md:items-center">
@@ -346,11 +347,11 @@
 
 				<div class="mt-4 space-y-3">
 					<div>
-						<label for="pos-customer" class="field-label">Customer (optional)</label>
+						<label for="pos-customer" class="field-label">{t('pos.customer')}</label>
 						<input id="pos-customer" class="field" bind:value={customerName} placeholder="Walk-in guest" />
 					</div>
 					<div>
-						<label for="pos-notes" class="field-label">Notes (optional)</label>
+						<label for="pos-notes" class="field-label">{t('pos.notes')}</label>
 						<input id="pos-notes" class="field" bind:value={notes} placeholder="Special instructions" />
 					</div>
 				</div>
@@ -400,14 +401,14 @@
 {/if}
 
 {#if completing}
-	<Modal open={true} title="Payment" onClose={() => { if (!placing) completing = false }} width="sm">
+	<Modal open={true} title={t('pos.payment')} onClose={() => { if (!placing) completing = false }} width="sm">
 		<div class="space-y-4">
 			<div class="flex items-center justify-between rounded border border-outline-variant bg-surface-container-lowest p-3">
 				<span class="text-sm text-secondary">Total due</span>
 				<span class="font-mono-label text-mono-label text-on-surface">{currency(cartTotal())}</span>
 			</div>
 			<div>
-				<label for="pos-pay-method" class="field-label">Payment method</label>
+				<label for="pos-pay-method" class="field-label">{t('pos.paymentMethod')}</label>
 				<select id="pos-pay-method" class="field" bind:value={paymentMethod}>
 					<option value="card">Card</option>
 					<option value="cash">Cash</option>

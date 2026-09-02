@@ -4,6 +4,7 @@
 	import { account } from '$lib/account.svelte'
 	import { storefrontApi } from '$lib/api'
 	import { money, inStock, placeholderImage, handleImageError } from '$lib/format'
+	import { t } from '$lib/i18n'
 	import { track } from '$lib/analytics'
 	import { absoluteImageUrl, metaDescription, siteUrl } from '$lib/seo'
 	import { untrack } from 'svelte'
@@ -18,7 +19,7 @@
 		`${siteUrl(data.origin)}/${data.slug}/products/${product.slug}`
 	)
 	const ogImage = $derived(absoluteImageUrl(product.images?.[0] ?? product.image, data.origin))
-	const description = $derived(metaDescription(product.description, `Buy ${product.name} at ${store.settings.name}.`))
+	const description = $derived(metaDescription(product.description, t('product.buyMeta', { product: product.name, store: store.settings.name })))
 
 	const optionNames = $derived(
 		product.variants.length > 1
@@ -144,7 +145,7 @@
 			optionValues: variant?.optionValues ?? {},
 			quantity
 		})
-		notice = `Added ${quantity} × ${product.name} to cart`
+		notice = t('product.addedToCart', { qty: quantity, name: product.name })
 		quantity = 1
 		setTimeout(() => (notice = ''), 3500)
 	}
@@ -176,7 +177,7 @@
 		event.preventDefault()
 		reviewError = ''
 		if (!formRating) {
-			reviewError = 'Pick a star rating first'
+			reviewError = t('product.reviewRatingFirst')
 			return
 		}
 		submittingReview = true
@@ -191,10 +192,10 @@
 			formBody = ''
 			reviewNotice =
 				result.status === 'approved'
-					? 'Thanks! Your review is live.'
-					: 'Thanks! Your review was submitted and will appear once the store approves it.'
+					? t('product.reviewLive')
+					: t('product.reviewPending')
 		} catch (e) {
-			reviewError = e instanceof Error ? e.message : 'Could not submit your review'
+			reviewError = e instanceof Error ? e.message : t('product.reviewSubmitFailed')
 		} finally {
 			submittingReview = false
 		}
@@ -212,7 +213,7 @@
 			}
 		} catch (e) {
 			if (account.isAuthError(e)) account.logout()
-			else wishError = e instanceof Error ? e.message : 'Could not update your wishlist'
+			else wishError = e instanceof Error ? e.message : t('product.wishlistFailed')
 		} finally {
 			wishBusy = false
 		}
@@ -243,9 +244,9 @@
 
 <div class="mx-auto max-w-7xl px-4 py-10">
 	<nav class="text-sm text-gray-500">
-		<a href={`/${data.slug}`} class="hover:text-gray-900">Home</a>
+		<a href={`/${data.slug}`} class="hover:text-gray-900">{t('navigation.home')}</a>
 		<span class="mx-2">/</span>
-		<a href={`/${data.slug}/products`} class="hover:text-gray-900">Shop</a>
+		<a href={`/${data.slug}/products`} class="hover:text-gray-900">{t('navigation.shop')}</a>
 		{#if product.category}
 			<span class="mx-2">/</span>
 			<a href={`/${data.slug}/categories/${product.category.slug}`} class="hover:text-gray-900">
@@ -269,7 +270,7 @@
 						class="h-16 w-16 overflow-hidden rounded-lg border-2 transition
 							{mainImage === img ? 'border-indigo-600' : 'border-gray-200 hover:border-gray-300'}"
 						onclick={() => (activeImage = i)}
-						aria-label={`View image ${i + 1}`}
+						aria-label={t('product.viewImage', { n: i + 1 })}
 					>
 						<img src={img} alt="" class="h-full w-full object-cover" onerror={handleImageError} />
 					</button>
@@ -284,7 +285,7 @@
 			{#if product.rating && product.rating.count > 0}
 				<a href="#reviews" class="flex items-center gap-2 text-sm">
 					<span class="text-amber-500" aria-hidden="true">{starString(product.rating.average)}</span>
-					<span class="text-gray-500">{product.rating.average} · {product.rating.count} review{product.rating.count === 1 ? '' : 's'}</span>
+					<span class="text-gray-500">{product.rating.average} · {product.rating.count} {product.rating.count === 1 ? t('product.review') : t('product.reviews')}</span>
 				</a>
 			{/if}
 
@@ -323,7 +324,7 @@
 						type="button"
 						class="px-3 py-2 text-gray-600 hover:text-gray-900"
 						onclick={() => (quantity = Math.max(1, quantity - 1))}
-						aria-label="Decrease quantity"
+						aria-label={t('product.decreaseQty')}
 					>
 						−
 					</button>
@@ -332,7 +333,7 @@
 						type="button"
 						class="px-3 py-2 text-gray-600 hover:text-gray-900"
 						onclick={() => (quantity = quantity + 1)}
-						aria-label="Increase quantity"
+						aria-label={t('product.increaseQty')}
 					>
 						+
 					</button>
@@ -344,7 +345,7 @@
 					disabled={!available}
 					onclick={addToCart}
 				>
-					{available ? 'Add to cart' : 'Out of stock'}
+					{available ? t('product.addToCart') : t('product.outOfStock')}
 				</button>
 
 				{#if accountReady && account.signedIn}
@@ -357,7 +358,7 @@
 							disabled:cursor-not-allowed disabled:opacity-50"
 						disabled={wishBusy}
 						aria-pressed={account.isWishlisted(product.id)}
-						aria-label={account.isWishlisted(product.id) ? 'Remove from wishlist' : 'Save to wishlist'}
+						aria-label={account.isWishlisted(product.id) ? t('product.removeFromWishlist') : t('product.addToWishlist')}
 						onclick={toggleWishlist}
 					>
 						{account.isWishlisted(product.id) ? '♥' : '♡'}
@@ -371,9 +372,9 @@
 
 			<p class="text-sm {available ? 'text-green-600' : 'text-red-600'}">
 				{#if available}
-					{stock > 0 ? `${stock} available` : 'In stock'}
+					{stock > 0 ? t('product.xAvailable', { stock }) : t('product.inStock')}
 				{:else}
-					Out of stock
+					{t('product.outOfStock')}
 				{/if}
 			</p>
 
@@ -383,7 +384,7 @@
 
 			{#if product.description}
 				<div class="border-t border-gray-200 pt-5">
-					<h2 class="mb-2 text-sm font-semibold text-gray-900">Description</h2>
+					<h2 class="mb-2 text-sm font-semibold text-gray-900">{t('product.description')}</h2>
 					<p class="whitespace-pre-line text-sm leading-relaxed text-gray-600">{product.description}</p>
 				</div>
 			{/if}
@@ -395,7 +396,7 @@
 	</div>
 
 	<section id="reviews" class="mt-16 scroll-mt-24">
-		<h2 class="text-2xl font-bold text-gray-900">Reviews</h2>
+		<h2 class="text-2xl font-bold text-gray-900">{t('product.orders')}</h2>
 
 		<div class="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-5">
 			<div class="lg:col-span-2">
@@ -404,23 +405,23 @@
 						<p class="text-4xl font-bold text-gray-900">{product.rating.average}</p>
 						<p class="mt-1 text-amber-500" aria-hidden="true">{starString(product.rating.average)}</p>
 						<p class="mt-1 text-sm text-gray-500">
-							Based on {product.rating.count} review{product.rating.count === 1 ? '' : 's'}
+							{t('product.basedOn', { count: product.rating.count })}
 						</p>
 					{:else}
-						<p class="text-sm text-gray-500">No reviews yet — be the first to review this product.</p>
+						<p class="text-sm text-gray-500">{t('product.noReviewsYet')}</p>
 					{/if}
 
 					<div class="mt-6 border-t border-gray-100 pt-5">
 						{#if accountReady && account.signedIn && account.customer}
-							<h3 class="text-sm font-semibold text-gray-900">Write a review</h3>
+							<h3 class="text-sm font-semibold text-gray-900">{t('product.writeReview')}</h3>
 							<form class="mt-3 space-y-3" onsubmit={submitReview}>
-								<div class="flex items-center gap-1" role="radiogroup" aria-label="Your rating">
+								<div class="flex items-center gap-1" role="radiogroup" aria-label={t('product.yourRating')}>
 									{#each [1, 2, 3, 4, 5] as starValue (starValue)}
 										<button
 											type="button"
 											role="radio"
 											aria-checked={formRating === starValue}
-											aria-label={`${starValue} star${starValue === 1 ? '' : 's'}`}
+											aria-label={t('product.stars', { n: starValue })}
 											class="text-2xl leading-none transition {formRating >= starValue
 												? 'text-amber-500'
 												: 'text-gray-300 hover:text-amber-400'}"
@@ -433,14 +434,14 @@
 								<input
 									type="text"
 									bind:value={formTitle}
-									placeholder="Headline (optional)"
+									placeholder={t('product.reviewHeadline')}
 									maxlength="255"
 									class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 								/>
 								<textarea
 									bind:value={formBody}
 									rows="3"
-									placeholder="What did you like or dislike? (optional)"
+									placeholder={t('product.reviewBody')}
 									class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 								></textarea>
 								{#if reviewError}
@@ -451,19 +452,19 @@
 									disabled={submittingReview}
 									class="w-full rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
 								>
-									{submittingReview ? 'Submitting…' : 'Submit review'}
+									{submittingReview ? t('common.loading') : t('product.submitReview')}
 								</button>
 							</form>
 							{#if reviewNotice}
 								<p class="mt-3 rounded-lg bg-green-50 px-4 py-3 text-sm font-medium text-green-800">{reviewNotice}</p>
 							{/if}
 							<p class="mt-2 text-xs text-gray-400">
-								Reviews are published after the store approves them.
+								{t('product.reviewApproval')}
 							</p>
 						{:else if accountReady}
 							<p class="text-sm text-gray-500">
-								<a href={`/${data.slug}/account`} class="font-medium text-indigo-600 hover:text-indigo-700">Sign in</a>
-								to write a review.
+								<a href={`/${data.slug}/account`} class="font-medium text-indigo-600 hover:text-indigo-700">{t('navigation.signIn')}</a>
+								{t('product.toWriteReview')}
 							</p>
 						{/if}
 					</div>
@@ -473,7 +474,7 @@
 			<div class="lg:col-span-3">
 				{#if reviews.length === 0}
 					<p class="rounded-2xl border border-dashed border-gray-200 px-6 py-12 text-center text-sm text-gray-400">
-						Questions about this product? Contact the store directly.
+						{t('product.contactStore')}
 					</p>
 				{:else}
 					<ul class="space-y-4">
@@ -484,7 +485,7 @@
 									<span class="text-sm font-medium text-gray-900">{review.title ?? ''}</span>
 									{#if review.verifiedPurchase}
 										<span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-											Verified purchase
+											{t('product.verifiedPurchase')}
 										</span>
 									{/if}
 									<span class="ml-auto text-xs text-gray-400">{formatDate(review.createdAt)}</span>
@@ -503,7 +504,7 @@
 							disabled={loadingMore}
 							onclick={loadMoreReviews}
 						>
-							{loadingMore ? 'Loading…' : 'Load more reviews'}
+							{loadingMore ? t('common.loading') : t('product.loadMoreReviews')}
 						</button>
 					{/if}
 				{/if}
@@ -513,7 +514,7 @@
 
 	{#if product.related.length}
 		<section class="mt-16">
-			<h2 class="mb-6 text-2xl font-bold text-gray-900">You may also like</h2>
+			<h2 class="mb-6 text-2xl font-bold text-gray-900">{t('product.alsoLike')}</h2>
 			<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
 				{#each product.related as related (related.id)}
 					<ProductCard product={related} storeSlug={data.slug} currency={store.merchant.currency} />

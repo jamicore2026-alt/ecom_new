@@ -2,6 +2,7 @@
 	import { cart } from '$lib/cart.svelte'
 	import { account } from '$lib/account.svelte'
 	import { handleImageError } from '$lib/format'
+	import { i18n, t } from '$lib/i18n'
 	import type { Category, StoreInfo } from '$lib/types'
 
 	interface Props {
@@ -13,6 +14,10 @@
 	let { slug, store, categories }: Props = $props()
 
 	let menuOpen = $state(false)
+
+	function cycleLocale() {
+		i18n.setLocale(i18n.locale === 'ar' ? 'en' : 'ar')
+	}
 
 	$effect(() => {
 		cart.setSlug(slug)
@@ -50,11 +55,11 @@
 		</a>
 
 		<nav class="hidden items-center gap-6 text-sm font-medium text-gray-700 lg:flex">
-			<a href={`/${slug}`} class="hover:text-gray-900">Home</a>
-			<a href={`/${slug}/products`} class="hover:text-gray-900">Shop</a>
+			<a href={`/${slug}`} class="hover:text-gray-900">{t('navigation.home')}</a>
+			<a href={`/${slug}/products`} class="hover:text-gray-900">{t('navigation.shop')}</a>
 			{#if categories.length}
 				<div class="group relative">
-					<button class="cursor-pointer hover:text-gray-900">Categories</button>
+					<button class="cursor-pointer hover:text-gray-900">{t('navigation.categories')}</button>
 					<div
 						class="invisible absolute left-0 top-full z-50 w-56 rounded-lg border border-gray-200 bg-white py-2 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100"
 					>
@@ -81,14 +86,14 @@
 				<input
 					type="search"
 					name="q"
-					placeholder="Search products"
+					placeholder={t('navigation.searchPlaceholder')}
 					class="h-10 w-40 rounded-full border border-gray-300 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 lg:w-56"
 				/>
 				<button
 					type="submit"
 					class="h-10 rounded-full bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700"
 				>
-					Search
+					{t('navigation.search')}
 				</button>
 			</form>
 			<a
@@ -96,16 +101,16 @@
 				class="flex h-11 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
 			>
 				{#if account.signedIn && account.customer}
-					{account.customer.firstName || 'Account'}
+					{account.customer.firstName || t('navigation.account')}
 				{:else}
-					Sign in
+					{t('navigation.signIn')}
 				{/if}
 			</a>
 			<a
 				href={`/${slug}/wishlist`}
 				class="relative flex h-11 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
 			>
-				Wishlist
+				{t('navigation.wishlist')}
 				{#if account.wishlist.length > 0}
 					<span
 						class="flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white"
@@ -118,7 +123,7 @@
 				href={`/${slug}/cart`}
 				class="relative flex h-11 items-center gap-1 rounded-full border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
 			>
-				Cart
+				{t('navigation.cart')}
 				{#if cart.count > 0}
 					<span
 						class="flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white"
@@ -128,9 +133,16 @@
 				{/if}
 			</a>
 			<button
+				class="flex h-11 w-11 items-center justify-center rounded-full border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+				onclick={cycleLocale}
+				aria-label={i18n.locale === 'ar' ? 'English' : 'العربية'}
+			>
+				{i18n.locale === 'ar' ? 'EN' : 'ع'}
+			</button>
+			<button
 				class="flex h-11 w-11 items-center justify-center rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50 lg:hidden"
 				onclick={() => (menuOpen = !menuOpen)}
-				aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+				aria-label={menuOpen ? t('navigation.closeMenu') : t('navigation.openMenu')}
 				aria-expanded={menuOpen}
 			>
 				<svg
@@ -156,21 +168,21 @@
 				<input
 					type="search"
 					name="q"
-					placeholder="Search products"
+					placeholder={t('navigation.searchPlaceholder')}
 					class="h-10 flex-1 rounded-full border border-gray-300 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 				/>
 				<button
 					type="submit"
 					class="h-10 rounded-full bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700"
 				>
-					Search
+					{t('navigation.search')}
 				</button>
 			</form>
 			<nav class="flex flex-col text-sm font-medium text-gray-700">
-				<a href={`/${slug}`} class="border-b border-gray-100 px-2 py-3 hover:text-gray-900">Home</a>
-				<a href={`/${slug}/products`} class="border-b border-gray-100 px-2 py-3 hover:text-gray-900">Shop</a>
+				<a href={`/${slug}`} class="border-b border-gray-100 px-2 py-3 hover:text-gray-900">{t('navigation.home')}</a>
+				<a href={`/${slug}/products`} class="border-b border-gray-100 px-2 py-3 hover:text-gray-900">{t('navigation.shop')}</a>
 				{#if categories.length}
-					<p class="px-2 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Categories</p>
+					<p class="px-2 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-400">{t('navigation.categories')}</p>
 					{#each categories as cat}
 						<a
 							href={`/${slug}/categories/${cat.slug}`}

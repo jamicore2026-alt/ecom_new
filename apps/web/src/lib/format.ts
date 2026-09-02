@@ -1,28 +1,39 @@
+import { i18n } from './i18n'
+
+const numLocale = () => `${i18n.locale === 'ar' ? 'ar' : 'en'}-U`
+
 export const currency = (n: number | null | undefined, code = 'USD') =>
-	new Intl.NumberFormat('en-US', {
+	new Intl.NumberFormat(numLocale(), {
 		style: 'currency',
 		currency: code,
+		numberingSystem: 'latn',
 		minimumFractionDigits: 2
 	}).format(n ?? 0)
 
 export const number = (n: number | null | undefined) =>
-	new Intl.NumberFormat('en-US').format(n ?? 0)
+	new Intl.NumberFormat(numLocale(), { numberingSystem: 'latn' }).format(n ?? 0)
 
 export const dateTime = (s: string | null | undefined) => {
 	if (!s) return '—'
 	const d = new Date(s)
-	return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+	return d.toLocaleDateString(numLocale(), {
+		year: 'numeric',
+		month: 'short',
+		day: 'numeric',
+		numberingSystem: 'latn'
+	})
 }
 
 export const dateTimeFull = (s: string | null | undefined) => {
 	if (!s) return '—'
 	const d = new Date(s)
-	return d.toLocaleString('en-US', {
+	return d.toLocaleString(numLocale(), {
 		year: 'numeric',
 		month: 'short',
 		day: 'numeric',
 		hour: 'numeric',
-		minute: '2-digit'
+		minute: '2-digit',
+		numberingSystem: 'latn'
 	})
 }
 

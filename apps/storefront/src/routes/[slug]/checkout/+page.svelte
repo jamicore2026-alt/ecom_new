@@ -6,6 +6,7 @@
 	import { cart } from '$lib/cart.svelte'
 	import { account } from '$lib/account.svelte'
 	import { money, placeholderImage, handleImageError } from '$lib/format'
+	import { t } from '$lib/i18n'
 	import { track } from '$lib/analytics'
 	import type { CheckoutSummary } from '$lib/types'
 	import type { PageProps } from './$types'
@@ -101,7 +102,7 @@
 		} catch (e) {
 			summary = null
 			previewed = false
-			previewError = e instanceof ApiError ? e.message : 'Could not validate your cart'
+			previewError = e instanceof ApiError ? e.message : t('checkout.validateCart')
 		}
 	}
 
@@ -136,7 +137,7 @@
 		} catch (e) {
 			summary = null
 			previewed = false
-			couponError = e instanceof ApiError ? e.message : 'Invalid coupon'
+			couponError = e instanceof ApiError ? e.message : t('checkout.invalidCoupon')
 		}
 	}
 
@@ -148,25 +149,25 @@
 
 	const validate = () => {
 		const required: Array<[string, string]> = [
-			[email, 'Email'],
-			[shippingName, 'Full name'],
-			[line1, 'Address line 1'],
-			[city, 'City'],
-			[region, 'State / Province'],
-			[postalCode, 'Postal code']
+			[email, t('checkout.email')],
+			[shippingName, t('checkout.fullName')],
+			[line1, t('checkout.addressLine1')],
+			[city, t('checkout.city')],
+			[region, t('checkout.state')],
+			[postalCode, t('checkout.postalCode')]
 		]
 		for (const [value, label] of required) {
 			if (!value.trim()) {
-				orderError = `${label} is required`
+				orderError = t('checkout.requiredField', { label })
 				return false
 			}
 		}
 		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-			orderError = 'Enter a valid email address'
+			orderError = t('checkout.invalidEmail')
 			return false
 		}
 		if (!paymentMethod) {
-			orderError = 'Select a payment method'
+			orderError = t('checkout.selectPayment')
 			return false
 		}
 		return true
@@ -209,7 +210,7 @@
 				sessionStorage.setItem(`ecom:pending:${slug}`, session.orderNumber)
 				// Defense in depth: only ever redirect to an https gateway URL.
 				if (!/^https:\/\//i.test(session.redirectUrl)) {
-					orderError = 'Payment provider returned an invalid redirect — please contact support'
+					orderError = t('checkout.invalidRedirect')
 					await refreshPreview()
 					return
 				}
@@ -221,7 +222,7 @@
 			cart.clear()
 			await goto(`/${slug}/orders/${encodeURIComponent(order.orderNumber)}`)
 		} catch (e) {
-			orderError = e instanceof ApiError ? e.message : 'Something went wrong placing your order'
+			orderError = e instanceof ApiError ? e.message : t('checkout.placeFailed')
 			await refreshPreview()
 		} finally {
 			placing = false
@@ -230,21 +231,21 @@
 </script>
 
 <svelte:head>
-	<title>Checkout · {store.settings.name}</title>
+	<title>{t('checkout.title')} · {store.settings.name}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
 <div class="mx-auto max-w-6xl px-4 py-10">
-	<h1 class="text-3xl font-bold text-gray-900">Checkout</h1>
+	<h1 class="text-3xl font-bold text-gray-900">{t('checkout.title')}</h1>
 
 	{#if cart.items.length === 0}
 		<div class="mt-10 flex flex-col items-center gap-4 rounded-2xl border border-gray-200 bg-white px-6 py-16 text-center">
-			<p class="text-lg font-medium text-gray-700">Your cart is empty</p>
+			<p class="text-lg font-medium text-gray-700">{t('cart.empty')}</p>
 			<a
 				href={`/${slug}/products`}
 				class="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
 			>
-				Browse products
+				{t('wishlist.browseProducts')}
 			</a>
 		</div>
 	{:else}
@@ -257,15 +258,15 @@
 				{/if}
 
 				<section class="rounded-2xl border border-gray-200 bg-white p-6">
-					<h2 class="text-lg font-semibold text-gray-900">Contact</h2>
+					<h2 class="text-lg font-semibold text-gray-900">{t('checkout.contact')}</h2>
 					{#if account.signedIn && account.customer}
 						<p class="mt-1 text-xs text-gray-400">
-							Ordering as {account.customer.email} ·
-							<a href={`/${slug}/account`} class="font-medium text-indigo-600 hover:text-indigo-700">Your account</a>
+							{t('checkout.orderingAs', { email: account.customer.email })} ·
+							<a href={`/${slug}/account`} class="font-medium text-indigo-600 hover:text-indigo-700">{t('checkout.account')}</a>
 						</p>
 					{/if}
 					<div class="mt-4">
-						<label class="text-sm font-medium text-gray-700" for="email">Email</label>
+						<label class="text-sm font-medium text-gray-700" for="email">{t('checkout.email')}</label>
 						<input
 							id="email"
 							type="email"
@@ -277,10 +278,10 @@
 				</section>
 
 				<section class="rounded-2xl border border-gray-200 bg-white p-6">
-					<h2 class="text-lg font-semibold text-gray-900">Shipping address</h2>
+					<h2 class="text-lg font-semibold text-gray-900">{t('checkout.address')}</h2>
 					<div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="sm:col-span-2">
-							<label class="text-sm font-medium text-gray-700" for="shippingName">Full name</label>
+							<label class="text-sm font-medium text-gray-700" for="shippingName">{t('checkout.fullName')}</label>
 							<input
 								id="shippingName"
 								type="text"
@@ -290,7 +291,7 @@
 							/>
 						</div>
 						<div class="sm:col-span-2">
-							<label class="text-sm font-medium text-gray-700" for="line1">Address</label>
+							<label class="text-sm font-medium text-gray-700" for="line1">{t('checkout.address')}</label>
 							<input
 								id="line1"
 								type="text"
@@ -303,42 +304,42 @@
 							<input
 								type="text"
 								bind:value={line2}
-								placeholder="Apartment, suite, etc. (optional)"
+								placeholder={t('checkout.addressLine2')}
 								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="city">City</label>
+							<label class="text-sm font-medium text-gray-700" for="city">{t('checkout.city')}</label>
 							<input
 								id="city"
 								type="text"
 								bind:value={city}
-								placeholder="City"
+								placeholder={t('checkout.city')}
 								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="state">State / Province</label>
+							<label class="text-sm font-medium text-gray-700" for="state">{t('checkout.state')}</label>
 							<input
 								id="state"
 								type="text"
 								bind:value={region}
-								placeholder="State"
+								placeholder={t('checkout.state')}
 								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="postalCode">Postal code</label>
+							<label class="text-sm font-medium text-gray-700" for="postalCode">{t('checkout.postalCode')}</label>
 							<input
 								id="postalCode"
 								type="text"
 								bind:value={postalCode}
-								placeholder="Postal code"
+								placeholder={t('checkout.postalCode')}
 								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="country">Country</label>
+							<label class="text-sm font-medium text-gray-700" for="country">{t('checkout.country')}</label>
 							<select
 								id="country"
 								bind:value={country}
@@ -350,7 +351,7 @@
 							</select>
 						</div>
 						<div class="sm:col-span-2">
-							<label class="text-sm font-medium text-gray-700" for="phone">Phone (optional)</label>
+							<label class="text-sm font-medium text-gray-700" for="phone">{t('checkout.phone')}</label>
 							<input
 								id="phone"
 								type="tel"
@@ -363,7 +364,7 @@
 				</section>
 
 				<section class="rounded-2xl border border-gray-200 bg-white p-6">
-					<h2 class="text-lg font-semibold text-gray-900">Payment method</h2>
+					<h2 class="text-lg font-semibold text-gray-900">{t('checkout.paymentMethod')}</h2>
 					<div class="mt-4 space-y-3">
 						{#each onlineProviders as provider (provider.id)}
 							<label
@@ -378,12 +379,12 @@
 									class="accent-indigo-600"
 								/>
 								<span class="text-sm font-medium text-gray-800">{provider.label}</span>
-								<span class="ml-auto text-xs text-gray-400">Secure checkout</span>
+								<span class="ml-auto text-xs text-gray-400">{t('checkout.secure')}</span>
 							</label>
 						{/each}
 						{#if onlineProviders.length > 0 && paymentMethods.length > 0}
 							<p class="pt-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
-								Pay on delivery
+								{t('checkout.payOnDelivery')}
 							</p>
 						{/if}
 						{#each paymentMethods as method (method.id)}
@@ -405,18 +406,18 @@
 				</section>
 
 				<section class="rounded-2xl border border-gray-200 bg-white p-6">
-					<h2 class="text-lg font-semibold text-gray-900">Order notes (optional)</h2>
+					<h2 class="text-lg font-semibold text-gray-900">{t('checkout.notes')}</h2>
 					<textarea
 						bind:value={notes}
 						rows="2"
-						placeholder="Delivery instructions, gift message, etc."
+						placeholder={t('checkout.notesPlaceholder')}
 						class="mt-2 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 					></textarea>
 				</section>
 			</div>
 
 			<aside class="h-fit rounded-2xl border border-gray-200 bg-white p-6 lg:sticky lg:top-24 lg:col-span-2">
-				<h2 class="text-lg font-semibold text-gray-900">Order summary</h2>
+				<h2 class="text-lg font-semibold text-gray-900">{t('cart.summary')}</h2>
 
 				<ul class="mt-4 space-y-4">
 					{#each cart.items as line (line.variantId)}
@@ -452,7 +453,7 @@
 						<input
 							type="text"
 							bind:value={couponCode}
-							placeholder="Coupon code"
+							placeholder={t('checkout.couponCode')}
 							class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500"
 						/>
 						{#if summary?.coupon}
@@ -461,7 +462,7 @@
 								class="rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-600 hover:bg-gray-50"
 								onclick={removeCoupon}
 							>
-								Remove
+								{t('cart.remove')}
 							</button>
 						{:else}
 							<button
@@ -469,50 +470,50 @@
 								class="rounded-lg bg-gray-900 px-4 text-sm font-semibold text-white hover:bg-gray-800"
 								onclick={applyCoupon}
 							>
-								Apply
+								{t('products.apply')}
 							</button>
 						{/if}
 					</div>
 					{#if summary?.coupon}
 						<p class="mt-2 text-xs font-medium text-green-700">
-							{summary.coupon.code} applied ({money(summary.discountTotal, store.merchant.currency)} off)
+							{summary.coupon.code} {t('checkout.applied', { amount: money(summary.discountTotal, store.merchant.currency) })}
 						</p>
 					{/if}
 				</div>
 
 				<dl class="mt-6 space-y-2 border-t border-gray-200 pt-4 text-sm">
 					<div class="flex justify-between text-gray-600">
-						<dt>Subtotal</dt>
+						<dt>{t('order.subtotal')}</dt>
 						<dd class="font-medium text-gray-900">{money(summary?.subtotal ?? cart.subtotal, store.merchant.currency)}</dd>
 					</div>
 					{#if summary && summary.discountTotal > 0}
 						<div class="flex justify-between text-gray-600">
-							<dt>Discount</dt>
+							<dt>{t('order.discount')}</dt>
 							<dd class="font-medium text-green-700">−{money(summary.discountTotal, store.merchant.currency)}</dd>
 						</div>
 					{/if}
 					<div class="flex justify-between text-gray-600">
-						<dt>Shipping</dt>
+						<dt>{t('order.shipping')}</dt>
 						<dd class="font-medium text-gray-900">
 							{#if summary}
-								{summary.shippingTotal === 0 ? 'Free' : money(summary.shippingTotal, store.merchant.currency)}
+								{summary.shippingTotal === 0 ? t('order.free') : money(summary.shippingTotal, store.merchant.currency)}
 							{:else}
-								<span class="text-gray-400">Calculated at checkout</span>
+								<span class="text-gray-400">{t('checkout.calculatedAtCheckout')}</span>
 							{/if}
 						</dd>
 					</div>
 					<div class="flex justify-between text-gray-600">
-						<dt>Tax</dt>
+						<dt>{t('order.tax')}</dt>
 						<dd class="font-medium text-gray-900">
 							{#if summary}
 								{money(summary.taxTotal, store.merchant.currency)}
 							{:else}
-								<span class="text-gray-400">Calculated at checkout</span>
+								<span class="text-gray-400">{t('checkout.calculatedAtCheckout')}</span>
 							{/if}
 						</dd>
 					</div>
 					<div class="flex justify-between border-t border-gray-200 pt-3 text-base font-semibold text-gray-900">
-						<dt>Total</dt>
+						<dt>{t('order.total')}</dt>
 						<dd>{money(summary?.total ?? cart.subtotal, store.merchant.currency)}</dd>
 					</div>
 				</dl>
@@ -527,15 +528,15 @@
 					disabled={placing}
 					onclick={placeOrder}
 				>
-					{placing ? 'Placing order…' : selectedIsProvider ? `Pay with ${onlineProviders.find((p) => p.id === paymentMethod)?.label ?? 'provider'}` : 'Place order'}
+					{placing ? t('common.loading') : selectedIsProvider ? t('checkout.payWith', { provider: onlineProviders.find((p) => p.id === paymentMethod)?.label ?? t('checkout.provider') }) : t('checkout.placeOrder')}
 				</button>
 				{#if !selectedIsProvider}
 					<p class="mt-3 text-center text-xs text-gray-400">
-						Payment is collected on delivery or per the store's instructions.
+						{t('checkout.codNote')}
 					</p>
 				{:else}
 					<p class="mt-3 text-center text-xs text-gray-400">
-						You will be redirected to a secure payment page.
+						{t('checkout.redirectNote')}
 					</p>
 				{/if}
 			</aside>

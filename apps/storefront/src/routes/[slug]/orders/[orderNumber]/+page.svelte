@@ -4,6 +4,7 @@
 	import { ApiError, storefrontApi } from '$lib/api'
 	import { cart } from '$lib/cart.svelte'
 	import { money } from '$lib/format'
+	import { t } from '$lib/i18n'
 	import type { PageProps } from './$types'
 
 	let { data }: PageProps = $props()
@@ -49,7 +50,7 @@
 </script>
 
 <svelte:head>
-	<title>Order {order.orderNumber} · {store.settings.name}</title>
+	<title>{t('orders.orderNumber')} {order.orderNumber} · {store.settings.name}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
@@ -60,27 +61,26 @@
 		>
 			✓
 		</div>
-		<h1 class="mt-4 text-3xl font-bold text-gray-900">Thank you</h1>
-		<p class="mt-2 text-gray-600">Your order has been placed.</p>
+		<h1 class="mt-4 text-3xl font-bold text-gray-900">{t('order.thankYou')}</h1>
+		<p class="mt-2 text-gray-600">{t('order.placed')}</p>
 		<p class="mt-4 text-sm text-gray-500">
-			Order number
+			{t('order.orderNumber')}
 			<span class="ml-1 font-semibold text-gray-900">{order.orderNumber}</span>
 		</p>
 		<p class="mt-1 text-sm text-gray-500">
-			A confirmation email was sent to <span class="font-medium text-gray-900">{order.email}</span>
+			{t('order.confirmationEmail', { email: order.email })}
 		</p>
 
 		{#if pendingPayment}
 			<div class="mx-auto mt-6 max-w-md rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
-				Payment for this order is still being confirmed. If you completed the payment, it will update
-				shortly.
+				{t('order.paymentPending')}
 				<button
 					type="button"
 					class="ml-2 font-semibold text-amber-900 underline disabled:opacity-50"
 					disabled={checkingPayment}
 					onclick={checkPayment}
 				>
-					{checkingPayment ? 'Checking…' : 'Check now'}
+					{checkingPayment ? t('common.loading') : t('order.checkNow')}
 				</button>
 			</div>
 		{/if}
@@ -89,13 +89,13 @@
 			href={`/${slug}`}
 			class="mt-8 inline-block rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
 		>
-			Continue shopping
+			{t('wishlist.continueShopping')}
 		</a>
 	</div>
 
 	<div class="mt-8 rounded-2xl border border-gray-200 bg-white p-6">
 		<div class="flex items-center justify-between">
-			<h2 class="text-lg font-semibold text-gray-900">Order {order.orderNumber}</h2>
+			<h2 class="text-lg font-semibold text-gray-900">{t('order.orderNumber')} {order.orderNumber}</h2>
 			<span
 				class="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold capitalize text-indigo-700"
 			>
@@ -111,7 +111,7 @@
 						{#if item.sku}
 							<p class="text-xs text-gray-400">SKU: {item.sku}</p>
 						{/if}
-						<p class="text-sm text-gray-500">Qty: {item.quantity}</p>
+						<p class="text-sm text-gray-500">{t('order.qty')}: {item.quantity}</p>
 					</div>
 					<p class="font-medium text-gray-900">{money(item.total, order.currency)}</p>
 				</li>
@@ -120,43 +120,43 @@
 
 		<dl class="mt-4 space-y-2 border-t border-gray-200 pt-4 text-sm">
 			<div class="flex justify-between text-gray-600">
-				<dt>Subtotal</dt>
+				<dt>{t('order.subtotal')}</dt>
 				<dd class="font-medium text-gray-900">{money(order.subtotal, order.currency)}</dd>
 			</div>
 			{#if order.discountTotal > 0}
 				<div class="flex justify-between text-gray-600">
-					<dt>Discount</dt>
+					<dt>{t('order.discount')}</dt>
 					<dd class="font-medium text-green-700">−{money(order.discountTotal, order.currency)}</dd>
 				</div>
 			{/if}
 			<div class="flex justify-between text-gray-600">
-				<dt>Shipping</dt>
+				<dt>{t('order.shipping')}</dt>
 				<dd class="font-medium text-gray-900">{money(order.shippingTotal, order.currency)}</dd>
 			</div>
 			<div class="flex justify-between text-gray-600">
-				<dt>Tax</dt>
+				<dt>{t('order.tax')}</dt>
 				<dd class="font-medium text-gray-900">{money(order.taxTotal, order.currency)}</dd>
 			</div>
 			<div class="flex justify-between border-t border-gray-200 pt-3 text-base font-semibold text-gray-900">
-				<dt>Total</dt>
+				<dt>{t('order.total')}</dt>
 				<dd>{money(order.total, order.currency)}</dd>
 			</div>
 		</dl>
 
 		<div class="mt-6 grid grid-cols-1 gap-6 border-t border-gray-200 pt-6 sm:grid-cols-2">
 			<div>
-				<h3 class="text-sm font-semibold text-gray-900">Shipping address</h3>
+				<h3 class="text-sm font-semibold text-gray-900">{t('checkout.address')}</h3>
 				{#if addressLines(order.shippingAddress).length}
 					<p class="mt-2 whitespace-pre-line text-sm text-gray-600">
 						{addressLines(order.shippingAddress).join('\n')}
 					</p>
 				{:else}
-					<p class="mt-2 text-sm text-gray-400">Not provided</p>
+					<p class="mt-2 text-sm text-gray-400">{t('order.notProvided')}</p>
 				{/if}
 			</div>
 			{#if order.notes}
 				<div>
-					<h3 class="text-sm font-semibold text-gray-900">Order notes</h3>
+					<h3 class="text-sm font-semibold text-gray-900">{t('order.notes')}</h3>
 					<p class="mt-2 text-sm text-gray-600">{order.notes}</p>
 				</div>
 			{/if}

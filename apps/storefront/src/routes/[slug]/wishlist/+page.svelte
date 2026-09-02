@@ -3,6 +3,7 @@
 	import { account } from '$lib/account.svelte'
 	import { cart } from '$lib/cart.svelte'
 	import { money, handleImageError } from '$lib/format'
+	import { t } from '$lib/i18n'
 	import type { WishListItem } from '$lib/types'
 	import type { PageProps } from './$types'
 
@@ -33,7 +34,7 @@
 				optionValues: {},
 				quantity: 1
 			})
-			notice = `Added “${item.name}” to your cart`
+			notice = t('wishlist.addedToCart', { name: item.name })
 		} finally {
 			busyId = ''
 		}
@@ -50,7 +51,7 @@
 				account.logout()
 				return
 			}
-			notice = e instanceof ApiError ? e.message : 'Could not update your wishlist'
+			notice = e instanceof ApiError ? e.message : t('product.wishlistFailed')
 		} finally {
 			busyId = ''
 		}
@@ -58,33 +59,33 @@
 </script>
 
 <svelte:head>
-	<title>Wishlist · {data.store.settings.name}</title>
+	<title>{t('wishlist.title')} · {data.store.settings.name}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
 <div class="mx-auto max-w-5xl px-4 py-10">
 	{#if !account.signedIn}
 		<div class="mx-auto max-w-md rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-			<h1 class="text-xl font-bold text-gray-900">Sign in to see your wishlist</h1>
-			<p class="mt-2 text-sm text-gray-500">Save products you love and find them here anytime.</p>
+			<h1 class="text-xl font-bold text-gray-900">{t('wishlist.signIn')}</h1>
+			<p class="mt-2 text-sm text-gray-500">{t('wishlist.emptyHeading')}</p>
 			<a
 				href={`/${slug}/account`}
 				class="mt-6 inline-block rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
 			>
-				Sign in or create an account
+				{t('wishlist.signInOrCreate')}
 			</a>
 		</div>
 	{:else}
 		<div class="flex flex-wrap items-center justify-between gap-4">
 			<div>
-				<h1 class="text-3xl font-bold text-gray-900">Wishlist</h1>
+				<h1 class="text-3xl font-bold text-gray-900">{t('wishlist.title')}</h1>
 				<p class="mt-1 text-sm text-gray-500">
 					{account.wishlist.length}
-					saved {account.wishlist.length === 1 ? 'product' : 'products'}
+					{t('wishlist.saved', { count: account.wishlist.length })}
 				</p>
 			</div>
 			<a href={`/${slug}/products`} class="text-sm font-medium text-indigo-600 hover:text-indigo-700">
-				Continue shopping
+				{t('wishlist.continueShopping')}
 			</a>
 		</div>
 
@@ -94,12 +95,12 @@
 
 		{#if account.wishlist.length === 0}
 			<div class="mt-8 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-				<p class="text-sm text-gray-500">Nothing saved yet — tap the heart on any product to save it.</p>
+				<p class="text-sm text-gray-500">{t('wishlist.nothingSaved')}</p>
 				<a
 					href={`/${slug}/products`}
 					class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
 				>
-					Browse products
+					{t('wishlist.browseProducts')}
 				</a>
 			</div>
 		{:else}
@@ -126,7 +127,7 @@
 								{/if}
 							</p>
 							<p class="mt-1 text-xs {item.stock > 0 ? 'text-gray-400' : 'font-medium text-red-600'}">
-								{item.stock > 0 ? `${item.stock} in stock` : 'Out of stock'}
+								{item.stock > 0 ? t('product.xAvailable', { stock: item.stock }) : t('product.outOfStock')}
 							</p>
 							<div class="mt-auto flex items-center gap-2 pt-3">
 								<button
@@ -135,7 +136,7 @@
 									onclick={() => addToCart(item)}
 									class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
 								>
-									Add to cart
+									{t('product.addToCart')}
 								</button>
 								<button
 									type="button"
@@ -143,7 +144,7 @@
 									onclick={() => removeItem(item)}
 									class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
 								>
-									Remove
+									{t('cart.remove')}
 								</button>
 							</div>
 						</div>

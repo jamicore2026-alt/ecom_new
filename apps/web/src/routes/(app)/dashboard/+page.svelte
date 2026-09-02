@@ -7,6 +7,7 @@
 	import Badge from '$lib/components/Badge.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import { currency, dateTimeFull, timeAgo, number } from '$lib/format'
+	import { t } from '$lib/i18n'
 	import type { OverviewData } from '$lib/types'
 
 	let data = $state<OverviewData | null>(null)
@@ -67,17 +68,17 @@
 	}
 
 	const stats = [
-		{ label: 'Today\'s sales', key: 'todaySales' as const },
-		{ label: 'Orders today', key: 'ordersToday' as const },
-		{ label: 'Avg order value', key: 'avgOrderValue' as const },
-		{ label: 'Pending orders', key: 'pendingOrders' as const },
-		{ label: 'Low stock', key: 'lowStockCount' as const },
-		{ label: 'Out of stock', key: 'outOfStockCount' as const }
+		{ label: t('dash.todaySales'), key: 'todaySales' as const },
+		{ label: t('dash.ordersToday'), key: 'ordersToday' as const },
+		{ label: t('dash.avgOrderValue'), key: 'avgOrderValue' as const },
+		{ label: t('dash.pendingOrders'), key: 'pendingOrders' as const },
+		{ label: t('dash.lowStock'), key: 'lowStockCount' as const },
+		{ label: t('dash.outOfStock'), key: 'outOfStockCount' as const }
 	]
 </script>
 
 <svelte:head>
-	<title>Overview — Merchant OS</title>
+	<title>{t('dash.overview')} — Merchant OS</title>
 </svelte:head>
 
 {#if loading}
@@ -94,15 +95,15 @@
 		<!-- Page header -->
 		<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 			<div>
-				<h1 class="font-display text-display text-on-surface">Overview</h1>
-				<p class="mt-1 text-body-sm text-secondary">Executive summary for {session.merchant?.name ?? 'your store'}.</p>
+				<h1 class="font-display text-display text-on-surface">{t('dash.overview')}</h1>
+				<p class="mt-1 text-body-sm text-secondary">{t('dash.execSummary', { store: session.merchant?.name ?? t('common.yourStore') })}</p>
 			</div>
 			<a
 				href="/orders"
 				class="inline-flex items-center gap-2 self-start rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary transition-colors hover:bg-on-primary-fixed-variant"
 			>
 				<Icon name="receipt_long" size="text-[18px]" />
-				View orders
+				{t('dash.viewOrders')}
 			</a>
 		</div>
 
@@ -123,10 +124,10 @@
 		<!-- Sales chart + top products -->
 		<div class="grid gap-6 lg:grid-cols-3">
 			<div class="lg:col-span-2">
-				<Card title="Revenue (last 14 days)" headingLevel="h2">
+				<Card title={t('dash.revenue14')} headingLevel="h2">
 					<div class="h-64">
 						{#if data.salesChart.length === 0}
-							<div class="flex h-full items-center justify-center text-sm text-secondary">No sales data yet</div>
+							<div class="flex h-full items-center justify-center text-sm text-secondary">{t('common.noDataYet')}</div>
 						{:else}
 							{@const pts = chart?.pts ?? []}
 							{@const chartW = chart?.chartW ?? 600}
@@ -177,16 +178,16 @@
 				</Card>
 			</div>
 
-			<Card title="Top products" headingLevel="h2">
+			<Card title={t('dash.topProducts')} headingLevel="h2">
 				{#if data.topProducts.length === 0}
-					<p class="py-8 text-center text-sm text-secondary">No product sales yet</p>
+					<p class="py-8 text-center text-sm text-secondary">{t('dash.noProductSales')}</p>
 				{:else}
 					<ul class="space-y-3">
 						{#each data.topProducts as p (p.productId)}
 							<li class="flex items-center justify-between gap-3">
 								<div class="min-w-0">
 									<a href="/products/{p.productId}" class="inline-block truncate py-1 text-sm font-medium text-primary hover:text-on-primary-fixed-variant hover:underline">{p.name}</a>
-									<p class="text-xs text-secondary">{number(p.quantity)} sold</p>
+									<p class="text-xs text-secondary">{number(p.quantity)} {t('dash.sold')}</p>
 								</div>
 								<div class="flex items-center gap-2">
 									<span class="font-mono-label text-mono-label text-on-surface">{currency(p.revenue, currencyCode)}</span>
@@ -200,20 +201,20 @@
 		</div>
 
 		<!-- Recent orders -->
-		<Card title="Recent orders" headingLevel="h2" padded={false}>
+		<Card title={t('dash.recentOrders')} headingLevel="h2" padded={false}>
 			{#if data.recentOrders.length === 0}
-				<p class="py-10 text-center text-sm text-secondary">No orders yet</p>
+				<p class="py-10 text-center text-sm text-secondary">{t('common.noOrdersYet')}</p>
 			{:else}
 				<div class="overflow-x-auto">
 					<table class="w-full text-left text-sm">
 						<thead>
 							<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
-								<th class="px-table-cell-x py-table-cell-y font-semibold">Order</th>
-								<th class="px-table-cell-x py-table-cell-y font-semibold">Customer</th>
-								<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
-								<th class="px-table-cell-x py-table-cell-y font-semibold">Payment</th>
-								<th class="px-table-cell-x py-table-cell-y font-semibold">Total</th>
-								<th class="px-table-cell-x py-table-cell-y font-semibold">Placed</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">{t('orders.orderNumber')}</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">{t('orders.customer')}</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.status')}</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">{t('orders.payment')}</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.total')}</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">{t('dash.placed')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -237,6 +238,6 @@
 	</div>
 {:else}
 	<div class="rounded border border-outline-variant bg-surface-container-lowest p-8 text-center text-sm text-secondary">
-		Unable to load dashboard.
+		{t('common.loadFailed')}
 	</div>
 {/if}

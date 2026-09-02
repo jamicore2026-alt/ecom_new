@@ -10,6 +10,7 @@
 	import Pagination from '$lib/components/Pagination.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import { currency, dateTime, number, handleImageError } from '$lib/format'
+	import { t } from '$lib/i18n'
 	import type { Category, PaginationMeta, Product, ProductListItem } from '$lib/types'
 	import CreateEditProduct from './CreateEditProduct.svelte'
 	import CategoriesManager from './CategoriesManager.svelte'
@@ -175,21 +176,21 @@
 </script>
 
 <svelte:head>
-	<title>Products — Merchant OS</title>
+	<title>{t('products.title')} — Merchant OS</title>
 </svelte:head>
 
 <div class="space-y-6">
 	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 		<div>
-			<h1 class="font-display text-display text-on-surface">Products</h1>
-			<p class="mt-1 text-body-sm text-secondary">{meta.total} total</p>
+			<h1 class="font-display text-display text-on-surface">{t('products.title')}</h1>
+			<p class="mt-1 text-body-sm text-secondary">{meta.total} {t('common.total')}</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
-			<Button variant="secondary" loading={exporting} onclick={exportCsv}>Export CSV</Button>
+			<Button variant="secondary" loading={exporting} onclick={exportCsv}>{t('products.exportCsv')}</Button>
 			{#if canWrite()}
-				<Button variant="secondary" onclick={() => { importResult = null; importFile = null; importOpen = true }}>Import CSV</Button>
-				<Button variant="secondary" onclick={() => (catModal = true)}>Categories</Button>
-				<Button onclick={() => { editProduct = null; editOpen = true }}><Icon name="add" size="text-[18px]" /> Add product</Button>
+				<Button variant="secondary" onclick={() => { importResult = null; importFile = null; importOpen = true }}>{t('products.importCsv')}</Button>
+				<Button variant="secondary" onclick={() => (catModal = true)}>{t('products.categories')}</Button>
+				<Button onclick={() => { editProduct = null; editOpen = true }}><Icon name="add" size="text-[18px]" /> {t('products.new')}</Button>
 			{/if}
 		</div>
 	</div>
@@ -203,19 +204,19 @@
 				</div>
 				<input
 					class="field pl-9"
-					placeholder="Search name or SKU…"
+					placeholder={t('products.searchPlaceholder')}
 					bind:value={search}
 					onkeydown={(e) => e.key === 'Enter' && applyFilters()}
 				/>
 			</div>
 			<select class="field w-auto" bind:value={status}>
-				<option value="">All statuses</option>
-				<option value="active">Active</option>
+				<option value="">{t('products.allStatuses')}</option>
+				<option value="active">{t('products.available')}</option>
 				<option value="draft">Draft</option>
-				<option value="archived">Archived</option>
+				<option value="archived">{t('products.archived')}</option>
 			</select>
 			<select class="field w-auto" bind:value={categoryId}>
-				<option value="">All categories</option>
+				<option value="">{t('products.allCategories')}</option>
 				{#each categories as c (c.id)}
 					<option value={c.id}>{c.name}</option>
 				{/each}
@@ -239,7 +240,7 @@
 		{:else if items.length === 0}
 			<div class="flex flex-col items-center gap-2 py-16 text-center">
 				<Icon name="inventory_2" size="text-[32px]" class="text-outline" />
-				<p class="text-sm text-secondary">No products found.</p>
+				<p class="text-sm text-secondary">{t('products.noProducts')}</p>
 			</div>
 		{:else}
 			<div class="overflow-x-auto">

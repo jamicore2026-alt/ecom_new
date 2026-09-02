@@ -1,4 +1,5 @@
 @import '@fontsource-variable/inter/index.css';
+@import '@fontsource-variable/cairo/index.css';
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
@@ -78,12 +79,12 @@
 	--spacing-stack-compact: 8px;
 	--spacing-stack-comfortable: 16px;
 
-	--font-sans: 'Geist', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
-	--font-display: 'Geist', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
-	--font-headline-sm: 'Geist', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
-	--font-body-sm: 'Geist', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
-	--font-body-md: 'Geist', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
-	--font-table-header: 'Geist', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+	--font-sans: 'Geist', 'Inter Variable', 'Cairo Variable', ui-sans-serif, system-ui, sans-serif;
+	--font-display: 'Geist', 'Inter Variable', 'Cairo Variable', ui-sans-serif, system-ui, sans-serif;
+	--font-headline-sm: 'Geist', 'Inter Variable', 'Cairo Variable', ui-sans-serif, system-ui, sans-serif;
+	--font-body-sm: 'Geist', 'Inter Variable', 'Cairo Variable', ui-sans-serif, system-ui, sans-serif;
+	--font-body-md: 'Geist', 'Inter Variable', 'Cairo Variable', ui-sans-serif, system-ui, sans-serif;
+	--font-table-header: 'Geist', 'Inter Variable', 'Cairo Variable', ui-sans-serif, system-ui, sans-serif;
 	--font-mono-label: 'JetBrains Mono', ui-monospace, monospace;
 
 	--text-body-sm: 13px;
@@ -127,6 +128,72 @@
 		outline: 2px solid var(--color-primary);
 		outline-offset: 2px;
 	}
+}
+
+/* Material 3 DARK tokens — applied via data-theme="dark" on <html>.
+   Overrides the @theme light defaults with dark equivalents so every existing
+   surface/container/outline utility resolves correctly in dark mode. */
+[data-theme='dark'] {
+	color-scheme: dark;
+
+	--color-primary: #abc7ff;
+	--color-on-primary: #002f6c;
+	--color-primary-container: #00427f;
+	--color-on-primary-container: #d7e2ff;
+	--color-primary-fixed: #d7e2ff;
+	--color-primary-fixed-dim: #abc7ff;
+	--color-on-primary-fixed: #001b3f;
+	--color-on-primary-fixed-variant: #00427f;
+	--color-inverse-primary: #0053db;
+
+	--color-secondary: #c2c8e0;
+	--color-on-secondary: #2b3145;
+	--color-secondary-container: #41485e;
+	--color-on-secondary-container: #dae2fd;
+	--color-secondary-fixed: #dae2fd;
+	--color-secondary-fixed-dim: #c2c8e0;
+	--color-on-secondary-fixed: #141b2e;
+	--color-on-secondary-fixed-variant: #41485e;
+
+	--color-tertiary: #ffb59c;
+	--color-on-tertiary: #5c1c00;
+	--color-tertiary-container: #7c2900;
+	--color-on-tertiary-container: #ffdbcd;
+	--color-tertiary-fixed: #ffdbcd;
+	--color-tertiary-fixed-dim: #ffb59c;
+	--color-on-tertiary-fixed: #360f00;
+	--color-on-tertiary-fixed-variant: #7c2900;
+
+	--color-error: #ffb4ab;
+	--color-on-error: #690005;
+	--color-error-container: #93000a;
+	--color-on-error-container: #ffdad6;
+
+	--color-surface: #131519;
+	--color-surface-bright: #313339;
+	--color-surface-dim: #131519;
+	--color-surface-variant: #43464f;
+	--color-surface-container: #1f2227;
+	--color-surface-container-low: #1b1e22;
+	--color-surface-container-lowest: #0e1115;
+	--color-surface-container-high: #292b30;
+	--color-surface-container-highest: #34363c;
+	--color-on-surface: #e2e2e9;
+	--color-on-surface-variant: #c6c6d0;
+	--color-inverse-surface: #e2e2e9;
+	--color-inverse-on-surface: #313339;
+	--color-surface-tint: #abc7ff;
+
+	--color-outline: #90949d;
+	--color-outline-variant: #43464f;
+	--color-background: #131519;
+	--color-on-background: #e2e2e9;
+
+	--color-success: #4ade80;
+	--color-on-success: #0b3d1f;
+	--color-danger: #f97066;
+	--color-warning: #fbbf24;
+	--color-info: #abc7ff;
 }
 
 @layer components {

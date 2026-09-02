@@ -7,6 +7,7 @@
 	import Pagination from '$lib/components/Pagination.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import { currency, dateTime, number } from '$lib/format'
+	import { t } from '$lib/i18n'
 	import type { Customer, PaginationMeta } from '$lib/types'
 
 	let items = $state<Customer[]>([])
@@ -52,14 +53,14 @@
 </script>
 
 <svelte:head>
-	<title>Customers — Merchant OS</title>
+	<title>{t('customers.title')} — Merchant OS</title>
 </svelte:head>
 
 <div class="space-y-6">
 	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 		<div>
-			<h1 class="font-display text-display text-on-surface">Customers</h1>
-			<p class="mt-1 text-body-sm text-secondary">{meta.total} total</p>
+			<h1 class="font-display text-display text-on-surface">{t('customers.title')}</h1>
+			<p class="mt-1 text-body-sm text-secondary">{meta.total} {t('common.total')}</p>
 		</div>
 	</div>
 

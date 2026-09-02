@@ -4,6 +4,8 @@
 	import { goto } from '$app/navigation'
 	import { initials } from '$lib/format'
 	import { NAV_GROUP_ICONS } from '$lib/navigation'
+	import { i18n, t } from '$lib/i18n'
+	import { theme } from '$lib/i18n/theme.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 
 	let { children } = $props<{ children?: import('svelte').Snippet }>()
@@ -14,6 +16,15 @@
 	let user = $derived(session.user)
 	let merchant = $derived(session.merchant)
 	let navGroups = $derived(session.visibleNav)
+
+	function cycleTheme() {
+		const next = theme.mode === 'light' ? 'dark' : theme.mode === 'dark' ? 'system' : 'light'
+		theme.setTheme(next)
+	}
+
+	function cycleLocale() {
+		i18n.setLocale(i18n.locale === 'ar' ? 'en' : 'ar')
+	}
 
 	async function handleLogout() {
 		await session.logout()
@@ -28,31 +39,31 @@
 {:else if !user}
 	<div class="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface px-4">
 		{#if session.bootError === 'RATE_LIMITED'}
-			<p class="text-sm text-on-surface-variant">Too many requests — please wait a few seconds and try again.</p>
+			<p class="text-sm text-on-surface-variant">{t('auth.tooManyRequests')}</p>
 			<button
 				onclick={() => session.bootstrap()}
 				class="rounded bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:bg-on-primary-fixed-variant"
 			>
-				Retry
+				{t('common.retry')}
 			</button>
 		{:else}
-			<p class="text-sm text-on-surface-variant">Your session has expired.</p>
+			<p class="text-sm text-on-surface-variant">{t('auth.sessionExpired')}</p>
 			<a
 				href="/login"
 				class="rounded bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:bg-on-primary-fixed-variant"
 			>
-				Sign in
+				{t('common.signIn')}
 			</a>
 		{/if}
 	</div>
 {:else if !merchant}
 	<div class="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface px-4">
-		<p class="text-sm text-on-surface-variant">No store is linked to this account.</p>
+		<p class="text-sm text-on-surface-variant">{t('auth.noStore')}</p>
 		<a
 			href="/login"
 			class="rounded bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:bg-on-primary-fixed-variant"
 		>
-			Sign in
+			{t('common.signIn')}
 		</a>
 	</div>
 {:else}
@@ -87,14 +98,14 @@
 								class="mb-1.5 flex items-center gap-2 px-3 text-[11px] font-semibold uppercase tracking-widest text-secondary"
 							>
 								<Icon name={NAV_GROUP_ICONS[group] ?? 'menu'} size="text-[14px]" />
-								{group}
+								{t('nav.' + group.toLowerCase())}
 							</p>
 							<div class="space-y-0.5">
 								{#each items as item}
 									<a
 										href={item.route}
 										onclick={() => (sidebarOpen = false)}
-										title={item.label}
+										title={t(item.key ?? item.label)}
 										class="flex items-center gap-3 rounded border-l-2 px-3 py-2.5 text-sm font-medium transition-colors"
 										class:bg-surface-container={active === item.route || active.startsWith(item.route + '/')}
 										class:text-primary={active === item.route || active.startsWith(item.route + '/')}
@@ -104,7 +115,7 @@
 										class:hover:bg-surface-container-low={!(active === item.route || active.startsWith(item.route + '/'))}
 									>
 										<Icon name={item.icon} size="text-[18px]" />
-										{item.label}
+										{t(item.key ?? item.label)}
 									</a>
 								{/each}
 							</div>
@@ -122,7 +133,7 @@
 						class:text-primary={active.startsWith('/settings')}
 					>
 						<Icon name="settings" size="text-[18px]" />
-						Settings
+						{t('nav.settings')}
 					</a>
 					<div class="flex items-center gap-3 rounded-lg px-3 py-2">
 						<div
@@ -137,8 +148,8 @@
 						<button
 							class="ml-auto flex h-11 w-11 items-center justify-center rounded text-secondary transition-colors hover:bg-surface-container hover:text-on-surface"
 							onclick={handleLogout}
-							title="Sign out"
-							aria-label="Sign out"
+							title={t('common.signOut')}
+							aria-label={t('common.signOut')}
 						>
 							<Icon name="logout" size="text-[18px]" />
 						</button>
@@ -188,19 +199,35 @@
 					</div>
 
 					<div class="flex items-center gap-1.5">
+						<button
+							class="flex h-11 w-11 items-center justify-center rounded text-secondary transition-colors hover:bg-surface-container"
+							onclick={cycleTheme}
+							title={t('ui.theme')}
+							aria-label={t('ui.theme')}
+						>
+							<Icon name={theme.isDark ? 'dark_mode' : 'light_mode'} size="text-[18px]" />
+						</button>
+						<button
+							class="flex h-11 w-11 items-center justify-center rounded text-secondary transition-colors hover:bg-surface-container"
+							onclick={cycleLocale}
+							title={t('ui.language')}
+							aria-label={t('ui.language')}
+						>
+							<Icon name="translate" size="text-[18px]" />
+						</button>
 						<a
 							href="/settings"
 							class="flex h-11 w-11 items-center justify-center rounded text-secondary transition-colors hover:bg-surface-container"
-							title="Settings"
-							aria-label="Settings"
+							title="{t('nav.settings')}"
+							aria-label="{t('nav.settings')}"
 						>
 							<Icon name="settings" size="text-[18px]" />
 						</a>
 						<a
 							href="/analytics"
 							class="flex h-11 w-11 items-center justify-center rounded text-secondary transition-colors hover:bg-surface-container"
-							title="Analytics"
-							aria-label="Analytics"
+							title={t('nav.analytics')}
+							aria-label={t('nav.analytics')}
 						>
 							<Icon name="insights" size="text-[18px]" />
 						</a>

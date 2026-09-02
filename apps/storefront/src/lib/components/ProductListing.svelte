@@ -2,6 +2,7 @@
 	import type { Page, ProductSummary } from '$lib/types'
 	import ProductCard from './ProductCard.svelte'
 	import { qs } from '$lib/api'
+	import { t } from '$lib/i18n'
 
 	interface Props {
 		page: Page<ProductSummary>
@@ -49,5 +50,5 @@
 		</nav>
 	{/if}
 {:else}
-	<p class="py-16 text-center text-gray-500">No products found.</p>
+	<p class="py-16 text-center text-gray-500">{t('products.noProducts')}</p>
 {/if}

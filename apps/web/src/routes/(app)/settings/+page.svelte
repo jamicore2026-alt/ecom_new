@@ -9,6 +9,7 @@
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import { titleCase } from '$lib/format'
+	import { t } from '$lib/i18n'
 	import type { Address, NotificationSettings, PaymentProviderView, PaymentSettings, Permission, ShippingSettings, StaffMember, StoreSettings, TaxSettings } from '$lib/types'
 
 	type Section = 'store' | 'payments' | 'shipping' | 'taxes' | 'notifications' | 'staff'
@@ -355,16 +356,16 @@
 	]
 </script>
 
-<svelte:head><title>Settings — Merchant OS</title></svelte:head>
+<svelte:head><title>{t('settings.title')} — Merchant OS</title></svelte:head>
 
 {#if !isAdmin()}
 	<div class="rounded-xl border border-warning/30 bg-warning/10 p-6 text-sm text-warning">
-		Settings require an <span class="font-semibold">admin</span> or <span class="font-semibold">owner</span> role.
+		{t('settings.adminRequired')}
 	</div>
 {:else}
 	<div class="space-y-5">
 		<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
-			<h1 class="font-display text-display text-on-surface">Settings</h1>
+			<h1 class="font-display text-display text-on-surface">{t('settings.title')}</h1>
 		</div>
 
 		<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border border-outline-variant bg-surface-container-lowest p-1">
