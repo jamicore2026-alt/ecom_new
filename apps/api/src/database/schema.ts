@@ -1119,7 +1119,13 @@ export const notificationSettings = pgTable('notification_settings', {
   updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
 
-export const EMAIL_TEMPLATE_IDS = ['order_placed', 'order_paid', 'refund_processed'] as const
+export const EMAIL_TEMPLATE_IDS = [
+  'order_placed',
+  'order_paid',
+  'refund_processed',
+  'reset_password',
+  'email_verification'
+] as const
 export type EmailTemplateId = (typeof EMAIL_TEMPLATE_IDS)[number]
 
 export const emailLogs = pgTable(

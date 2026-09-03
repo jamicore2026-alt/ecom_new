@@ -29,8 +29,8 @@ import {
 import { DiscountsService } from '../discounts/service'
 import { EmailsService } from '../emails/service'
 import { CartsService } from '../carts/service'
+import { OrdersService } from '../orders/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
-import { markOrderPaidEffects } from '../../shared/order-payments'
 import { runCancelPendingOrder } from '../../shared/order-cancel'
 import { emit } from '../../shared/event-dispatch'
 import { roundForCurrency } from '../../shared/currency'
@@ -38,7 +38,6 @@ import { productSearchCondition, productSearchRank } from '../../shared/product-
 import { getProvider, listProviders } from '../../payments/registry'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
-import type { CallbackResult } from '../../payments/types'
 
 const number = (v: unknown) => Number(v)
 
@@ -1396,87 +1395,6 @@ export class StorefrontService {
     })
   }
 
-  /**
-   * Applies a verified gateway result to the stored transaction and its order.
-   * Runs in one transaction with a conditional unpaid→paid flip so concurrent
-   * webhook + sync calls can never double-apply (totalSpent, emails, visits).
-   */
-  static async applyPaymentResult(
-    merchantId: string,
-    providerId: string,
-    result: CallbackResult
-  ) {
-    const [txn] = await db
-      .select()
-      .from(paymentTransactions)
-      .where(
-        and(
-          eq(paymentTransactions.provider, providerId),
-          eq(paymentTransactions.providerRef, result.providerRef),
-          eq(paymentTransactions.merchantId, merchantId)
-        )
-      )
-    if (!txn) throw notFound('TRANSACTION_NOT_FOUND', 'No matching payment transaction')
-
-    // Underpayment / currency mismatch guard — the captured amount must cover
-    // the order total before we mark anything paid.
-    let status = result.status
-    if (status === 'paid') {
-      const expected = number(txn.amount)
-      if (
-        result.amount !== undefined &&
-        result.amount + 0.005 < expected
-      ) {
-        console.error(
-          `[payments] underpaid ${result.providerRef}: captured ${result.amount} < expected ${expected} — leaving order unpaid`
-        )
-        status = 'pending'
-      } else if (result.currency && txn.currency && result.currency !== txn.currency) {
-        console.error(
-          `[payments] currency mismatch for ${result.providerRef}: ${result.currency} != ${txn.currency} — leaving order unpaid`
-        )
-        status = 'pending'
-      }
-    }
-
-    const txnStatus = status === 'paid' ? 'paid' : status === 'failed' ? 'failed' : 'pending'
-
-    let orderUpdated = false
-    let paidOrderId: string | null = null
-
-    await db.transaction(async (tx) => {
-      await tx
-        .update(paymentTransactions)
-        .set({ status: txnStatus, raw: result.raw ?? txn.raw, updatedAt: new Date() })
-        .where(eq(paymentTransactions.id, txn.id))
-
-      if (status !== 'paid') return
-
-      // Conditional flip — only the first caller wins; refunds/cancellations untouched.
-      const flipped = await tx
-        .update(orders)
-        .set({ paymentStatus: 'paid', expiresAt: null, updatedAt: new Date() })
-        .where(and(eq(orders.id, txn.orderId), eq(orders.paymentStatus, 'unpaid')))
-        .returning()
-      if (flipped.length === 0) return
-
-      orderUpdated = true
-      paidOrderId = flipped[0].id
-      await markOrderPaidEffects(tx, merchantId, flipped[0])
-    })
-
-    if (paidOrderId) {
-      void EmailsService.orderPaid(merchantId, paidOrderId)
-      const [order] = await db
-        .select({ orderNumber: orders.orderNumber })
-        .from(orders)
-        .where(eq(orders.id, paidOrderId))
-      emit(merchantId, 'order.paid', { orderId: paidOrderId, orderNumber: order?.orderNumber })
-    }
-
-    return { orderUpdated, orderId: txn.orderId }
-  }
-
   /** Cancel a pending unpaid provider order — delegates to the authoritative
    *  shared cancellation (claim + restock + coupon restore).
    *  Returns false when another path (webhook, sweep, sync) already resolved the order. */
@@ -1539,7 +1457,7 @@ export class StorefrontService {
       providerRef: txn?.providerRef ?? undefined
     })
 
-    const applied = await this.applyPaymentResult(store.merchant.id, order.paymentProvider, result)
+    const applied = await OrdersService.applyPaymentResult(store.merchant.id, order.paymentProvider, result)
     const [fresh] = await db.select().from(orders).where(eq(orders.id, order.id))
     return ok({
       orderNumber: fresh.orderNumber,

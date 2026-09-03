@@ -44,6 +44,7 @@
       "dependencies": {
         "@fontsource-variable/cairo": "^5.3.0",
         "@fontsource-variable/inter": "^5.3.0",
+        "@merchant-dashboard/api-proxy": "*",
       },
       "devDependencies": {
         "@sveltejs/adapter-node": "^5.2.12",
@@ -64,6 +65,7 @@
       "dependencies": {
         "@fontsource-variable/cairo": "^5.3.0",
         "@fontsource-variable/inter": "^5.3.0",
+        "@merchant-dashboard/api-proxy": "*",
       },
       "devDependencies": {
         "@sveltejs/adapter-node": "^5.2.12",
@@ -77,6 +79,10 @@
         "typescript": "^5.7.0",
         "vite": "^6.0.0",
       },
+    },
+    "packages/api-proxy": {
+      "name": "@merchant-dashboard/api-proxy",
+      "version": "1.0.0",
     },
   },
   "packages": {
@@ -189,6 +195,8 @@
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
     "@merchant-dashboard/api": ["@merchant-dashboard/api@workspace:apps/api"],
+
+    "@merchant-dashboard/api-proxy": ["@merchant-dashboard/api-proxy@workspace:packages/api-proxy"],
 
     "@merchant-dashboard/storefront": ["@merchant-dashboard/storefront@workspace:apps/storefront"],
 

@@ -13,6 +13,7 @@ import {
   productVariants
 } from '../src/database/schema'
 import { StorefrontService } from '../src/modules/storefront/service'
+import { OrdersService } from '../src/modules/orders/service'
 import { verifyTamaraJwt } from '../src/payments/tamara'
 import { decryptJson, encryptJson, isMaskedValue, maskSecret } from '../src/shared/crypto'
 import { currencyDecimals, roundForCurrency } from '../src/shared/currency'
@@ -189,7 +190,7 @@ describe('storefront payments integration', () => {
       currency: order.currency
     })
 
-    await StorefrontService.applyPaymentResult(merchantId, 'myfatoorah', {
+    await OrdersService.applyPaymentResult(merchantId, 'myfatoorah', {
       providerRef: 'mf-ref-paytest',
       status: 'paid',
       eventId: 'evt-paytest-1',
@@ -207,7 +208,7 @@ describe('storefront payments integration', () => {
     expect(txn.status).toBe('paid')
 
     // A second confirmation must not double-apply anything harmful
-    await StorefrontService.applyPaymentResult(merchantId, 'myfatoorah', {
+    await OrdersService.applyPaymentResult(merchantId, 'myfatoorah', {
       providerRef: 'mf-ref-paytest',
       status: 'paid',
       eventId: 'evt-paytest-2'

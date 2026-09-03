@@ -6,7 +6,7 @@ import { getProvider } from '../../payments/registry'
 import { decryptJson } from '../../shared/crypto'
 import { badRequest, notFound } from '../../shared/errors'
 import { ok } from '../../shared/response'
-import { StorefrontService } from '../storefront/service'
+import { OrdersService } from '../orders/service'
 
 export const webhooksModule = new Elysia({ prefix: '/api', name: 'webhooks' }).post(
   '/webhooks/:provider/:slug',
@@ -65,7 +65,7 @@ export const webhooksModule = new Elysia({ prefix: '/api', name: 'webhooks' }).p
     }
 
     try {
-      await StorefrontService.applyPaymentResult(merchant.id, params.provider, result)
+      await OrdersService.applyPaymentResult(merchant.id, params.provider, result)
     } catch (err) {
       // Release the claim so the provider's retry can be applied — a failed
       // application must not be swallowed by dedupe forever.

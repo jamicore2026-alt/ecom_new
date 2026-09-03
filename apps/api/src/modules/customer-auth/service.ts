@@ -4,9 +4,7 @@ import { db } from '../../database/client'
 import {
   customerAddresses,
   customers,
-  emailLogs,
   merchants,
-  notificationSettings,
   orderItems,
   orders,
   passwordResetTokens,
@@ -20,7 +18,7 @@ import {
 import { ok } from '../../shared/response'
 import { badRequest, conflict, notFound, unauthorized } from '../../shared/errors'
 import { makeMeta, parsePagination } from '../../shared/pagination'
-import { getMailer, renderEmail } from '../../shared/mailer'
+import { EmailsService } from '../emails/service'
 
 const number = (v: unknown) => Number(v)
 
@@ -486,7 +484,11 @@ export class CustomerAuthService {
       expiresAt
     })
 
-    await this.sendPasswordResetEmail(merchantId, customer, raw)
+    void EmailsService.shopperAuthEmail(merchantId, {
+      to: customer.email,
+      kind: 'reset_password',
+      token: raw
+    }).catch(() => undefined)
     return ok({ status: 'sent' })
   }
 
@@ -578,7 +580,12 @@ export class CustomerAuthService {
       expiresAt
     })
 
-    await this.sendVerificationEmail(merchant.id, customer, merchant.slug as string, raw)
+    void EmailsService.shopperAuthEmail(merchant.id, {
+      to: customer.email,
+      kind: 'email_verification',
+      token: raw,
+      slug: merchant.slug
+    }).catch(() => undefined)
     return ok({ verifies: true, message: 'Verification email sent' })
   }
 
@@ -808,117 +815,10 @@ export class CustomerAuthService {
     return row
   }
 
-  /* ------------------------------- email helpers ------------------------------ */
-
-  private static async sendPasswordResetEmail(
-    merchantId: string,
-    customer: typeof customers.$inferSelect,
-    token: string
-  ) {
-    // Fire-and-forget — never blocks the request path.
-    void this.sendTransactional({
-      merchantId,
-      to: customer.email,
-      subject: 'Reset your password',
-      token,
-      template: 'reset_password'
-    }).catch(() => undefined)
-  }
-
-  private static async sendVerificationEmail(
-    merchantId: string,
-    customer: typeof customers.$inferSelect,
-    slug: string,
-    token: string
-  ) {
-    void this.sendTransactional({
-      merchantId,
-      to: customer.email,
-      subject: 'Verify your email address',
-      token,
-      template: 'email_verification',
-      slug
-    }).catch(() => undefined)
-  }
-
-  private static async sendTransactional(input: {
-    merchantId: string
-    to: string
-    subject: string
-    token: string
-    template: string
-    slug?: string
-  }): Promise<void> {
-    try {
-      const [settingsRow] = await db
-        .select({ enabled: notificationSettings.enabled })
-        .from(notificationSettings)
-        .where(eq(notificationSettings.merchantId, input.merchantId))
-      // If no notification settings row exists, notifications default to enabled.
-      if (settingsRow && !settingsRow.enabled) return
-
-      const [merchant] = await db
-        .select({ name: merchants.name })
-        .from(merchants)
-        .where(eq(merchants.id, input.merchantId))
-
-      const storeName = merchant?.name ?? 'Our store'
-      const fromEmail = process.env.MAIL_FROM_FALLBACK ?? 'onboarding@resend.dev'
-
-      const title = input.template === 'reset_password' ? 'Reset your password' : 'Verify your email'
-      const url = input.slug
-        ? `${process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'}/${input.slug}/account?verify=${encodeURIComponent(input.token)}`
-        : `${process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'}/account?reset=${encodeURIComponent(input.token)}`
-
-      const html = renderEmail({
-        title,
-        intro:
-          input.template === 'reset_password'
-            ? 'We received a request to reset your password. Click below to set a new one. If you did not request this, you can safely ignore this email.'
-            : 'Confirm that this is your email address to keep your account secure.',
-        storeName,
-        cta: { label: input.template === 'reset_password' ? 'Reset password' : 'Verify email', url }
-      })
-
-      await db.insert(emailLogs).values({
-        merchantId: input.merchantId,
-        toEmail: input.to,
-        template: input.template as never,
-        subject: input.subject,
-        status: 'queued'
-      })
-
-      const result = await getMailer().send({
-        from: `${storeName} <${fromEmail}>`,
-        to: input.to,
-        subject: input.subject,
-        html
-      })
-
-      // Update the last email log we just inserted to reflect delivery status.
-      const [log] = await db
-        .select({ id: emailLogs.id })
-        .from(emailLogs)
-        .where(eq(emailLogs.toEmail, input.to))
-        .orderBy(desc(emailLogs.createdAt))
-        .limit(1)
-      if (log) {
-        await db
-          .update(emailLogs)
-          .set(
-            result.ok && result.id === 'noop'
-              ? { status: 'skipped', providerRef: 'noop' }
-              : result.ok
-                ? { status: 'sent', providerRef: result.id ?? null, sentAt: new Date() }
-                : { status: 'failed', error: result.error ?? 'Unknown mailer error' }
-          )
-          .where(eq(emailLogs.id, log.id))
-      }
-    } catch (e) {
-      console.error('[emails] sendTransactional failed:', e)
-    }
-  }
-
+  /* --------------------------- shopper email helpers ---------------------
+   * Shopper password-reset and email-verification emails are sent through
+   * EmailsService.shopperAuthEmail (shared identity + notification-settings
+   * handling). This keeps a single transactional-email path. */
 
   private static async resolveStore(slug: string) {
     const [merchant] = await db

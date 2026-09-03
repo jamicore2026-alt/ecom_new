@@ -16,7 +16,7 @@ import {
 } from '../../database/schema'
 import { getProvider } from '../../payments/registry'
 import { decryptJson } from '../../shared/crypto'
-import { applyManualMarkPaid } from '../../shared/order-payments'
+import { applyManualMarkPaid, markOrderPaidEffects } from '../../shared/order-payments'
 import { cancelPendingOrderTx } from '../../shared/order-cancel'
 import { emit } from '../../shared/event-dispatch'
 import { EmailsService } from '../emails/service'
@@ -25,6 +25,7 @@ import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
 import type { Order } from '../../database/schema'
 import type { OrderStatus } from '../../shared/types'
+import type { CallbackResult } from '../../payments/types'
 
 const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   pending: ['processing', 'cancelled'],
@@ -850,6 +851,91 @@ export class OrdersService {
       void EmailsService.refundProcessed(merchantId, order.id, Number(refund.amount))
       return ok(row)
     })
+  }
+
+  /**
+   * Applies a verified gateway result to the stored transaction and its order.
+   * Runs in one transaction with a conditional unpaid→paid flip so concurrent
+   * webhook + sync calls can never double-apply (totalSpent, emails, visits).
+   *
+   * Owned by the orders domain — both the storefront sync path and the inbound
+   * payment-callback webhook delegate here so payment state has a single owner.
+   */
+  static async applyPaymentResult(
+    merchantId: string,
+    providerId: string,
+    result: CallbackResult
+  ) {
+    const number = (v: unknown) => Number(v)
+    const [txn] = await db
+      .select()
+      .from(paymentTransactions)
+      .where(
+        and(
+          eq(paymentTransactions.provider, providerId),
+          eq(paymentTransactions.providerRef, result.providerRef),
+          eq(paymentTransactions.merchantId, merchantId)
+        )
+      )
+    if (!txn) throw notFound('TRANSACTION_NOT_FOUND', 'No matching payment transaction')
+
+    // Underpayment / currency mismatch guard — the captured amount must cover
+    // the order total before we mark anything paid.
+    let status = result.status
+    if (status === 'paid') {
+      const expected = number(txn.amount)
+      if (
+        result.amount !== undefined &&
+        result.amount + 0.005 < expected
+      ) {
+        console.error(
+          `[payments] underpaid ${result.providerRef}: captured ${result.amount} < expected ${expected} — leaving order unpaid`
+        )
+        status = 'pending'
+      } else if (result.currency && txn.currency && result.currency !== txn.currency) {
+        console.error(
+          `[payments] currency mismatch for ${result.providerRef}: ${result.currency} != ${txn.currency} — leaving order unpaid`
+        )
+        status = 'pending'
+      }
+    }
+
+    const txnStatus = status === 'paid' ? 'paid' : status === 'failed' ? 'failed' : 'pending'
+
+    let orderUpdated = false
+    let paidOrderId: string | null = null
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(paymentTransactions)
+        .set({ status: txnStatus, raw: result.raw ?? txn.raw, updatedAt: new Date() })
+        .where(eq(paymentTransactions.id, txn.id))
+
+      if (status !== 'paid') return
+
+      // Conditional flip — only the first caller wins; refunds/cancellations untouched.
+      const flipped = await tx
+        .update(orders)
+        .set({ paymentStatus: 'paid', expiresAt: null, updatedAt: new Date() })
+        .where(and(eq(orders.id, txn.orderId), eq(orders.paymentStatus, 'unpaid')))
+        .returning()
+      if (flipped.length === 0) return
+
+      orderUpdated = true
+      paidOrderId = flipped[0].id
+      await markOrderPaidEffects(tx, merchantId, flipped[0])
+    })
+
+    if (paidOrderId) {
+      void EmailsService.orderPaid(merchantId, paidOrderId)
+      const [order] = await db
+        .select({ orderNumber: orders.orderNumber })
+        .from(orders)
+        .where(eq(orders.id, paidOrderId))
+      emit(merchantId, 'order.paid', { orderId: paidOrderId, orderNumber: order?.orderNumber })
+    }
+
+    return { orderUpdated, orderId: txn.orderId }
   }
 
   /**

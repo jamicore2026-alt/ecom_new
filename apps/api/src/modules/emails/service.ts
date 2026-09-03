@@ -122,6 +122,48 @@ export class EmailsService {
     }
   }
 
+  /* --------------------------- shopper auth emails ----------------------- */
+
+  /**
+   * Queues a password-reset or email-verification email for a shopper.
+   * Fire-and-forget via queue(); never throws. Builds the CTA link and honors
+   * the merchant's notification settings + from-name/from-email identity.
+   */
+  static async shopperAuthEmail(
+    merchantId: string,
+    input: {
+      to: string
+      kind: 'reset_password' | 'email_verification'
+      token: string
+      slug?: string
+    }
+  ): Promise<void> {
+    const title =
+      input.kind === 'reset_password' ? 'Reset your password' : 'Verify your email'
+    const url = input.slug
+      ? `${process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'}/${input.slug}/account?verify=${encodeURIComponent(input.token)}`
+      : `${process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'}/account?reset=${encodeURIComponent(input.token)}`
+
+    await this.queue({
+      merchantId,
+      to: input.to,
+      template: input.kind,
+      subject: input.kind === 'reset_password' ? 'Reset your password' : 'Verify your email address',
+      html: renderEmail({
+        title,
+        intro:
+          input.kind === 'reset_password'
+            ? 'We received a request to reset your password. Click below to set a new one. If you did not request this, you can safely ignore this email.'
+            : 'Confirm that this is your email address to keep your account secure.',
+        storeName: (await this.identity(merchantId))?.storeName ?? 'Our store',
+        cta: {
+          label: input.kind === 'reset_password' ? 'Reset password' : 'Verify email',
+          url
+        }
+      })
+    })
+  }
+
   /* ------------------------------- triggers ------------------------------ */
 
   private static async recipientFor(order: Order): Promise<string | null> {
