@@ -38,7 +38,10 @@ export const theme = {
 		return mode
 	},
 	get isDark() {
-		return mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+		if (mode === 'dark') return true
+		if (mode === 'light') return false
+		if (typeof window === 'undefined') return false
+		return window.matchMedia('(prefers-color-scheme: dark)').matches
 	},
 	setTheme,
 	initTheme
