@@ -190,13 +190,26 @@ const pickStatus = () => {
 
 /* --------------------------------- seed --------------------------------- */
 
-async function main() {
+export async function seed() {
   console.log('🧹 Clearing existing data...')
   await connection.unsafe(`
-    TRUNCATE TABLE user_outlets, roles, merchant_modules, outlets, visits, refunds,
-    returns, order_items, orders, inventory_logs,
-    product_variants, products, categories, customers, coupons, promotions,
-    store_settings, payment_settings, shipping_settings, tax_settings, users, merchants
+    TRUNCATE TABLE
+      affiliates, api_keys, audit_logs, background_jobs, campaigns, carriers,
+      carts, categories, content_pages, coupons, customer_addresses,
+      customer_segments, customer_tags, customers, delivery_orders, delivery_zones,
+      driver_assignments, driver_locations, drivers, email_logs, food_order_items,
+      fulfillments, inventory_logs, invoices, kitchen_stations, kitchen_ticket_items,
+      kitchen_tickets, loyalty_accounts, loyalty_earning_rules, loyalty_ledger,
+      loyalty_rewards, loyalty_tiers, menu_item_modifiers, menu_item_outlets,
+      menu_items, merchant_modules, modifier_groups, modifiers, order_items, orders,
+      outlets, password_reset_tokens, payment_provider_configs, payment_transactions,
+      product_images, product_variants, products, promotions, referrals, refunds,
+      returns, reviews, roles, stock_transfers, table_sections, table_sessions,
+      tables, token_blacklist, user_outlets, users, verification_tokens, visits,
+      warehouse_inventory, warehouses, webhook_deliveries, webhook_endpoints,
+      webhook_events, wishlist_items, notification_settings, store_settings,
+      payment_settings, shipping_settings, tax_settings, checkout_settings,
+      theme_configs, cod_rules, merchants
     RESTART IDENTITY CASCADE
   `)
 
@@ -775,11 +788,15 @@ async function main() {
   console.log(`   Orders:       ${orderIds.length}`)
   console.log('   Customers:    40')
   console.log('───────────────────────────────────────────')
-
-  await connection.end()
 }
 
-main().catch((e) => {
-  console.error('❌ Seed failed:', e)
-  process.exit(1)
-})
+if (import.meta.main) {
+  seed()
+    .catch((e) => {
+      console.error('❌ Seed failed:', e)
+      process.exit(1)
+    })
+    .finally(async () => {
+      await connection.end()
+    })
+}
