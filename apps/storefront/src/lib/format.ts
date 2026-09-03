@@ -1,6 +1,6 @@
 import { i18n } from '$lib/i18n'
 
-const numLocale = () => (i18n.locale === 'ar' ? 'ar-U' : 'en-US')
+const numLocale = () => (i18n.locale === 'ar' ? 'ar' : 'en-US')
 
 export const money = (value: number | null | undefined, currency = 'USD') =>
 	new Intl.NumberFormat(numLocale(), {
