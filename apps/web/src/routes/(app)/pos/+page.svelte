@@ -28,6 +28,7 @@
 	let categories = $state<{ id: string; name: string }[]>([])
 	let loading = $state(true)
 	let category = $state('')
+	let query = $state('')
 
 	let cart = $state<CartLine[]>([])
 	let customerName = $state('')
@@ -71,8 +72,17 @@
 	}
 
 	function visibleItems() {
-		if (!category) return menu
-		return menu.filter((it) => it.product.categoryId === category)
+		let items = menu
+		if (category) items = items.filter((it) => it.product.categoryId === category)
+		if (query.trim()) {
+			const q = query.trim().toLowerCase()
+			items = items.filter(
+				(it) =>
+					it.product.name.toLowerCase().includes(q) ||
+					it.product.sku?.toLowerCase().includes(q)
+			)
+		}
+		return items
 	}
 
 	function cartTotal() {
@@ -104,7 +114,7 @@
 			c.selected.delete(modId)
 		} else {
 			if (g.maxSelections > 0 && c.selected.size >= g.maxSelections) {
-				toast.error(`Max ${g.maxSelections} selected for ${g.name}`)
+				toast.error(t('pos.maxSelection', { count: String(g.maxSelections), name: g.name }))
 				return
 			}
 			c.selected.set(modId, 1)
@@ -118,7 +128,13 @@
 		for (const c of choice) {
 			const min = c.group.required ? 1 : c.group.minSelections || 0
 			if (c.selected.size < min) {
-				toast.error(`Select at least ${min} option${min === 1 ? '' : 's'} for ${c.group.name}`)
+				toast.error(
+					t('pos.minSelection', {
+						min: String(min),
+						options: min === 1 ? t('pos.option') : t('pos.options'),
+						group: c.group.name
+					})
+				)
 				return
 			}
 		}
@@ -160,12 +176,12 @@
 
 	async function placeOrder() {
 		if (cart.length === 0) {
-			toast.error('Add at least one item')
+			toast.error(t('pos.addItems'))
 			return
 		}
 		const outletId = sessionOutletId()
 		if (!outletId) {
-			toast.error('No outlet selected')
+			toast.error(t('pos.noOutlet'))
 			return
 		}
 		if (placing) return
@@ -195,7 +211,7 @@
 				})
 				paid = true
 			} catch (payErr) {
-				toast.error(`Order charged but payment not recorded: ${(payErr as Error).message}`)
+				toast.error(t('pos.paymentNotRecorded', { message: (payErr as Error).message }))
 			}
 
 			receiptOrder = order
@@ -226,8 +242,8 @@
 <div class="space-y-6">
 	<div class="mb-4 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 		<div>
-			<h1 class="font-display text-display text-on-surface">Register</h1>
-			<p class="mt-1 text-body-sm text-secondary">Take orders and payments at the counter.</p>
+			<h1 class="font-display text-display text-on-surface">{t('pos.register')}</h1>
+			<p class="mt-1 text-body-sm text-secondary">{t('pos.subtitle')}</p>
 		</div>
 		<div class="flex items-center gap-3">
 			{#if session.allowedOutlets.length > 1}
@@ -242,7 +258,7 @@
 				</select>
 			{/if}
 			{#if cart.length}
-				<Button variant="secondary" onclick={clearCart}><Icon name="delete_sweep" size="text-[18px]" /> Clear</Button>
+				<Button variant="secondary" onclick={clearCart}><Icon name="delete_sweep" size="text-[18px]" /> {t('pos.clear')}</Button>
 			{/if}
 		</div>
 	</div>
@@ -251,14 +267,14 @@
 		
 		<div class="space-y-4">
 			{#if loading}
-				<div class="py-16 text-center text-sm text-secondary">Loading menu…</div>
+				<div class="py-16 text-center text-sm text-secondary">{t('pos.loading')}</div>
 			{:else if categories.length}
 				<div class="flex flex-wrap gap-2">
 					<button
 						class="rounded-full px-4 py-1.5 text-sm font-medium transition-colors {category === '' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'}"
 						onclick={() => (category = '')}
 					>
-						All
+						{t('pos.allItems')}
 					</button>
 					{#each categories as c (c.id)}
 						<button
@@ -269,12 +285,22 @@
 						</button>
 					{/each}
 				</div>
+				<div class="relative mt-3">
+					<div class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-secondary">
+						<Icon name="search" size="text-[16px]" />
+					</div>
+					<input
+						class="field pl-9"
+						bind:value={query}
+						placeholder={t('pos.searchPlaceholder')}
+					/>
+				</div>
 			{/if}
 
 			{#if visibleItems().length === 0}
 				<div class="flex flex-col items-center gap-2 py-16 text-center">
 					<Icon name="restaurant_menu" size="text-[32px]" class="text-outline" />
-					<p class="text-sm text-secondary">No items in this category.</p>
+					<p class="text-sm text-secondary">{query.trim() ? t('pos.searchNoResults') : t('pos.categoryEmpty')}</p>
 				</div>
 			{:else}
 				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
@@ -297,14 +323,14 @@
 		
 		<Card class="lg:sticky lg:top-6 self-start">
 			<div class="mb-3 flex items-center justify-between">
-				<h2 class="font-display text-title-md text-on-surface">Order</h2>
-				<span class="text-xs text-secondary">{cart.length} item{cart.length === 1 ? '' : 's'}</span>
+				<h2 class="font-display text-title-md text-on-surface">{t('pos.cart')}</h2>
+				<span class="text-xs text-secondary">{t('pos.itemsCount', { count: String(cart.length), s: cart.length === 1 ? '' : 's' })}</span>
 			</div>
 
 			{#if cart.length === 0}
 				<div class="flex flex-col items-center gap-2 py-10 text-center text-secondary">
 					<Icon name="shopping_cart" size="text-[28px]" class="text-outline" />
-					<p class="text-sm">Tap items to add them.</p>
+					<p class="text-sm">{t('pos.tapToAdd')}</p>
 				</div>
 			{:else}
 				<div class="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
@@ -318,13 +344,13 @@
 											<button
 												class="flex h-6 w-6 items-center justify-center rounded border border-outline-variant text-on-surface-variant hover:bg-surface-container-high"
 												onclick={() => setQty(i, line.quantity - 1)}
-												aria-label="Decrease quantity"
+												aria-label={t('pos.decreaseQty')}
 											>−</button>
 											<span class="w-5 text-center text-sm font-medium">{line.quantity}</span>
 											<button
 												class="flex h-6 w-6 items-center justify-center rounded border border-outline-variant text-on-surface-variant hover:bg-surface-container-high"
 												onclick={() => setQty(i, line.quantity + 1)}
-												aria-label="Increase quantity"
+												aria-label={t('pos.increaseQty')}
 											>+</button>
 										</div>
 										<span class="font-mono-label text-mono-label text-on-surface">{currency(linePrice(line))}</span>
@@ -333,7 +359,7 @@
 								<button
 									class="rounded p-1 text-xs text-error hover:bg-error-container/40"
 									onclick={() => setQty(i, 0)}
-									aria-label="Remove item"
+									aria-label={t('pos.removeItem')}
 								>✕</button>
 							</div>
 						</div>
@@ -341,24 +367,24 @@
 				</div>
 
 				<div class="mt-4 space-y-1 border-t border-outline-variant pt-3 text-sm">
-					<div class="flex justify-between text-secondary"><span>Subtotal</span><span class="text-on-surface-variant">{currency(cartTotal())}</span></div>
-					<div class="flex justify-between font-semibold text-on-surface"><span>Total</span><span>{currency(cartTotal())}</span></div>
+					<div class="flex justify-between text-secondary"><span>{t('pos.subtotal')}</span><span class="text-on-surface-variant">{currency(cartTotal())}</span></div>
+					<div class="flex justify-between font-semibold text-on-surface"><span>{t('pos.total')}</span><span>{currency(cartTotal())}</span></div>
 				</div>
 
 				<div class="mt-4 space-y-3">
 					<div>
 						<label for="pos-customer" class="field-label">{t('pos.customer')}</label>
-						<input id="pos-customer" class="field" bind:value={customerName} placeholder="Walk-in guest" />
+						<input id="pos-customer" class="field" bind:value={customerName} placeholder={t('pos.walkInGuest')} />
 					</div>
 					<div>
 						<label for="pos-notes" class="field-label">{t('pos.notes')}</label>
-						<input id="pos-notes" class="field" bind:value={notes} placeholder="Special instructions" />
+						<input id="pos-notes" class="field" bind:value={notes} placeholder={t('pos.specialInstructions')} />
 					</div>
 				</div>
 
 				<div class="mt-4">
 					<Button class="w-full" size="md" onclick={() => { completing = true }} disabled={!canSell}>
-						<Icon name="point_of_sale" size="text-[20px]" /> Charge {currency(cartTotal())}
+						<Icon name="point_of_sale" size="text-[20px]" /> {t('pos.charge')} {currency(cartTotal())}
 					</Button>
 				</div>
 			{/if}
@@ -374,8 +400,8 @@
 					<div class="mb-2 flex items-center justify-between">
 						<span class="font-medium text-on-surface">{c.group.name}</span>
 						<span class="text-xs text-secondary">
-							{c.group.required ? 'Required' : 'Optional'}
-							{c.group.maxSelections > 0 ? ` · up to ${c.group.maxSelections}` : ''}
+							{c.group.required ? t('pos.required') : t('pos.optional')}
+							{c.group.maxSelections > 0 ? ` · ${t('pos.upTo', { count: String(c.group.maxSelections) })}` : ''}
 						</span>
 					</div>
 					<div class="grid gap-2">
@@ -393,8 +419,8 @@
 				</div>
 			{/each}
 			<div class="flex justify-end gap-2 pt-1">
-				<Button variant="secondary" onclick={() => (openItem = null)}>Cancel</Button>
-				<Button onclick={confirmModifiers}>Add to order</Button>
+				<Button variant="secondary" onclick={() => (openItem = null)}>{t('pos.cancel')}</Button>
+				<Button onclick={confirmModifiers}>{t('pos.addToOrder')}</Button>
 			</div>
 		</div>
 	</Modal>
@@ -404,22 +430,22 @@
 	<Modal open={true} title={t('pos.payment')} onClose={() => { if (!placing) completing = false }} width="sm">
 		<div class="space-y-4">
 			<div class="flex items-center justify-between rounded border border-outline-variant bg-surface-container-lowest p-3">
-				<span class="text-sm text-secondary">Total due</span>
+				<span class="text-sm text-secondary">{t('pos.totalDue')}</span>
 				<span class="font-mono-label text-mono-label text-on-surface">{currency(cartTotal())}</span>
 			</div>
 			<div>
 				<label for="pos-pay-method" class="field-label">{t('pos.paymentMethod')}</label>
 				<select id="pos-pay-method" class="field" bind:value={paymentMethod}>
-					<option value="card">Card</option>
-					<option value="cash">Cash</option>
-					<option value="bank_transfer">Bank transfer</option>
-					<option value="wallet">Wallet</option>
-					<option value="gift_card">Gift card</option>
+					<option value="card">{t('pos.card')}</option>
+					<option value="cash">{t('pos.cash')}</option>
+					<option value="bank_transfer">{t('pos.bankTransfer')}</option>
+					<option value="wallet">{t('pos.wallet')}</option>
+					<option value="gift_card">{t('pos.giftCard')}</option>
 				</select>
 			</div>
 			<div class="pt-1">
 				<Button class="w-full" size="md" onclick={placeOrder} loading={placing} disabled={placing}>
-					<Icon name="check" size="text-[20px]" /> Charge {currency(cartTotal())}
+					<Icon name="check" size="text-[20px]" /> {t('pos.charge')} {currency(cartTotal())}
 				</Button>
 			</div>
 		</div>
@@ -427,13 +453,13 @@
 {/if}
 
 {#if receiptOrder}
-	<Modal open={true} title={`Receipt ${receiptOrder.orderNumber}`} onClose={startSale}>
+	<Modal open={true} title={t('pos.receiptFor', { orderNumber: receiptOrder.orderNumber })} onClose={startSale}>
 		<div class="space-y-3">
 			<div class="flex items-center gap-2 text-sm">
 				<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset {receiptPaid ? 'bg-success/10 text-success ring-success' : 'bg-warning/10 text-warning ring-warning'}">
-					{receiptPaid ? 'Paid' : receiptOrder.paymentStatus}
+					{receiptPaid ? t('pos.paid') : receiptOrder.paymentStatus}
 				</span>
-				<span class="text-secondary">POS order</span>
+				<span class="text-secondary">{t('pos.posOrder')}</span>
 			</div>
 
 			<div class="divide-y divide-outline-variant/60 rounded border border-outline-variant">
@@ -453,14 +479,14 @@
 			</div>
 
 			<div class="space-y-1 text-sm">
-				<div class="flex justify-between text-secondary"><span>Subtotal</span><span class="text-on-surface-variant">{currency(receiptOrder.subtotal)}</span></div>
-				<div class="flex justify-between text-secondary"><span>Tax</span><span class="text-on-surface-variant">{currency(receiptOrder.taxTotal)}</span></div>
-				<div class="flex justify-between font-semibold text-on-surface"><span>Total</span><span>{currency(receiptOrder.total)}</span></div>
+				<div class="flex justify-between text-secondary"><span>{t('pos.subtotal')}</span><span class="text-on-surface-variant">{currency(receiptOrder.subtotal)}</span></div>
+				<div class="flex justify-between text-secondary"><span>{t('pos.tax')}</span><span class="text-on-surface-variant">{currency(receiptOrder.taxTotal)}</span></div>
+				<div class="flex justify-between font-semibold text-on-surface"><span>{t('pos.total')}</span><span>{currency(receiptOrder.total)}</span></div>
 			</div>
 
 			<div class="flex gap-2 pt-1">
-				<Button class="flex-1" onclick={startSale}><Icon name="add" size="text-[18px]" /> New sale</Button>
-				<Button class="flex-1" variant="secondary" onclick={() => (receiptOrder = null)}>Close</Button>
+				<Button class="flex-1" onclick={startSale}><Icon name="add" size="text-[18px]" /> {t('pos.newSale')}</Button>
+				<Button class="flex-1" variant="secondary" onclick={() => (receiptOrder = null)}>{t('pos.close')}</Button>
 			</div>
 		</div>
 	</Modal>
