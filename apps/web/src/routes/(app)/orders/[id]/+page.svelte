@@ -9,13 +9,17 @@
 	import Modal from '$lib/components/Modal.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import { currency, dateTimeFull, number, titleCase } from '$lib/format'
-	import type { OrderDetail, OrderItem, ReturnRecord } from '$lib/types'
+	import type { OrderDetail, OrderItem, ReturnRecord, Invoice } from '$lib/types'
 	import { page } from '$app/state'
 
 	let order = $state<OrderDetail | null>(null)
 	let loading = $state(true)
 	let id = $derived(page.params.id)
 	let saving = $state(false)
+
+	let invoices = $state<Invoice[]>([])
+	let invoicesLoading = $state(true)
+	let generatingInvoice = $state(false)
 
 	let returnOpen = $state(false)
 	let returnItemId = $state('')
@@ -52,8 +56,37 @@
 		}
 	}
 
+	async function loadInvoices() {
+		invoicesLoading = true
+		try {
+			const res = await api.get<{ success: boolean; data: { items: Invoice[] } }>(`/api/orders/${id}/invoices`)
+			invoices = res.data.items
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			invoicesLoading = false
+		}
+	}
+
+	async function generateInvoice() {
+		generatingInvoice = true
+		try {
+			await api.post<{ success: boolean; data: Invoice }>('/api/invoices', { orderId: id })
+			toast.success('Invoice generated')
+			loadInvoices()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			generatingInvoice = false
+		}
+	}
+
 	$effect(() => {
 		load()
+	})
+
+	$effect(() => {
+		if (order) loadInvoices()
 	})
 
 	function openReturn(item: OrderItem) {
@@ -326,6 +359,37 @@
 						</table>
 					</Card>
 				{/if}
+
+				<Card>
+					<div class="flex items-center justify-between gap-3">
+						<h2 class="font-display text-xl text-on-surface">Invoices</h2>
+						{#if canWrite()}
+							<Button size="sm" onclick={generateInvoice} loading={generatingInvoice}><Icon name="add" size="text-[16px]" /> Generate invoice</Button>
+						{/if}
+					</div>
+					<div class="mt-4">
+						{#if invoicesLoading}
+							<div class="h-16 animate-pulse rounded bg-surface-container"></div>
+						{:else if invoices.length === 0}
+							<p class="py-6 text-center text-sm text-secondary">No invoices for this order.</p>
+						{:else}
+							<div class="space-y-2">
+								{#each invoices as inv (inv.id)}
+									<a href="/invoices" class="flex items-center justify-between gap-3 rounded border border-outline-variant bg-surface-container-lowest px-3 py-2.5 transition-colors hover:bg-surface-container-low">
+										<div class="min-w-0">
+											<p class="font-mono-label text-mono-label text-on-surface">{inv.invoiceNumber}</p>
+											<p class="text-xs text-secondary">{inv.invoiceType === 'credit_note' ? 'Credit Note' : 'Invoice'} · {dateTimeFull(inv.invoiceDate)}</p>
+										</div>
+										<div class="flex items-center gap-2">
+											<span class="font-mono-label text-mono-label text-on-surface">{currency(inv.total, order.currency)}</span>
+											<Badge label={inv.status} />
+										</div>
+									</a>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</Card>
 			</div>
 
 			<!-- Summary sidebar -->

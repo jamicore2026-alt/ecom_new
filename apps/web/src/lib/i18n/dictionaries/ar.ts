@@ -16,6 +16,10 @@ export const ar: Record<string, string> = {
 	'nav.segments': 'الشرائح',
 	'nav.loyalty': 'برنامج الولاء',
 	'nav.reviews': 'التقييمات',
+	'nav.affiliates': 'الشركاء',
+	'nav.content': 'المحتوى',
+	'nav.fulfillments': 'الشحنات',
+	'nav.invoices': 'الفواتير',
 	'nav.menu': 'القائمة',
 	'nav.pos': 'نقطة البيع',
 	'nav.foodOrders': 'طلبات الطعام',
@@ -29,6 +33,8 @@ export const ar: Record<string, string> = {
 	'nav.staff': 'الموظفون',
 	'nav.roles': 'الأدوار',
 	'nav.apiKeys': 'مفاتيح API',
+	'nav.modules': 'الوحدات',
+	'nav.theme': 'المظهر',
 	'nav.settings': 'الإعدادات',
 
 	// Common

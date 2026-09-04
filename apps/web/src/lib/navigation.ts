@@ -38,6 +38,10 @@ export const NAV_ITEMS: NavItem[] = [
 	{ label: 'Segments', key: 'nav.segments', route: '/segments', icon: 'filter_alt', group: 'Sell', module: 'marketing', permission: 'settings:write' },
 	{ label: 'Loyalty', key: 'nav.loyalty', route: '/loyalty', icon: 'rewards', group: 'Sell', module: 'marketing', permission: 'customers.read' },
 	{ label: 'Reviews', key: 'nav.reviews', route: '/reviews', icon: 'rate_review', group: 'Sell', module: 'commerce', permission: 'products:write' },
+	{ label: 'Affiliates', key: 'nav.affiliates', route: '/affiliates', icon: 'group_add', group: 'Sell', module: 'marketing', permission: 'settings:write' },
+	{ label: 'Content', key: 'nav.content', route: '/content', icon: 'article', group: 'Sell', module: 'commerce', permission: 'settings:write' },
+	{ label: 'Fulfillments', key: 'nav.fulfillments', route: '/fulfillments', icon: 'local_shipping', group: 'Sell', module: 'commerce', permission: 'orders.read' },
+	{ label: 'Invoices', key: 'nav.invoices', route: '/invoices', icon: 'receipt_long', group: 'Sell', module: 'commerce', permission: 'orders.read' },
 	{ label: 'Menu', key: 'nav.menu', route: '/menu', icon: 'restaurant_menu', group: 'Restaurant', module: 'restaurant', permission: 'menu.read' },
 	{ label: 'Register', key: 'nav.pos', route: '/pos', icon: 'point_of_sale', group: 'Restaurant', module: 'restaurant', permission: ['orders.read', 'orders.create', 'payments.create'] },
 	{ label: 'Food Orders', key: 'nav.foodOrders', route: '/food-orders', icon: 'orders', group: 'Restaurant', module: 'restaurant', permission: ['orders.read', 'orders.create'] },
@@ -51,6 +55,8 @@ export const NAV_ITEMS: NavItem[] = [
 	{ label: 'Staff', key: 'nav.staff', route: '/staff', icon: 'group', group: 'Insights', permission: 'staff.read' },
 	{ label: 'Roles', key: 'nav.roles', route: '/roles', icon: 'manage_accounts', group: 'Insights', permission: 'staff.read' },
 	{ label: 'API & Webhooks', key: 'nav.apiKeys', route: '/api-keys', icon: 'code', group: 'Insights', permission: ['settings.manage', 'settings:write'] },
+	{ label: 'Modules', key: 'nav.modules', route: '/modules', icon: 'widgets', group: 'Insights', permission: 'settings.manage' },
+	{ label: 'Theme', key: 'nav.theme', route: '/theme', icon: 'palette', group: 'Insights', permission: 'settings.manage' },
 	{ label: 'Settings', key: 'nav.settings', route: '/settings', icon: 'settings', group: 'Insights', permission: ['settings.read', 'settings:write'] }
 ]
 

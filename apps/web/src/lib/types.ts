@@ -1141,6 +1141,32 @@ export interface LoyaltyReward {
 	updatedAt: string
 }
 
+// ---- invoices ----
+
+export type InvoiceType = 'invoice' | 'credit_note'
+export type InvoiceStatus = 'issued'
+
+export interface Invoice {
+	id: string
+	merchantId: string
+	orderId: string
+	invoiceNumber: string
+	invoiceType: InvoiceType
+	status: InvoiceStatus
+	subtotal: number
+	discountTotal: number
+	shippingTotal: number
+	taxTotal: number
+	total: number
+	gstin: string | null
+	hsnCodes: Record<string, unknown>
+	billingAddress: Record<string, unknown>
+	shippingAddress: Record<string, unknown>
+	invoiceDate: string
+	createdAt: string
+	updatedAt: string
+}
+
 export type TransferStatus = 'pending' | 'in_transit' | 'completed' | 'cancelled'
 
 export interface StockTransfer {
