@@ -263,9 +263,43 @@ export interface ShopperCustomer {
 	firstName: string | null
 	lastName: string | null
 	phone: string | null
+	emailVerified: boolean
 	ordersCount: number
 	totalSpent: number
 	createdAt: string
+}
+
+export interface ShopperAddressInput {
+	label?: string
+	addressType?: 'shipping' | 'billing' | 'both'
+	name?: string
+	company?: string
+	line1: string
+	line2?: string
+	city?: string
+	state?: string
+	postalCode?: string
+	country: string
+	phone?: string
+}
+
+export interface ShopperAddress {
+	id: string
+	label: string
+	addressType: 'shipping' | 'billing' | 'both'
+	name: string | null
+	company: string | null
+	line1: string
+	line2: string | null
+	city: string | null
+	state: string | null
+	postalCode: string | null
+	country: string
+	phone: string | null
+	isDefaultShipping: boolean
+	isDefaultBilling: boolean
+	createdAt: string
+	updatedAt: string | null
 }
 
 export interface ShopperSessionData {

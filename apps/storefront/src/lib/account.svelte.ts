@@ -1,6 +1,6 @@
 import { browser } from '$app/environment'
 import { ApiError, storefrontApi } from './api'
-import type { ShopperCustomer, ShopperSessionData, WishListItem } from './types'
+import type { ShopperAddress, ShopperAddressInput, ShopperCustomer, ShopperSessionData, WishListItem } from './types'
 
 const key = (slug: string) => `ecom:auth:${slug}`
 
@@ -140,6 +140,61 @@ class Account {
 	async changePassword(fetchFn: typeof fetch, input: { currentPassword: string; newPassword: string }) {
 		const session = await storefrontApi.changePassword(fetchFn, this.slug, this.token, input)
 		this.persist(session)
+	}
+
+	/** Request a password-reset email (public — always succeeds, no enumeration). */
+	requestPasswordReset(fetchFn: typeof fetch, email: string) {
+		return storefrontApi.forgotPassword(fetchFn, this.slug, email)
+	}
+
+	/** Complete a password reset with a single-use token (public). */
+	resetPassword(fetchFn: typeof fetch, token: string, newPassword: string) {
+		return storefrontApi.resetPassword(fetchFn, this.slug, token, newPassword)
+	}
+
+	/** Verify an email address with a single-use token (public GET). */
+	verifyEmail(fetchFn: typeof fetch, token: string) {
+		return storefrontApi.verifyEmail(fetchFn, this.slug, token)
+	}
+
+	/** Re-send the email-verification email for the signed-in shopper. */
+	resendVerification(fetchFn: typeof fetch) {
+		if (!this.token) throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
+		return storefrontApi.resendVerification(fetchFn, this.slug, this.token)
+	}
+
+	/** Update profile name/phone and refresh the cached session. */
+	async updateProfile(fetchFn: typeof fetch, input: { firstName?: string; lastName?: string; phone?: string }) {
+		if (!this.token || !this.customer) throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
+		const updated = await storefrontApi.updateProfile(fetchFn, this.slug, this.token, input)
+		this.customer = updated
+		this.persist({ token: this.token, expiresIn: 0, customer: updated })
+		return updated
+	}
+
+	async addresses(fetchFn: typeof fetch): Promise<ShopperAddress[]> {
+		if (!this.token) throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
+		return (await storefrontApi.addresses.list(fetchFn, this.slug, this.token)).items
+	}
+
+	createAddress(fetchFn: typeof fetch, input: ShopperAddressInput) {
+		if (!this.token) throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
+		return storefrontApi.addresses.create(fetchFn, this.slug, this.token, input)
+	}
+
+	updateAddress(fetchFn: typeof fetch, id: string, input: Partial<ShopperAddressInput>) {
+		if (!this.token) throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
+		return storefrontApi.addresses.update(fetchFn, this.slug, this.token, id, input)
+	}
+
+	removeAddress(fetchFn: typeof fetch, id: string) {
+		if (!this.token) throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
+		return storefrontApi.addresses.remove(fetchFn, this.slug, this.token, id)
+	}
+
+	setDefaultAddress(fetchFn: typeof fetch, id: string, type: 'shipping' | 'billing') {
+		if (!this.token) throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
+		return storefrontApi.addresses.setDefault(fetchFn, this.slug, this.token, id, type)
 	}
 
 	/** True when a request failed because the stored session is no longer valid. */

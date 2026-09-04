@@ -62,6 +62,12 @@ export const verifyEmailParams = t.Object({
   token: t.String()
 })
 
+export const profileUpdateBody = t.Object({
+  firstName: t.Optional(t.String({ maxLength: 255 })),
+  lastName: t.Optional(t.String({ maxLength: 255 })),
+  phone: t.Optional(t.String({ maxLength: 50 }))
+})
+
 export const addressBody = t.Object({
   label: t.Optional(t.String({ maxLength: 100 })),
   addressType: t.Optional(t.Union([t.Literal('shipping'), t.Literal('billing'), t.Literal('both')])),

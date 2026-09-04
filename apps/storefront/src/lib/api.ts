@@ -12,6 +12,8 @@ import type {
 	ProductReview,
 	ProductSummary,
 	ProviderCheckoutSession,
+	ShopperAddress,
+	ShopperAddressInput,
 	ShopperCustomer,
 	ShopperOrderSummary,
 	ShopperSessionData,
@@ -219,7 +221,82 @@ export const storefrontApi = {
 			fetchFn,
 			`/${slug}/auth/wishlist/${encodeURIComponent(productId)}`,
 			{ method: 'DELETE', headers: { authorization: `Bearer ${token}` } }
-		)
+		),
+
+	forgotPassword: (fetchFn: typeof fetch, slug: string, email: string) =>
+		request<{ status: string }>(fetchFn, `/${slug}/auth/forgot-password`, {
+			method: 'POST',
+			body: JSON.stringify({ email })
+		}),
+
+	resetPassword: (fetchFn: typeof fetch, slug: string, token: string, password: string) =>
+		request<{ customer: ShopperCustomer; logout: boolean }>(fetchFn, `/${slug}/auth/reset-password`, {
+			method: 'POST',
+			body: JSON.stringify({ token, password })
+		}),
+
+	verifyEmail: (fetchFn: typeof fetch, slug: string, token: string) =>
+		request<{ verified: boolean; customer: ShopperCustomer }>(fetchFn, `/${slug}/auth/verify-email/${encodeURIComponent(token)}`),
+
+	resendVerification: (fetchFn: typeof fetch, slug: string, token: string) =>
+		request<{ verifies: boolean; message: string }>(fetchFn, `/${slug}/auth/resend-verification`, {
+			method: 'POST',
+			headers: { authorization: `Bearer ${token}` }
+		}),
+
+	updateProfile: (
+		fetchFn: typeof fetch,
+		slug: string,
+		token: string,
+		body: { firstName?: string; lastName?: string; phone?: string }
+	) =>
+		request<ShopperCustomer>(fetchFn, `/${slug}/auth/me`, {
+			method: 'PUT',
+			headers: { authorization: `Bearer ${token}` },
+			body: JSON.stringify(body)
+		}),
+
+	addresses: {
+		list: (fetchFn: typeof fetch, slug: string, token: string) =>
+			request<{ items: ShopperAddress[] }>(fetchFn, `/${slug}/auth/addresses`, {
+				headers: { authorization: `Bearer ${token}` }
+			}),
+		create: (
+			fetchFn: typeof fetch,
+			slug: string,
+			token: string,
+			body: Partial<ShopperAddressInput>
+		) =>
+			request<{ data: ShopperAddress }>(fetchFn, `/${slug}/auth/addresses`, {
+				method: 'POST',
+				headers: { authorization: `Bearer ${token}` },
+				body: JSON.stringify(body)
+			}),
+		update: (
+			fetchFn: typeof fetch,
+			slug: string,
+			token: string,
+			id: string,
+			body: Partial<ShopperAddressInput>
+		) =>
+			request<{ data: ShopperAddress }>(fetchFn, `/${slug}/auth/addresses/${encodeURIComponent(id)}`, {
+				method: 'PUT',
+				headers: { authorization: `Bearer ${token}` },
+				body: JSON.stringify(body)
+			}),
+		remove: (fetchFn: typeof fetch, slug: string, token: string, id: string) =>
+			request<{ deleted: boolean; id: string }>(
+				fetchFn,
+				`/${slug}/auth/addresses/${encodeURIComponent(id)}`,
+				{ method: 'DELETE', headers: { authorization: `Bearer ${token}` } }
+			),
+		setDefault: (fetchFn: typeof fetch, slug: string, token: string, id: string, type: 'shipping' | 'billing') =>
+			request<{ updated: boolean; id: string; type: string }>(
+				fetchFn,
+				`/${slug}/auth/addresses/${encodeURIComponent(id)}/default/${type}`,
+				{ method: 'POST', headers: { authorization: `Bearer ${token}` } }
+			)
+	}
 }
 
 export function loadError(err: unknown, notFoundMessage: string): never {

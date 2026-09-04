@@ -141,8 +141,8 @@ export class EmailsService {
     const title =
       input.kind === 'reset_password' ? 'Reset your password' : 'Verify your email'
     const url = input.slug
-      ? `${process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'}/${input.slug}/account?verify=${encodeURIComponent(input.token)}`
-      : `${process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'}/account?reset=${encodeURIComponent(input.token)}`
+      ? `${process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'}/${input.slug}/account/${input.kind === 'reset_password' ? 'reset' : 'verify'}/${encodeURIComponent(input.token)}`
+      : `${process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'}/account/${input.kind === 'reset_password' ? 'reset' : 'verify'}/${encodeURIComponent(input.token)}`
 
     await this.queue({
       merchantId,

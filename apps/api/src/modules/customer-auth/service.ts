@@ -46,6 +46,7 @@ const publicCustomer = (c: typeof customers.$inferSelect) => ({
   firstName: c.firstName,
   lastName: c.lastName,
   phone: c.phone,
+  emailVerified: c.emailVerified,
   ordersCount: c.ordersCount,
   totalSpent: number(c.totalSpent),
   createdAt: c.createdAt
@@ -209,6 +210,27 @@ export class CustomerAuthService {
   static async profile(slug: string, shopper: ShopperContext) {
     const { customer } = await this.requireShopper(slug, shopper)
     return ok(publicCustomer(customer))
+  }
+
+  /** Update the shopper's editable profile fields (name/phone). Not a credential change. */
+  static async updateProfile(
+    slug: string,
+    shopper: ShopperContext,
+    body: { firstName?: string; lastName?: string; phone?: string }
+  ) {
+    const { customer } = await this.requireShopper(slug, shopper)
+
+    const [updated] = await db
+      .update(customers)
+      .set({
+        ...(body.firstName !== undefined && { firstName: body.firstName.trim() || null }),
+        ...(body.lastName !== undefined && { lastName: body.lastName.trim() || null }),
+        ...(body.phone !== undefined && { phone: body.phone.trim() || null })
+      })
+      .where(eq(customers.id, customer.id))
+      .returning()
+
+    return ok(publicCustomer(updated))
   }
 
   /** Create or update the shopper's review for a product. Re-submissions go back to pending. */
@@ -457,10 +479,10 @@ export class CustomerAuthService {
     // No account → success anyway (no enumeration), nothing queued.
     if (!customer?.passwordHash) return ok({ status: 'sent' })
 
-    return this.issueResetToken(store.merchant.id, customer)
+    return this.issueResetToken(store.merchant.id, slug, customer)
   }
 
-  private static async issueResetToken(merchantId: string, customer: typeof customers.$inferSelect) {
+  private static async issueResetToken(merchantId: string, slug: string, customer: typeof customers.$inferSelect) {
     const raw = cryptoRandomBase64Url(32)
     const tokenHash = await hash(raw, 10)
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
@@ -487,7 +509,8 @@ export class CustomerAuthService {
     void EmailsService.shopperAuthEmail(merchantId, {
       to: customer.email,
       kind: 'reset_password',
-      token: raw
+      token: raw,
+      slug
     }).catch(() => undefined)
     return ok({ status: 'sent' })
   }

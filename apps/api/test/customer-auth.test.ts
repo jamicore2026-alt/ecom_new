@@ -24,6 +24,15 @@ const get = (path: string, token?: string): RequestInit => ({
   headers: token ? { authorization: `Bearer ${token}` } : {}
 })
 
+const put = (body: unknown, token?: string): RequestInit => ({
+  method: 'PUT',
+  headers: {
+    'content-type': 'application/json',
+    ...(token ? { authorization: `Bearer ${token}` } : {})
+  },
+  body: JSON.stringify(body)
+})
+
 const EMAIL = 'shopper@example.com'
 
 describe('Storefront customer accounts', () => {
@@ -130,6 +139,32 @@ describe('Storefront customer accounts', () => {
     expect(res.status).toBe(200)
     expect(res.body.data.email).toBe(EMAIL)
     expect(res.body.data.lastName).toBe('Er')
+  })
+
+  it('exposes email-verification state on the profile', async () => {
+    const res = await call('/api/store/acme-store/auth/me', get('/api/store/acme-store/auth/me', token))
+    expect(res.status).toBe(200)
+    expect(res.body.data).toHaveProperty('emailVerified')
+    expect(res.body.data.emailVerified).toBe(false)
+  })
+
+  it('updates the profile name and phone', async () => {
+    const res = await call(
+      '/api/store/acme-store/auth/me',
+      put({ firstName: 'Renamed', lastName: '', phone: '+966500000000' }, token)
+    )
+    expect(res.status).toBe(200)
+    expect(res.body.data.firstName).toBe('Renamed')
+    expect(res.body.data.lastName).toBeNull()
+    expect(res.body.data.phone).toBe('+966500000000')
+  })
+
+  it('requires a token to update the profile', async () => {
+    const res = await call(
+      '/api/store/acme-store/auth/me',
+      put({ firstName: 'Hacker' })
+    )
+    expect(res.status).toBe(401)
   })
 
   it('lists only this customer\'s orders with line items', async () => {

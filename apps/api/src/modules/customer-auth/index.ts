@@ -12,6 +12,7 @@ import {
   changePasswordBody,
   forgotPasswordBody,
   loginBody,
+  profileUpdateBody,
   registerBody,
   resetPasswordBody,
   shopperOrdersQuery,
@@ -134,6 +135,15 @@ export const customerAuthModule = new Elysia({ prefix: '/api/store' })
     '/:slug/auth/me',
     ({ params, shopper }) => CustomerAuthService.profile(params.slug, shopper),
     { params: storeParams, detail: { tags: ['Storefront'], summary: 'Current shopper profile' } }
+  )
+  .put(
+    '/:slug/auth/me',
+    ({ params, body, shopper }) => CustomerAuthService.updateProfile(params.slug, shopper, body),
+    {
+      params: storeParams,
+      body: profileUpdateBody,
+      detail: { tags: ['Storefront'], summary: 'Update shopper profile name/phone' }
+    }
   )
   .get(
     '/:slug/auth/orders',
