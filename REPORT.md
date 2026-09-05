@@ -1,71 +1,47 @@
 # Complete E2E UI/UX Audit — merchant-dashboard (ecom_new)
 
-Date: 2026-08-30 · Stack (production builds): web :5478, storefront :5479, API :3005
-Method: Playwright 1.62.1, 3 breakpoints (375 / 768 / 1440), phased browsers, network + console capture, SSR cross-check via curl, order cross-check in dashboard, **plus a live pass against merchant.jamicore.com**.
+Date: 2026-09-05 · Stack (fresh production builds of HEAD 17fb032): web :5478, storefront :5479, API :3005
+Method: Playwright 1.62.1 · 3 breakpoints (375 / 768 / 1440) · full-page screenshots for 44 dashboard routes + 10 storefront pages · console + network capture · overflow/scrollWidth detection with element attribution · E2E checkout against a live DB (Postgres 18, seeded).
 
 ## Result summary
-- 12 / 12 flow verifications pass ✅
-- 5 findings from the audit — **all FIXED, applied + verified in the shipped builds** ✅ (plus #6, the sidebar-clipping issue found and fixed after the audit)
-- Screenshot evidence captured for every page/flow.
+- **No blockers** 🔴 · **4 grouped issues → 3 FIXED + verified** ✅ (segment pills, detail-page grids, stepper touch targets) · **1 investigated / no action** (transient hydration flicker) 🟡
+- All flows verified ✅ (login incl. bad-creds validation, all routes render, mobile drawer, add-to-cart → checkout → COD order → confirmation, order cross-checked in dashboard)
+- First-pass findings that were **false alarms** (verified clean): wide tables flagged at `right=821` are inside `overflow-x-auto` (correctly scrollable, no page overflow); 404s reported on `/products/{global-id}`,`/categories/…`,`/orders/…` were the audit using dashboard IDs/slugs instead of storefront slugs; `401` console entry is the intentional bad-login attempt.
+- Remaining audit-system caveat: a ~9px `scrollWidth=384` overhang appears on some dashboard pages for ~1-2s at first paint, then settles to 375 (see #3).
 
 ## Verified flows ✅
-| Flow | Result | Evidence |
-|---|---|---|
-| Sign in (admin@acme.com) → /dashboard | Pass | flow-login-badcreds.png |
-| Bad credentials → clear validation message | Pass | flow-login-badcreds.png |
-| Product creation → listed immediately | Pass | flow-products-created.png |
-| 16 dashboard routes render, no error states | Pass | dashboard-*.png |
-| Dashboard at all breakpoints, no overflow (except noted) / no broken images | Pass | dashboard-{dashboard,products,orders,customers}-{375,768,1440}.png |
-| Order detail page renders | Pass | orders-order-detail-1440.png |
-| Customer detail page renders | Pass | (audit log) |
-| Mobile sidebar drawer opens/closes at 375px | Pass | flow-mobile-sidebar-open.png |
-| Storefront home / products / search / account / wishlist / empty cart | Pass | storefront-{home,products,search,account,wishlist,cart-empty}-{375,768,1440}.png |
-| Category page renders | Pass | (audit log, SSR 200) |
-| Product detail renders | Pass | (audit log) |
-| Add-to-cart persists → /cart populated | Pass | storefront-cart-filled-960.png |
-| Full checkout (fill → COD → Place order) → order placed | Pass | storefront-order-confirmation-{1440,375}.png |
-| Order confirmation page renders ("Thank you") | Pass | storefront-order-confirmation-{1440,375}.png |
-| Placed order cross-checked → visible in dashboard /orders | Pass | (audit log, `#WMTFE4BZ8D09D3946`) |
+| Flow | Result |
+|---|---|
+| Login bad creds → validation message | Pass |
+| Login admin@acme.com → /dashboard | Pass |
+| All 41 dashboard routes render (200, no error states) | Pass |
+| Dashboard at 375/768/1440 — 33/41 routes have zero overflow | Pass |
+| Mobile sidebar drawer opens/closes; all 10 items incl. Settings reachable, no clipping | Pass |
+| Storefront home / products / product / search / category / cart / wishlist / account / forgot / order — clean at all 3 breakpoints | Pass |
+| Add-to-cart → cart filled → checkout (fill + method auto-selected) → Place order → confirmation | Pass (`#WMTNWHCZQ4CF00F4E`) |
+| Placed order cross-checked in dashboard API (`pending`, total 80.99) | Pass |
+| Heading hierarchy (h1→h2, no skips) on 15 sampled pages | Pass |
+| Console/network: no JS errors, no failed requests, no broken images anywhere | Pass |
 
 ## Findings
 
-### 1. Horizontal overflow on /products at 375px — **FIXED** ✅
-Header action cluster (`<div class="flex gap-2">`) — apps/web/src/routes/(app)/products/+page.svelte:182 — exceeded the 375px viewport (407px). Added `flex-wrap`. Verified in the shipped build (`flex flex-wrap gap-2` in the products node chunk + `.flex-wrap{flex-wrap:wrap}` in compiled CSS). Live re-render note: a fresh /products@375 screenshot isn't reproducible while the heavy table kills the cold headless-chromium renderer here (env flake); the fix is deterministic (each button < 343px container width, so wrapping means no overflow).
+### 🟠 1. Segment/tab pill rows overflow the viewport on mobile — `/api-keys`, `/analytics` — **FIXED** ✅
+A `flex w-fit` tab strip was wider than 375px: `/api-keys` 385px (10px), `/analytics` 380px (5px) — persistent page-level horizontal scroll on mobile. Applied the `max-w-full overflow-x-auto` guard (already used on `settings`/`reviews`) to all six occurrences: `api-keys:183`, `analytics:84`, `discounts:293`, `campaigns:99`, `transfers:141`, `inventory:115`. Re-verified at 375: `/api-keys`, `/analytics`, plus the four dormant pages have zero page overflow; pills remain clickable (tab switching verified).
 
-### 2. Small tap targets at 375px — **FIXED** ✅
-- Dashboard: sign-out buttons (mobile toggle bar + sidebar) `p-1.5`→`p-2.5` (~40px); sidebar nav links `py-2`→`py-2.5`; pagination Prev/Next `px-2 py-1`→`min-h-11 px-3` (~44px); `Button` sm variant `py-1.5`→`py-2` (Apply, Export/Import, etc.); product name link + Edit/Archive row actions now `inline-block py-1`; order# link `inline-block py-1`.
-- Storefront: Account/Wishlist/Cart `h-9`→`h-11`; hamburger `h-9 w-9`→`h-11 w-11`; desktop search input+button `h-9`→`h-10`.
-- Verified: storefront SSR ships `h-11 items-center`/`h-11 w-11`; built dashboard chunks ship `min-h-11`.
+### 🟠 2. Mobile overflow on detail pages — `/orders/[id]`, `/products/[id]` — **FIXED** ✅
+Grid columns overran the 343px content column because grid items have `min-width:auto`: `/orders/[id]` → 405px (30px over), `/products/[id]` → 433px (58px over). Added `min-w-0` to the grid children in `orders/[id]/+page.svelte` (Items column + Summary sidebar) and `products/[id]/+page.svelte` (both columns), and wrapped the order-detail Items/Returns/Refunds tables in `overflow-x-auto` (matching the list pages). Re-verified at 375: both detail pages now 375px, zero overflow.
 
-### 3. Heading hierarchy skips — **FIXED** ✅
-- Storefront products/search/category/home: product titles `ProductCard` `h3`→`h2` (correct sequence h1 → h2). Verified in SSR: products page now renders `<h1>Shop</h1>` then `<h2>` cards.
-- Dashboard: `Card` default `headingLevel` `h3`→`h2`, so section titles (e.g. order-detail "Items") sit correctly under the page h1.
+### 🟡 3. ~9px horizontal flicker while a few dashboard pages hydrate (transient) — **investigated, no action**
+On cold loads (pos, kitchen, kds, delivery, inventory, orders list) a `material-symbols-outlined` span paints at right=384 for ~1-2s then settles to 375 (no persistent overflow, CLS-grade). Focused cold-context probes with 250ms sampling over 3s could not reproduce it, and static analysis of the drawer/header (drawer is `w-sidebar-width` 240px, header clusters are min-w-0/truncate) found no element that is 384px wide. Attributed to render-timing under the full-sweep CPU load; no speculative change made. Re-check if it shows up in real device usage.
 
-### 4. Login hydration race — **FIXED** ✅
-Submit button is disabled in SSR and only enables after client hydration (`onMount`), so pre-hydration clicks and Enter (implicit submission against the default button is blocked while it is disabled) can no longer trigger the native GET submit → `/login?`. The form keeps `on:submit|preventDefault` for the API login. Verified in SSR HTML: `<button type="submit" disabled="" ...>`. Note: a literal inline `onsubmit="return false"` guard does not serialize in Svelte 5 SSR, so the disabled-button approach is the mechanism.
-
-### 5. Rate-limit UX conflated with session expiry — **FIXED** ✅
-`session.bootstrap()` now records whether `/api/auth/me` failed with HTTP 429 (`RATE_LIMITED`) vs a real expiry, and the dashboard layout shows a distinct "Too many requests — please wait a few seconds and try again." message with a **Retry** button (re-runs `bootstrap()` and recovers without losing the token). Verified in the shipped build (`apps/web/build/client/_app/immutable/nodes/2.BpfdMdpP.js`).
-
-### 6. Sidebar nav clipped — only first two groups reachable — **FIXED** ✅ (found post-audit)
-The dashboard `aside` was not a flex column with a bounded height, so `nav`'s `overflow-y-auto` had no scroll context (`scrollHeight === clientHeight`). At short viewport heights (and in the mobile drawer) everything below the "General"/"Sell" groups was clipped off-screen with no way to scroll — the menu appeared to "only have two menus". Fix in `apps/web/src/routes/(app)/+layout.svelte`: `aside` → `flex flex-col lg:sticky lg:top-0 lg:h-screen`, `nav` → `min-h-0 flex-1 overflow-y-auto`. Verified: mobile drawer scrolls to the last item ("Settings"), desktop sidebar is sticky full-height with the grid layout intact (main content correct at 240px offset).
+### 🟡 4. Storefront numeric steppers below the 44px touch-target guideline — **FIXED** ✅
+Qty − / + buttons measured 33 × 40 px. Added `min-w-11 min-h-11` in `storefront/…/products/[product]/+page.svelte:325,334` and `cart/+page.svelte:62,71`. Re-verified: buttons now 44 × 44 on both product and cart pages at 375, no overflow introduced.
 
 ## Reproduction & environment notes
-- Run: `cd /tmp/opencode/e2e && LD_LIBRARY_PATH=/tmp/opencode/libs/extracted/usr/lib/x86_64-linux-gnu node audit.js`
-- **Font fix (required):** this container has no fonts, which broke text layout in headless chromium (0-height text) and produced harfbuzz renderer crashes. Installed DejaVu (Sans/Serif/Bold) to `/tmp/opencode/fonts` + a custom `fonts.conf` (Inter→DejaVu fallback, sans-serif→DejaVu Sans). `audit.js` launches chromium with `FONTCONFIG_FILE` and blocks the Inter variable `.woff2` (which triggers a software-renderer crash in this headless env); pages fall back to DejaVu.
-- Result: all pages render deterministically, including desktop (1440px) and the order-confirmation page that previously crashed.
-- Screenshots use DejaVu Sans instead of Inter; functional/layout checks are unaffected.
+- Run: `cd /tmp/opencode/e2e && node audit.js` (dashboard sweep), `node sf-audit.js` (storefront sweep), `node checkout-flow.js` (E2E).
+- Stack: local Postgres (`ecom_merchant_db` on :5432), API `bun src/index.ts` on :3005, `adapter-node` builds on :5478/:5479, all sourced from root `.env`.
+- No font workaround needed this time (system DejaVu present); Playwright 1.62.1 ↔ cached chromium build 1234.
+- Screenshots: `/tmp/opencode/e2e/shots/` (full page per route × breakpoint); structured data `report.json`, `sf-report.json`.
 
-## Follow-up: live-site (merchant.jamicore.com) root-cause
-- The shipped 375 / 768 / 1440 layout was verified clean on the live production build, and a full live-site pass added one real (non-layout) finding — see **#7**.
-
-### 7. Menu reduced to 3 items on production — empty `merchant_modules` — **FIXED** ✅ (live data + code guard)
-`/api/auth/me` returned `enabledModules: []` for the production merchant despite the store actively selling (20 products, 22 orders, 43 customers). `navigation.ts` `navVisible()` gates every commerce item behind the merchant having that module enabled, so the sidebar collapsed to the 3 ungated items (**Overview / Audit Log / Settings**) — "the menu only has two groups". Root cause: the merchant predates migration `0016` (`merchant_modules` table); that migration created the table but never backfilled existing merchants.
-- Fixed live: enabled the default commerce set (`commerce`, `inventory`, `marketing`, `analytics`) via `PUT /api/modules/:module`. Drawer re-verified on the user's device viewport (392×872) and 360×740: 10 items, all visible, last item reachable, no clipping.
-- Code guard shipped: `apps/api/src/shared/merchant-context.ts` now falls back to `DEFAULT_MODULES.commerce` when a merchant has **no rows at all** in `merchant_modules` (merchants who explicitly disabled every module are still respected). Prevents the same stripping for any other pre-existing merchant.
-- Minor live findings, not yet fixed: 4 product images 404 (`/uploads/...png` referenced in DB but missing on the server) and the sidebar Sign out icon is a ~36–40px tap target (below the 44px mobile guideline).
-
-## Artifacts
-- Screenshots: `/tmp/opencode/e2e/shots/`
-- Structured data: `/tmp/opencode/e2e/report.json`, `report.txt`
-- Run log: `/tmp/opencode/e2e/run3.log`
+### Prior audit (2026-08-30) — status
+All 7 previous findings (products 375 overflow, tap targets, heading skips, login hydration race, rate-limit UX, sidebar clipping, empty merchant_modules) are still resolved in this build; no regressions observed. The live-site "sign out icon ~36-40px" note is now a 44px `h-11 w-11` target in the drawer aside.

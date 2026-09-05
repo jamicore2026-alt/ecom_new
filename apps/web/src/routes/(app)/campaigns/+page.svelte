@@ -96,7 +96,7 @@
 		</div>
 	</div>
 
-	<div class="flex w-fit gap-1 rounded border border-outline-variant bg-surface-container-lowest p-1">
+	<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded border border-outline-variant bg-surface-container-lowest p-1">
 		{#each ['all', 'draft', 'sent'] as s (s)}
 			<button class="rounded px-3 py-1.5 text-sm font-medium transition-colors {statusFilter === s ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => (statusFilter = s)}>
 				{s[0].toUpperCase() + s.slice(1)}

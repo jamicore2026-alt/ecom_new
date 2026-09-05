@@ -159,7 +159,7 @@
 		</div>
 
 		<div class="grid gap-5 lg:grid-cols-3">
-			<div class="space-y-5 lg:col-span-1">
+			<div class="min-w-0 space-y-5 lg:col-span-1">
 				<Card title="Details">
 					<dl class="space-y-2 text-sm">
 						<div class="flex justify-between"><dt class="text-gray-500">Price</dt><dd class="font-medium">{currency(product.price)}</dd></div>
@@ -191,7 +191,7 @@
 				{/if}
 			</div>
 
-			<div class="lg:col-span-2">
+			<div class="min-w-0 lg:col-span-2">
 				<Card title={`Variants (${product.variants.length})`} padded={false}>
 					{#if product.variants.length === 0}
 						<p class="py-10 text-center text-sm text-gray-400">No variants yet.</p>

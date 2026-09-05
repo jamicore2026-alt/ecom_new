@@ -290,7 +290,7 @@
 	</div>
 
 	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div class="flex w-fit gap-1 rounded border border-outline-variant bg-surface-container-lowest p-1">
+		<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded border border-outline-variant bg-surface-container-lowest p-1">
 			<button class="rounded px-3 py-1.5 text-sm font-medium transition-colors {section === 'coupons' ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => switchSection('coupons')}>
 				Coupons
 			</button>

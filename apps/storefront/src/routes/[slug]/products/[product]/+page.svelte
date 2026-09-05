@@ -322,7 +322,7 @@
 				<div class="flex items-center rounded-lg border border-gray-300">
 					<button
 						type="button"
-						class="px-3 py-2 text-gray-600 hover:text-gray-900"
+						class="min-w-11 min-h-11 px-3 py-2 text-gray-600 hover:text-gray-900"
 						onclick={() => (quantity = Math.max(1, quantity - 1))}
 						aria-label={t('product.decreaseQty')}
 					>
@@ -331,7 +331,7 @@
 					<span class="w-10 text-center text-sm font-medium">{quantity}</span>
 					<button
 						type="button"
-						class="px-3 py-2 text-gray-600 hover:text-gray-900"
+						class="min-w-11 min-h-11 px-3 py-2 text-gray-600 hover:text-gray-900"
 						onclick={() => (quantity = quantity + 1)}
 						aria-label={t('product.increaseQty')}
 					>

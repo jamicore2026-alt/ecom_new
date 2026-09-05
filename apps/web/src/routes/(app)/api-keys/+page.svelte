@@ -180,7 +180,7 @@
 		</div>
 	</div>
 
-	<div class="flex w-fit gap-1 rounded border border-outline-variant bg-surface-container-lowest p-1">
+	<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded border border-outline-variant bg-surface-container-lowest p-1">
 		{#each [
 			{ key: 'keys', label: 'API Keys' },
 			{ key: 'webhooks', label: 'Webhooks' },

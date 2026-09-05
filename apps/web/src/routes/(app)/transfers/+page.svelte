@@ -138,7 +138,7 @@
 
 	<Card padded={false}>
 		<div class="flex flex-wrap items-center gap-2 px-5 py-3">
-			<div class="flex w-fit gap-1 rounded border border-outline-variant bg-surface-container-lowest p-1">
+			<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded border border-outline-variant bg-surface-container-lowest p-1">
 				<button
 					class="rounded px-3 py-1.5 text-sm font-medium transition-colors {statusFilter === '' ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}"
 					onclick={() => (statusFilter = '')}

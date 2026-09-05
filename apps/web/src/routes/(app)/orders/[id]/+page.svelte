@@ -250,8 +250,9 @@
 
 		<div class="grid gap-6 lg:grid-cols-3">
 			<!-- Items -->
-			<div class="space-y-6 lg:col-span-2">
+			<div class="min-w-0 space-y-6 lg:col-span-2">
 				<Card title={`Items (${order.items.length})`} padded={false}>
+					<div class="overflow-x-auto">
 					<table class="w-full text-left text-sm">
 						<thead>
 							<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
@@ -294,10 +295,12 @@
 							{/each}
 						</tbody>
 					</table>
+					</div>
 				</Card>
 
 				{#if order.returns.length > 0}
-					<Card title="Returns" padded={false}>
+<Card title="Returns" padded={false}>
+					<div class="overflow-x-auto">
 						<table class="w-full text-left text-sm">
 							<thead>
 								<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
@@ -331,12 +334,14 @@
 									</tr>
 								{/each}
 							</tbody>
-						</table>
-					</Card>
+</table>
+					</div>
+				</Card>
 				{/if}
 
 				{#if order.refunds.length > 0}
-					<Card title="Refunds" padded={false}>
+<Card title="Refunds" padded={false}>
+					<div class="overflow-x-auto">
 						<table class="w-full text-left text-sm">
 							<thead>
 								<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
@@ -355,9 +360,10 @@
 										<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTimeFull(r.createdAt)}</td>
 									</tr>
 								{/each}
-							</tbody>
-						</table>
-					</Card>
+</tbody>
+					</table>
+					</div>
+				</Card>
 				{/if}
 
 				<Card>
@@ -393,7 +399,7 @@
 			</div>
 
 			<!-- Summary sidebar -->
-			<div class="space-y-6">
+			<div class="min-w-0 space-y-6">
 				<Card title="Summary">
 					<dl class="space-y-2 text-sm">
 						<div class="flex justify-between"><dt class="text-secondary">Subtotal</dt><dd class="text-on-surface-variant">{currency(order.subtotal, order.currency)}</dd></div>
