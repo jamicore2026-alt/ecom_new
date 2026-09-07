@@ -238,7 +238,8 @@ export interface Address {
 }
 
 export type Permission =
-  // legacy (backward compatible)
+  // legacy (backward compatible — see PERMISSION_ALIASES; only kept so existing
+  // rows still type-check. New grants and guards MUST use the dotted forms.)
   | 'products:write'
   | 'orders:write'
   | 'inventory:write'
@@ -332,6 +333,48 @@ export const PERMISSIONS: Permission[] = [
   'settings.read',
   'settings.manage'
 ]
+
+/**
+ * Converged permission strings.
+ *
+ * The legacy colon-form permissions no longer appear in guards or new grants.
+ * They are normalized to the dotted vocabulary below; keeping the legacy values
+ * in the union PERMISSIONS list is purely for backward compatibility with rows
+ * that were granted them before the convergence. Targets are chosen to preserve
+ * the effective capabilities those grants produced pre-migration:
+ *
+ *  products:write   → the full product write surface (create/update/delete)
+ *  orders:write     → the full order write surface (create/update/cancel)
+ *  inventory:write  → inventory adjustments + warehouse management
+ *  discounts:write  → discounts are store-level commerce settings (settings.manage)
+ *  settings:write   → settings.manage
+ *  analytics:read   → reports.read
+ */
+export const PERMISSION_ALIASES: Record<string, readonly Permission[]> = {
+  'products:write': ['products.create', 'products.update', 'products.delete'],
+  'orders:write': ['orders.create', 'orders.update', 'orders.cancel'],
+  'inventory:write': ['inventory.adjust', 'inventory.manage'],
+  'discounts:write': ['settings.manage'],
+  'settings:write': ['settings.manage'],
+  'analytics:read': ['reports.read']
+}
+
+/** Expand a permission to its canonical dotted forms (dotted perms map to themselves). */
+export const resolvePermissions = (perm: string): readonly Permission[] => {
+  const aliased = PERMISSION_ALIASES[perm]
+  return aliased ?? [perm as Permission]
+}
+
+/** Normalize a permission list so stored grants always use the dotted vocabulary. */
+export const normalizePermissions = (perms: readonly string[]): Permission[] => {
+  const out: Permission[] = []
+  for (const granted of new Set(perms)) {
+    for (const expanded of resolvePermissions(granted)) {
+      if (!out.includes(expanded)) out.push(expanded)
+    }
+  }
+  return out
+}
 
 /* ------------------------------ scopes ------------------------------ */
 

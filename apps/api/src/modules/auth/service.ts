@@ -1,12 +1,13 @@
 import { and, eq } from 'drizzle-orm'
 import { compare, hashSync } from 'bcryptjs'
 import { db } from '../../database/client'
-import { merchants, users, storeSettings } from '../../database/schema'
+import { merchants, roles, users, storeSettings } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { unauthorized, forbidden, badRequest } from '../../shared/errors'
 import { resolveMerchantContext } from '../../shared/merchant-context'
+import { normalizePermissions } from '../../shared/types'
 import { loginAttempts } from './login-attempts'
-import type { Merchant, User } from '../../database/schema'
+import type { Merchant, Role, User } from '../../database/schema'
 
 /** Burn a bcrypt round for unknown emails so timing doesn't leak account existence. */
 const DUMMY_HASH = hashSync('timing-equalizer', 10)
@@ -14,15 +15,29 @@ const alwaysCompare = async (password: string) => {
   await compare(password, DUMMY_HASH)
 }
 
-const publicUser = (user: User) => ({
-  id: user.id,
-  name: user.name,
-  email: user.email,
-  role: user.role,
-  permissions: user.permissions,
-  status: user.status,
-  isAdmin: user.role === 'owner' || user.role === 'admin'
-})
+const publicUser = (user: User, role: Role | null = null) => {
+  const effectivePermissions = normalizePermissions([
+    ...(role?.permissions ?? []),
+    ...user.permissions
+  ])
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    roleId: user.roleId ?? null,
+    permissions: user.permissions,
+    effectivePermissions,
+    status: user.status,
+    isAdmin: user.role === 'owner' || user.role === 'admin'
+  }
+}
+
+const loadUserRole = async (user: User): Promise<Role | null> => {
+  if (!user.roleId) return null
+  const [role] = await db.select().from(roles).where(eq(roles.id, user.roleId))
+  return role ?? null
+}
 
 const publicMerchant = (merchant: Merchant) => ({
   id: merchant.id,
@@ -116,7 +131,8 @@ export class AuthService {
     }
 
     await loginAttempts.reset(email)
-    return ok({ user: publicUser(user), merchant: publicMerchant(merchant) })
+    const role = await loadUserRole(user)
+    return ok({ user: publicUser(user, role), merchant: publicMerchant(merchant) })
   }
 
   static async session(userId: string) {
@@ -133,15 +149,16 @@ export class AuthService {
       .from(storeSettings)
       .where(eq(storeSettings.merchantId, merchant.id))
 
+    const role = await loadUserRole(user)
     const context = await resolveMerchantContext(
       user.id,
       merchant.id,
       user.role === 'owner' || user.role === 'admin',
-      null
+      null,
+      role?.scope ?? (user.role === 'owner' || user.role === 'admin' ? 'GLOBAL' : 'OUTLET')
     )
-
     return ok({
-      user: publicUser(user),
+      user: publicUser(user, role),
       merchant: publicMerchant(merchant),
       settings: settings ?? null,
       allowedOutlets: context.allowedOutlets,

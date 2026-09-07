@@ -9,6 +9,7 @@ import {
   notificationSettings,
   paymentProviderConfigs,
   paymentSettings,
+  roles,
   shippingSettings,
   storeSettings,
   taxSettings,
@@ -21,6 +22,7 @@ import { badRequest, conflict, forbidden, notFound } from '../../shared/errors'
 import type { ResolvedProviderConfig } from '../../payments/types'
 import type { User } from '../../database/schema'
 import type { Permission } from '../../shared/types'
+import { normalizePermissions } from '../../shared/types'
 
 const upsert = <T extends { merchantId: string }>(
   table: any,
@@ -360,6 +362,7 @@ export class SettingsService {
         name: users.name,
         email: users.email,
         role: users.role,
+        roleId: users.roleId,
         permissions: users.permissions,
         status: users.status,
         createdAt: users.createdAt
@@ -370,6 +373,16 @@ export class SettingsService {
     return ok(rows)
   }
 
+  /** Validate a roleId belongs to the merchant; returns it when valid. */
+  private static async assertRoleInMerchant(merchantId: string, roleId: string): Promise<string> {
+    const [role] = await db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(and(eq(roles.id, roleId), eq(roles.merchantId, merchantId)))
+    if (!role) throw badRequest('INVALID_ROLE', 'Role does not belong to this merchant')
+    return role.id
+  }
+
   static async createStaff(
     merchantId: string,
     input: {
@@ -378,6 +391,7 @@ export class SettingsService {
       password: string
       role: string
       permissions?: string[]
+      roleId?: string
     }
   ) {
     const email = input.email.toLowerCase()
@@ -387,6 +401,7 @@ export class SettingsService {
       .where(and(eq(users.merchantId, merchantId), eq(users.email, email)))
     if (existing) throw conflict('DUPLICATE', 'A staff member with this email already exists')
 
+    const roleId = input.roleId ? await this.assertRoleInMerchant(merchantId, input.roleId) : null
     const passwordHash = await hash(input.password, 12)
     const [created] = await db
       .insert(users)
@@ -396,10 +411,11 @@ export class SettingsService {
         email,
         passwordHash,
         role: input.role,
-        permissions: (input.permissions ?? []) as Permission[],
+        permissions: normalizePermissions(input.permissions ?? []) as Permission[],
+        roleId,
         status: 'active'
       })
-      .returning({ id: users.id, name: users.name, email: users.email, role: users.role, permissions: users.permissions, status: users.status, createdAt: users.createdAt })
+      .returning({ id: users.id, name: users.name, email: users.email, role: users.role, roleId: users.roleId, permissions: users.permissions, status: users.status, createdAt: users.createdAt })
 
     return ok(created)
   }
@@ -413,6 +429,7 @@ export class SettingsService {
       password?: string
       role?: string
       permissions?: string[]
+      roleId?: string | null
       status?: string
     },
     actor: User
@@ -443,7 +460,10 @@ export class SettingsService {
     if (input.email !== undefined) values.email = input.email.toLowerCase()
     if (input.password !== undefined) values.passwordHash = await hash(input.password, 12)
     if (input.role !== undefined) values.role = input.role
-    if (input.permissions !== undefined) values.permissions = input.permissions as Permission[]
+    if (input.permissions !== undefined) values.permissions = normalizePermissions(input.permissions) as Permission[]
+    if (input.roleId !== undefined) {
+      values.roleId = input.roleId === null ? null : await this.assertRoleInMerchant(merchantId, input.roleId)
+    }
     if (input.status !== undefined) values.status = input.status
 
     if (Object.keys(values).length === 0) {
@@ -462,7 +482,7 @@ export class SettingsService {
       .update(users)
       .set(values)
       .where(and(eq(users.id, id), eq(users.merchantId, merchantId)))
-      .returning({ id: users.id, name: users.name, email: users.email, role: users.role, permissions: users.permissions, status: users.status, createdAt: users.createdAt })
+      .returning({ id: users.id, name: users.name, email: users.email, role: users.role, roleId: users.roleId, permissions: users.permissions, status: users.status, createdAt: users.createdAt })
 
     return ok(updated)
   }
@@ -480,7 +500,7 @@ export class SettingsService {
       .update(users)
       .set({ status: 'disabled' })
       .where(and(eq(users.id, id), eq(users.merchantId, merchantId)))
-      .returning({ id: users.id, name: users.name, email: users.email, role: users.role, permissions: users.permissions, status: users.status, createdAt: users.createdAt })
+      .returning({ id: users.id, name: users.name, email: users.email, role: users.role, roleId: users.roleId, permissions: users.permissions, status: users.status, createdAt: users.createdAt })
 
     return ok(updated)
   }

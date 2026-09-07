@@ -50,9 +50,12 @@ export const foodOrderStatusBody = t.Object({
   })
 })
 
-/** POS payment capture — only the payment method is client-supplied; money totals stay server-computed. */
+/** POS payment capture — only the payment method (+ cash tender) is
+ *  client-supplied; money totals stay server-computed. */
 export const foodOrderPayBody = t.Object({
-  paymentMethod: t.Optional(t.String({ maxLength: 50 }))
+  paymentMethod: t.Optional(t.String({ maxLength: 50 })),
+  /** Cash received from the customer (for cash payments) — server computes change. */
+  cashReceived: t.Optional(t.Number({ minimum: 0 }))
 })
 
 export const foodOrderParams = t.Object({ id: t.String() })

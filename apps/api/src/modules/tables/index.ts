@@ -28,100 +28,100 @@ import {
 export const tablesModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(outletGuard({ module: 'tables', permissions: ['tables.read'] }))
-  .get('/table-sections', async ({ auth }) => TableSectionsService.list(auth.merchant.id), {
+  .get('/table-sections', async ({ auth, merchantContext }) => TableSectionsService.list(auth.merchant.id, merchantContext), {
     detail: { summary: 'List table sections' }
   })
-  .get('/tables', async ({ query, auth }) => TablesService.list(auth.merchant.id, query), {
+  .get('/tables', async ({ query, auth, merchantContext }) => TablesService.list(auth.merchant.id, query, merchantContext), {
     query: tableQuery,
     detail: { summary: 'List tables (floor view)' }
   })
-  .get('/tables/:id', async ({ params, auth }) => TablesService.get(auth.merchant.id, params.id), {
+  .get('/tables/:id', async ({ params, auth, merchantContext }) => TablesService.get(auth.merchant.id, params.id, merchantContext), {
     params: tableParams,
     detail: { summary: 'Get a table' }
   })
-  .get('/table-sessions', async ({ query, auth }) => TablesSessionService.list(auth.merchant.id, query), {
+  .get('/table-sessions', async ({ query, auth, merchantContext }) => TablesSessionService.list(auth.merchant.id, query, merchantContext), {
     query: sessionQuery,
     detail: { summary: 'List table sessions' }
   })
-  .get('/table-sessions/:id', async ({ params, auth }) => TablesSessionService.get(auth.merchant.id, params.id), {
+  .get('/table-sessions/:id', async ({ params, auth, merchantContext }) => TablesSessionService.get(auth.merchant.id, params.id, merchantContext), {
     params: tableParams,
     detail: { summary: 'Get a table session' }
   })
-  .get('/tables/:id/qr', async ({ params, auth, query }) =>
-    TablesService.qr(auth.merchant.id, params.id, query.baseUrl), {
+  .get('/tables/:id/qr', async ({ params, auth, query, merchantContext }) =>
+    TablesService.qr(auth.merchant.id, params.id, query.baseUrl, merchantContext), {
     params: tableParams,
     query: qrUrlBody,
     detail: { summary: 'Get a table QR token + URL' }
   })
 
   .use(outletGuard({ module: 'tables', permissions: ['tables.manage'] }))
-  .post('/table-sections', async ({ body, auth, request }) => {
-    const result = await TableSectionsService.create(auth.merchant.id, body)
+  .post('/table-sections', async ({ body, auth, request, merchantContext }) => {
+    const result = await TableSectionsService.create(auth.merchant.id, body, merchantContext)
     auditFromRequest(auth, request, { action: 'table_section.create', entityType: 'table_section', entityId: (result.data as { id: string }).id })
     return result
   }, { body: tableSectionBody })
-  .put('/table-sections/:id', async ({ params, body, auth, request }) => {
-    const result = await TableSectionsService.update(auth.merchant.id, params.id, body)
+  .put('/table-sections/:id', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await TableSectionsService.update(auth.merchant.id, params.id, body, merchantContext)
     auditFromRequest(auth, request, { action: 'table_section.update', entityType: 'table_section', entityId: params.id })
     return result
   }, { params: tableParams, body: tableSectionUpdateBody })
-  .delete('/table-sections/:id', async ({ params, auth, request }) => {
-    const result = await TableSectionsService.remove(auth.merchant.id, params.id)
+  .delete('/table-sections/:id', async ({ params, auth, request, merchantContext }) => {
+    const result = await TableSectionsService.remove(auth.merchant.id, params.id, merchantContext)
     auditFromRequest(auth, request, { action: 'table_section.delete', entityType: 'table_section', entityId: params.id })
     return result
   }, { params: tableParams })
-  .post('/tables', async ({ body, auth, request }) => {
-    const result = await TablesService.create(auth.merchant.id, body)
+  .post('/tables', async ({ body, auth, request, merchantContext }) => {
+    const result = await TablesService.create(auth.merchant.id, body, merchantContext)
     auditFromRequest(auth, request, { action: 'table.create', entityType: 'table', entityId: (result.data as { id: string }).id })
     return result
   }, { body: tableCreateBody })
-  .put('/tables/:id', async ({ params, body, auth, request }) => {
-    const result = await TablesService.update(auth.merchant.id, params.id, body)
+  .put('/tables/:id', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await TablesService.update(auth.merchant.id, params.id, body, merchantContext)
     auditFromRequest(auth, request, { action: 'table.update', entityType: 'table', entityId: params.id })
     return result
   }, { params: tableParams, body: tableUpdateBody })
-  .delete('/tables/:id', async ({ params, auth, request }) => {
-    const result = await TablesService.remove(auth.merchant.id, params.id)
+  .delete('/tables/:id', async ({ params, auth, request, merchantContext }) => {
+    const result = await TablesService.remove(auth.merchant.id, params.id, merchantContext)
     auditFromRequest(auth, request, { action: 'table.delete', entityType: 'table', entityId: params.id })
     return result
   }, { params: tableParams })
-  .post('/tables/:id/status', async ({ params, body, auth, request }) => {
-    const result = await TablesService.status(auth.merchant.id, params.id, body.status)
+  .post('/tables/:id/status', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await TablesService.status(auth.merchant.id, params.id, body.status, merchantContext)
     auditFromRequest(auth, request, { action: 'table.status', entityType: 'table', entityId: params.id, metadata: { status: body.status } })
     return result
   }, { params: tableParams, body: tableStatusBody })
   .post('/table-sessions', async ({ body, auth, merchantContext, request }) => {
-    const result = await TablesSessionService.open(auth.merchant.id, body, merchantContext.selectedOutlet?.id)
+    const result = await TablesSessionService.open(auth.merchant.id, body, merchantContext)
     auditFromRequest(auth, request, { action: 'table_session.open', entityType: 'table_session', entityId: (result.data as { id: string }).id, metadata: { tableId: body.tableId } })
     return result
   }, { body: sessionOpenBody })
-  .post('/table-sessions/:id/close', async ({ params, auth, request }) => {
-    const result = await TablesSessionService.close(auth.merchant.id, params.id)
+  .post('/table-sessions/:id/close', async ({ params, auth, request, merchantContext }) => {
+    const result = await TablesSessionService.close(auth.merchant.id, params.id, merchantContext)
     auditFromRequest(auth, request, { action: 'table_session.close', entityType: 'table_session', entityId: params.id })
     return result
   }, { params: tableParams })
-  .post('/table-sessions/:id/cancel', async ({ params, auth, request }) => {
-    const result = await TablesSessionService.cancel(auth.merchant.id, params.id)
+  .post('/table-sessions/:id/cancel', async ({ params, auth, request, merchantContext }) => {
+    const result = await TablesSessionService.cancel(auth.merchant.id, params.id, merchantContext)
     auditFromRequest(auth, request, { action: 'table_session.cancel', entityType: 'table_session', entityId: params.id })
     return result
   }, { params: tableParams })
-  .post('/table-sessions/:id/move', async ({ params, body, auth, request }) => {
-    const result = await TablesSessionService.move(auth.merchant.id, params.id, body.toTableId)
+  .post('/table-sessions/:id/move', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await TablesSessionService.move(auth.merchant.id, params.id, body.toTableId, merchantContext)
     auditFromRequest(auth, request, { action: 'table_session.move', entityType: 'table_session', entityId: params.id, metadata: { toTableId: body.toTableId } })
     return result
   }, { params: tableParams, body: sessionMoveBody })
-  .post('/table-sessions/:id/merge', async ({ params, body, auth, request }) => {
-    const result = await TablesSessionService.merge(auth.merchant.id, params.id, body.sessionIds)
+  .post('/table-sessions/:id/merge', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await TablesSessionService.merge(auth.merchant.id, params.id, body.sessionIds, merchantContext)
     auditFromRequest(auth, request, { action: 'table_session.merge', entityType: 'table_session', entityId: params.id, metadata: { sessionIds: body.sessionIds } })
     return result
   }, { params: tableParams, body: sessionMergeBody })
-  .post('/table-sessions/:id/split', async ({ params, body, auth, request }) => {
-    const result = await TablesSessionService.split(auth.merchant.id, params.id, body.toTableId, body.guests)
+  .post('/table-sessions/:id/split', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await TablesSessionService.split(auth.merchant.id, params.id, body.toTableId, body.guests, merchantContext)
     auditFromRequest(auth, request, { action: 'table_session.split', entityType: 'table_session', entityId: params.id, metadata: { toTableId: body.toTableId, guests: body.guests } })
     return result
   }, { params: tableParams, body: sessionSplitBody })
-  .post('/table-sessions/:id/orders', async ({ params, body, auth, request }) => {
-    const result = await TablesSessionService.attachOrder(auth.merchant.id, params.id, body.orderId)
+  .post('/table-sessions/:id/orders', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await TablesSessionService.attachOrder(auth.merchant.id, params.id, body.orderId, merchantContext)
     auditFromRequest(auth, request, { action: 'table_session.attach_order', entityType: 'table_session', entityId: params.id, metadata: { orderId: body.orderId } })
     return result
   }, { params: tableParams, body: sessionOrderAttachBody })

@@ -23,11 +23,11 @@ import {
 export const deliveryModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(outletGuard({ module: 'delivery', permissions: ['delivery.read', 'drivers.read'] }))
-  .get('/delivery-zones', async ({ query, auth }) => DeliveryZonesService.list(auth.merchant.id, query), {
+  .get('/delivery-zones', async ({ query, auth, merchantContext }) => DeliveryZonesService.list(auth.merchant.id, query, merchantContext), {
     query: deliveryZoneQuery,
     detail: { summary: 'List delivery zones' }
   })
-  .get('/delivery-zones/:id', async ({ params, auth }) => DeliveryZonesService.get(auth.merchant.id, params.id), {
+  .get('/delivery-zones/:id', async ({ params, auth, merchantContext }) => DeliveryZonesService.get(auth.merchant.id, params.id, merchantContext), {
     params: deliveryParams,
     detail: { summary: 'Get a delivery zone' }
   })
@@ -39,80 +39,80 @@ export const deliveryModule = new Elysia({ prefix: '/api' })
     params: deliveryParams,
     detail: { summary: 'Get a driver' }
   })
-  .get('/deliveries', async ({ query, auth }) => DeliveryOrdersService.list(auth.merchant.id, query), {
+  .get('/deliveries', async ({ query, auth, merchantContext }) => DeliveryOrdersService.list(auth.merchant.id, query, merchantContext), {
     query: deliveryQuery,
     detail: { summary: 'List delivery orders' }
   })
-  .get('/deliveries/:id', async ({ params, auth }) => DeliveryOrdersService.get(auth.merchant.id, params.id), {
+  .get('/deliveries/:id', async ({ params, auth, merchantContext }) => DeliveryOrdersService.get(auth.merchant.id, params.id, merchantContext), {
     params: deliveryParams,
     detail: { summary: 'Get a delivery order' }
   })
 
   /* Zone management: delivery.manage. */
   .use(outletGuard({ module: 'delivery', permissions: ['delivery.manage'] }))
-  .post('/delivery-zones', async ({ body, auth, request }) => {
-    const result = await DeliveryZonesService.create(auth.merchant.id, body)
+  .post('/delivery-zones', async ({ body, auth, request, merchantContext }) => {
+    const result = await DeliveryZonesService.create(auth.merchant.id, body, merchantContext)
     auditFromRequest(auth, request, { action: 'delivery_zone.create', entityType: 'delivery_zone', entityId: (result.data as { id: string }).id })
     return result
   }, { body: deliveryZoneBody })
-  .put('/delivery-zones/:id', async ({ params, body, auth, request }) => {
-    const result = await DeliveryZonesService.update(auth.merchant.id, params.id, body)
+  .put('/delivery-zones/:id', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await DeliveryZonesService.update(auth.merchant.id, params.id, body, merchantContext)
     auditFromRequest(auth, request, { action: 'delivery_zone.update', entityType: 'delivery_zone', entityId: params.id })
     return result
   }, { params: deliveryParams, body: deliveryZoneUpdateBody })
-  .delete('/delivery-zones/:id', async ({ params, auth, request }) => {
-    const result = await DeliveryZonesService.remove(auth.merchant.id, params.id)
+  .delete('/delivery-zones/:id', async ({ params, auth, request, merchantContext }) => {
+    const result = await DeliveryZonesService.remove(auth.merchant.id, params.id, merchantContext)
     auditFromRequest(auth, request, { action: 'delivery_zone.delete', entityType: 'delivery_zone', entityId: params.id })
     return result
   }, { params: deliveryParams })
 
   /* Driver management: drivers.manage. */
   .use(outletGuard({ module: 'delivery', permissions: ['drivers.manage'] }))
-  .post('/drivers', async ({ body, auth, request }) => {
-    const result = await DriversService.create(auth.merchant.id, body)
+  .post('/drivers', async ({ body, auth, request, merchantContext }) => {
+    const result = await DriversService.create(auth.merchant.id, body, merchantContext)
     auditFromRequest(auth, request, { action: 'driver.create', entityType: 'driver', entityId: (result.data as { id: string }).id })
     return result
   }, { body: driverBody })
-  .put('/drivers/:id', async ({ params, body, auth, request }) => {
-    const result = await DriversService.update(auth.merchant.id, params.id, body)
+  .put('/drivers/:id', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await DriversService.update(auth.merchant.id, params.id, body, merchantContext)
     auditFromRequest(auth, request, { action: 'driver.update', entityType: 'driver', entityId: params.id })
     return result
   }, { params: deliveryParams, body: driverUpdateBody })
-  .delete('/drivers/:id', async ({ params, auth, request }) => {
-    const result = await DriversService.remove(auth.merchant.id, params.id)
+  .delete('/drivers/:id', async ({ params, auth, request, merchantContext }) => {
+    const result = await DriversService.remove(auth.merchant.id, params.id, merchantContext)
     auditFromRequest(auth, request, { action: 'driver.delete', entityType: 'driver', entityId: params.id })
     return result
   }, { params: deliveryParams })
-  .post('/drivers/:id/status', async ({ params, body, auth, request }) => {
-    const result = await DriversService.setStatus(auth.merchant.id, params.id, body.status)
+  .post('/drivers/:id/status', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await DriversService.setStatus(auth.merchant.id, params.id, body.status, undefined, merchantContext)
     auditFromRequest(auth, request, { action: 'driver.status', entityType: 'driver', entityId: params.id, metadata: { status: body.status } })
     return result
   }, { params: deliveryParams, body: driverTransitionBody })
 
   /* Delivery creation + dispatch: delivery.assign. */
   .use(outletGuard({ module: 'delivery', permissions: ['delivery.assign'] }))
-  .post('/deliveries', async ({ body, auth, request }) => {
-    const result = await DeliveryOrdersService.create(auth.merchant.id, body)
+  .post('/deliveries', async ({ body, auth, request, merchantContext }) => {
+    const result = await DeliveryOrdersService.create(auth.merchant.id, body, merchantContext)
     auditFromRequest(auth, request, { action: 'delivery.create', entityType: 'delivery_order', entityId: (result.data as { id: string }).id })
     return result
   }, { body: deliveryCreateBody })
-  .post('/deliveries/:id/assign', async ({ params, body, auth, request }) => {
-    const result = await DeliveryOrdersService.assign(auth.merchant.id, params.id, body.driverId)
+  .post('/deliveries/:id/assign', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await DeliveryOrdersService.assign(auth.merchant.id, params.id, body.driverId, merchantContext)
     auditFromRequest(auth, request, { action: 'delivery.assign', entityType: 'delivery_order', entityId: params.id, metadata: { driverId: body.driverId } })
     return result
   }, { params: deliveryParams, body: deliveryAssignBody })
-  .post('/deliveries/:id/dispatch', async ({ params, auth, request }) => {
-    const result = await DeliveryOrdersService.autoDispatch(auth.merchant.id, params.id)
+  .post('/deliveries/:id/dispatch', async ({ params, auth, request, merchantContext }) => {
+    const result = await DeliveryOrdersService.autoDispatch(auth.merchant.id, params.id, merchantContext)
     auditFromRequest(auth, request, { action: 'delivery.dispatch', entityType: 'delivery_order', entityId: params.id })
     return result
   }, { params: deliveryParams })
-  .post('/deliveries/:id/unassign', async ({ params, auth, request }) => {
-    const result = await DeliveryOrdersService.unassign(auth.merchant.id, params.id)
+  .post('/deliveries/:id/unassign', async ({ params, auth, request, merchantContext }) => {
+    const result = await DeliveryOrdersService.unassign(auth.merchant.id, params.id, merchantContext)
     auditFromRequest(auth, request, { action: 'delivery.unassign', entityType: 'delivery_order', entityId: params.id })
     return result
   }, { params: deliveryParams })
-  .post('/deliveries/:id/status', async ({ params, body, auth, request }) => {
-    const result = await DeliveryOrdersService.transition(auth.merchant.id, params.id, body.status)
+  .post('/deliveries/:id/status', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await DeliveryOrdersService.transition(auth.merchant.id, params.id, body.status, merchantContext)
     auditFromRequest(auth, request, { action: 'delivery.status', entityType: 'delivery_order', entityId: params.id, metadata: { status: body.status } })
     return result
   }, { params: deliveryParams, body: deliveryTransitionBody })

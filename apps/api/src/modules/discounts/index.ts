@@ -6,7 +6,7 @@ import { couponBody, couponQuery, couponUpdateBody, promotionBody, promotionUpda
 
 export const discountsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
-  .use(requirePermission('discounts:write'))
+  .use(requirePermission('settings.manage'))
   .get('/coupons', async ({ query, auth }) => DiscountsService.listCoupons(auth.merchant.id, query), {
     query: couponQuery
   })
@@ -15,7 +15,7 @@ export const discountsModule = new Elysia({ prefix: '/api' })
   .get('/promotions/:id', async ({ params, auth }) =>
     DiscountsService.getPromotion(auth.merchant.id, params.id)
   )
-  .use(requirePermission('discounts:write'))
+  .use(requirePermission('settings.manage'))
   .post('/coupons', async ({ body, auth, request }) => {
     const result = await DiscountsService.createCoupon(auth.merchant.id, body)
     auditFromRequest(auth, request, {

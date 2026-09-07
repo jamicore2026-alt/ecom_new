@@ -7,11 +7,13 @@ import {
   products,
   modifiers,
   menuItemModifiers,
-  outlets
+  outlets,
+  paymentTransactions,
+  merchants
 } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { parsePagination, makeMeta } from '../../shared/pagination'
-import { badRequest, notFound, conflict } from '../../shared/errors'
+import { badRequest, notFound, conflict, HttpError } from '../../shared/errors'
 import { isFoodOrderType, isValidOrderType, isFoodOrderStatus, assertOrderTransition } from '../../shared/order-state'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -39,8 +41,34 @@ type ResolverCtx = {
   mods: typeof modifiers.$inferSelect[]
 }
 
+/**
+ * Outlet scope resolved server-side from the authenticated user's merchant
+ * context (docs/outlet-isolation.md). `allowedOutlets` is the exact set of
+ * outlets the user may touch — owners/admins with no explicit assignment
+ * implicitly cover every outlet of the merchant. A caller whose
+ * `allowedOutlets` is empty may touch nothing (default-deny, never a silent
+ * "all outlets" result).
+ */
+export type OutletScope = { allowedOutlets: Array<{ id: string }> }
+
+/** Outlet ids the caller may touch, or `null` when the caller has no outlets. */
+const effectiveOutletIds = (scope: OutletScope): string[] | null => {
+  const ids = scope.allowedOutlets.map((o) => o.id)
+  return ids.length > 0 ? ids : null
+}
+
+const outletScopeError = (message: string) => new HttpError(403, 'OUTLET_SCOPE', message)
+
+/** Default-deny: a food order is only reachable inside the caller's scope. */
+const assertOrderInScope = (scope: OutletScope, outletId: string | null | undefined) => {
+  const ids = effectiveOutletIds(scope)
+  if (ids === null || !outletId || !ids.includes(outletId)) {
+    throw outletScopeError('This order is outside your outlet scope')
+  }
+}
+
 export class FoodOrdersService {
-  static async list(merchantId: string, query: { orderType?: string; status?: string; outletId?: string; search?: string; page?: string | number; limit?: string | number }) {
+  static async list(merchantId: string, query: { orderType?: string; status?: string; outletId?: string; search?: string; page?: string | number; limit?: string | number }, scope: OutletScope) {
     const { page, limit, offset } = parsePagination(query)
     const conds = [eq(orders.merchantId, merchantId), inArray(orders.orderType, ['DINE_IN', 'TAKEAWAY', 'DELIVERY', 'QR', 'POS', 'SCHEDULED'])]
 
@@ -52,7 +80,18 @@ export class FoodOrdersService {
       if (!isFoodOrderStatus(query.status)) throw badRequest('INVALID_STATUS', 'Unknown food order status')
       conds.push(eq(orders.status, query.status))
     }
-    if (query.outletId) conds.push(eq(orders.outletId, query.outletId))
+    // Outlet scope is authoritative — a caller with no outlets sees nothing
+    // (default-deny), and an explicit outletId must be inside the caller's
+    // effective scope instead of silently widening the result.
+    const scopedIds = effectiveOutletIds(scope)
+    if (query.outletId) {
+      if (!scopedIds?.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+      conds.push(eq(orders.outletId, query.outletId))
+    } else if (scopedIds) {
+      conds.push(inArray(orders.outletId, scopedIds))
+    } else {
+      return ok({ items: [], meta: makeMeta(page, limit, 0) })
+    }
     if (query.search) conds.push(ilike(orders.orderNumber, `%${query.search.trim()}%`))
 
     const where = and(...conds)
@@ -69,13 +108,14 @@ export class FoodOrdersService {
     return ok({ items: rows, meta: makeMeta(page, limit, total) })
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(merchantId: string, id: string, scope: OutletScope) {
     const [row] = await db
       .select({ ...ORDER_COLUMNS, outletName: outlets.name })
       .from(orders)
       .leftJoin(outlets, eq(orders.outletId, outlets.id))
       .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!row) throw notFound('NOT_FOUND', 'Food order not found')
+    assertOrderInScope(scope, row.outletId)
 
     const items = await db.select().from(foodOrderItems).where(eq(foodOrderItems.orderId, id)).orderBy(asc(foodOrderItems.createdAt))
     return ok({ ...row, items })
@@ -88,7 +128,7 @@ export class FoodOrdersService {
     notes?: string
     scheduledFor?: string
     idempotencyKey?: string
-  }) {
+  }, scope: OutletScope) {
     if (!isFoodOrderType(input.orderType)) throw badRequest('INVALID_ORDER_TYPE', `${input.orderType} is not a food order type`)
 
     // Idempotent replay: a POS double-submit/retry carrying the same key returns
@@ -105,11 +145,18 @@ export class FoodOrdersService {
             eq(orders.idempotencyKey, input.idempotencyKey)
           )
         )
-      if (existing) return this.get(merchantId, existing.id)
+      if (existing) return this.get(merchantId, existing.id, scope)
     }
 
+    assertOrderInScope(scope, input.outletId)
     const [outlet] = await db.select().from(outlets).where(and(eq(outlets.id, input.outletId), eq(outlets.merchantId, merchantId)))
     if (!outlet) throw notFound('OUTLET_NOT_FOUND', 'Outlet not found')
+
+    const [merchant] = await db
+      .select({ currency: merchants.currency })
+      .from(merchants)
+      .where(eq(merchants.id, merchantId))
+    const currency = merchant?.currency ?? 'USD'
 
     const menuIds = [...new Set(input.items.map((i) => i.menuItemId))]
     const loaded = await db
@@ -142,7 +189,7 @@ export class FoodOrdersService {
         subtotal: 0,
         taxTotal: 0,
         total: 0,
-        currency: 'USD',
+        currency,
         notes: input.notes ?? null,
         scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
         idempotencyKey: input.idempotencyKey ?? null
@@ -155,13 +202,14 @@ export class FoodOrdersService {
       return { order: updated, lines }
     })
 
-    return this.get(merchantId, order.id)
+    return this.get(merchantId, order.id, scope)
   }
 
-  static async transition(merchantId: string, id: string, nextStatus: string) {
+  static async transition(merchantId: string, id: string, nextStatus: string, scope: OutletScope) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Food order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
+    assertOrderInScope(scope, order.outletId)
 
     assertOrderTransition(order.status, nextStatus, order.orderType)
 
@@ -172,47 +220,74 @@ export class FoodOrdersService {
     return ok(updated)
   }
 
-  static async cancel(merchantId: string, id: string) {
+  static async cancel(merchantId: string, id: string, scope: OutletScope) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Food order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
     if (order.status === 'COMPLETED') throw conflict('INVALID_TRANSITION', 'A completed order cannot be cancelled')
-    return this.transition(merchantId, id, 'CANCELLED')
+    return this.transition(merchantId, id, 'CANCELLED', scope)
   }
 
   /**
    * Record payment for a POS/food order. Only an unpaid order may be paid, and
    * the flip is atomic (guarded by `WHERE payment_status='unpaid'`) so a
    * double-click/race can never record two payments. Money totals always come
-   * from the server-computed order; the client only supplies the method.
+   * from the server-computed order; the client only supplies the method (+ cash
+   * tender). A real `payment_transactions` row is always written so refunds,
+   * journals and reporting see the payment.
    */
-  static async pay(merchantId: string, id: string, paymentMethod?: string) {
+  static async pay(merchantId: string, id: string, paymentMethod?: string, cashReceived?: number, scope: OutletScope) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Food order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
+    assertOrderInScope(scope, order.outletId)
     if (['refunded', 'partially_refunded', 'failed'].includes(order.paymentStatus)) {
       throw conflict('INVALID_TRANSITION', `A ${order.paymentStatus} order cannot be paid`)
+    }
+
+    const method = paymentMethod ?? 'cash'
+    const isCash = method === 'cash'
+    if (cashReceived !== undefined && !isCash) {
+      throw badRequest('BAD_REQUEST', 'Cash tender only applies to cash payments')
+    }
+    if (isCash && cashReceived !== undefined && cashReceived + 0.001 < Number(order.total)) {
+      throw badRequest('BAD_REQUEST', `Cash received (${cashReceived.toFixed(2)}) is less than the total (${Number(order.total).toFixed(2)})`)
     }
 
     const values: Partial<typeof orders.$inferSelect> = { paymentStatus: 'paid', expiresAt: null }
     if (paymentMethod) values.paymentMethod = paymentMethod
 
-    const [paid] = await db
-      .update(orders)
-      .set(values)
-      .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId), eq(orders.paymentStatus, 'unpaid')))
-      .returning()
+    await db.transaction(async (tx) => {
+      const [paid] = await tx
+        .update(orders)
+        .set(values)
+        .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId), eq(orders.paymentStatus, 'unpaid')))
+        .returning()
 
-    if (!paid) throw conflict('ALREADY_PAID', 'This order has already been paid')
+      if (!paid) throw conflict('ALREADY_PAID', 'This order has already been paid')
 
-    const refetched = await this.get(merchantId, id)
+      const change = isCash && cashReceived !== undefined ? round2(cashReceived - Number(paid.total)) : null
+      await tx.insert(paymentTransactions).values({
+        merchantId,
+        orderId: paid.id,
+        provider: method,
+        providerRef: null,
+        status: 'paid',
+        amount: Number(paid.total),
+        currency: paid.currency,
+        raw: isCash && cashReceived !== undefined ? { cashReceived, change } : null
+      })
+    })
+
+    const refetched = await this.get(merchantId, id, scope)
     return refetched
   }
 
-  static async update(merchantId: string, id: string, input: { items?: { menuItemId: string; quantity: number; modifiers?: { modifierId: string; quantity?: number }[] }[]; notes?: string; scheduledFor?: string }) {
+  static async update(merchantId: string, id: string, input: { items?: { menuItemId: string; quantity: number; modifiers?: { modifierId: string; quantity?: number }[] }[]; notes?: string; scheduledFor?: string }, scope: OutletScope) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Food order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
+    assertOrderInScope(scope, order.outletId)
     if (['COMPLETED', 'CANCELLED'].includes(order.status)) {
       throw conflict('ORDER_LOCKED', `Cannot edit a ${order.status.toLowerCase()} order`)
     }

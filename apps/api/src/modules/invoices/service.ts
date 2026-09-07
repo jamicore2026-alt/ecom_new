@@ -4,6 +4,7 @@ import { invoices, orderItems, orders, storeSettings } from '../../database/sche
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
 import { makeMeta, parsePagination } from '../../shared/pagination'
+import { assertOrderInBranchScope, branchOrderCondition } from '../../shared/outlet-scope'
 
 export class InvoicesService {
   /** Generate the next invoice number for a merchant (e.g. INV-0001). */
@@ -28,6 +29,7 @@ export class InvoicesService {
   /** Create an invoice (or credit note) for an order. Idempotent per order+type. */
   static async create(
     merchantId: string,
+    branchIds: string[] | null,
     input: { orderId: string; type?: 'invoice' | 'credit_note'; gstin?: string }
   ) {
     const type = input.type ?? 'invoice'
@@ -36,6 +38,7 @@ export class InvoicesService {
       .from(orders)
       .where(and(eq(orders.id, input.orderId), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('ORDER_NOT_FOUND', 'Order not found')
+    assertOrderInBranchScope(branchIds, order.outletId)
 
     // Prevent duplicate invoices of the same type for the same order.
     const [existing] = await db
@@ -80,28 +83,47 @@ export class InvoicesService {
     return ok(invoice)
   }
 
-  static async list(merchantId: string, query: { page?: string; limit?: string } = {}) {
+  static async list(
+    merchantId: string,
+    branchIds: string[] | null,
+    query: { page?: string; limit?: string } = {}
+  ) {
     const { page, limit, offset } = parsePagination(query)
+    const scopeCondition = branchOrderCondition(branchIds)
     const rows = await db
       .select()
       .from(invoices)
-      .where(eq(invoices.merchantId, merchantId))
+      .innerJoin(orders, eq(invoices.orderId, orders.id))
+      .where(
+        and(
+          eq(invoices.merchantId, merchantId),
+          ...(scopeCondition ? [scopeCondition] : [])
+        )
+      )
       .orderBy(desc(invoices.invoiceDate))
       .limit(limit)
       .offset(offset)
-    return ok({ items: rows, meta: makeMeta(page, limit, rows.length) })
+    return ok({ items: rows.map((row) => row.invoices), meta: makeMeta(page, limit, rows.length) })
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(merchantId: string, branchIds: string[] | null, id: string) {
     const [row] = await db
       .select()
       .from(invoices)
+      .innerJoin(orders, eq(invoices.orderId, orders.id))
       .where(and(eq(invoices.id, id), eq(invoices.merchantId, merchantId)))
     if (!row) throw notFound('INVOICE_NOT_FOUND', 'Invoice not found')
-    return ok(row)
+    assertOrderInBranchScope(branchIds, row.orders.outletId)
+    return ok(row.invoices)
   }
 
-  static async getByOrder(merchantId: string, orderId: string) {
+  static async getByOrder(merchantId: string, branchIds: string[] | null, orderId: string) {
+    const [order] = await db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.id, orderId), eq(orders.merchantId, merchantId)))
+    if (!order) throw notFound('ORDER_NOT_FOUND', 'Order not found')
+    assertOrderInBranchScope(branchIds, order.outletId)
     const rows = await db
       .select()
       .from(invoices)

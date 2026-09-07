@@ -13,6 +13,7 @@ import {
 import { ok } from '../../shared/response'
 import { parsePagination, makeMeta } from '../../shared/pagination'
 import { notFound, conflict, badRequest } from '../../shared/errors'
+import { assertInOutletScope, type OutletScope } from '../../shared/outlet-scope'
 
 export class MenuService {
   static async list(merchantId: string, query: { search?: string; status?: string; page?: string | number; limit?: string | number }) {
@@ -201,9 +202,10 @@ export class MenuService {
     return this.get(merchantId, menuItemId)
   }
 
-  static async setOutletRule(merchantId: string, menuItemId: string, input: { outletId: string; available?: boolean; priceAdjustment?: number }) {
+  static async setOutletRule(merchantId: string, menuItemId: string, input: { outletId: string; available?: boolean; priceAdjustment?: number }, scope: OutletScope) {
     const [item] = await db.select().from(menuItems).where(and(eq(menuItems.id, menuItemId), eq(menuItems.merchantId, merchantId)))
     if (!item) throw notFound('NOT_FOUND', 'Menu item not found')
+    assertInOutletScope(scope, input.outletId)
     const [outlet] = await db.select().from(outlets).where(and(eq(outlets.id, input.outletId), eq(outlets.merchantId, merchantId)))
     if (!outlet) throw notFound('OUTLET_NOT_FOUND', 'Outlet not found')
 

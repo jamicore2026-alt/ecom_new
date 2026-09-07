@@ -5,6 +5,7 @@ import { ok } from '../../shared/response'
 import { badRequest, notFound, conflict } from '../../shared/errors'
 import { isTableState, assertTableTransition, assertSessionTransition, isSessionStatus } from '../../shared/table-state'
 import { isFoodOrderType } from '../../shared/order-state'
+import { assertInOutletScope, effectiveOutletIds, outletScopeError, type OutletScope } from '../../shared/outlet-scope'
 import type { TableState } from '../../shared/types'
 
 const genToken = () => crypto.randomUUID().replace(/-/g, '') + Buffer.from(crypto.getRandomValues(new Uint8Array(8))).toString('hex')
@@ -12,7 +13,9 @@ const genToken = () => crypto.randomUUID().replace(/-/g, '') + Buffer.from(crypt
 /* ------------------------------ section service ------------------------------ */
 
 export class TableSectionsService {
-  static async list(merchantId: string) {
+  static async list(merchantId: string, scope: OutletScope) {
+    const ids = effectiveOutletIds(scope)
+    if (ids === null) return ok([])
     const sections = await db
       .select({
         id: tableSections.id,
@@ -24,13 +27,14 @@ export class TableSectionsService {
       })
       .from(tableSections)
       .innerJoin(outlets, eq(tableSections.outletId, outlets.id))
-      .where(eq(tableSections.merchantId, merchantId))
+      .where(and(eq(tableSections.merchantId, merchantId), inArray(tableSections.outletId, ids)))
       .orderBy(asc(tableSections.sortOrder), asc(tableSections.name))
 
     return ok(sections)
   }
 
-  static async create(merchantId: string, input: { name: string; sortOrder?: number; status?: string; outletId: string }) {
+  static async create(merchantId: string, input: { name: string; sortOrder?: number; status?: string; outletId: string }, scope: OutletScope) {
+    assertInOutletScope(scope, input.outletId)
     const [outlet] = await db.select().from(outlets).where(and(eq(outlets.id, input.outletId), eq(outlets.merchantId, merchantId)))
     if (!outlet) throw notFound('OUTLET_NOT_FOUND', 'Outlet not found')
 
@@ -50,9 +54,10 @@ export class TableSectionsService {
     return ok(row)
   }
 
-  static async update(merchantId: string, id: string, input: { name?: string; sortOrder?: number; status?: string }) {
+  static async update(merchantId: string, id: string, input: { name?: string; sortOrder?: number; status?: string }, scope: OutletScope) {
     const [existing] = await db.select().from(tableSections).where(and(eq(tableSections.id, id), eq(tableSections.merchantId, merchantId)))
     if (!existing) throw notFound('SECTION_NOT_FOUND', 'Table section not found')
+    assertInOutletScope(scope, existing.outletId)
 
     if (input.name && input.name !== existing.name) {
       const [dup] = await db
@@ -70,9 +75,10 @@ export class TableSectionsService {
     return ok(updated)
   }
 
-  static async remove(merchantId: string, id: string) {
+  static async remove(merchantId: string, id: string, scope: OutletScope) {
     const [existing] = await db.select().from(tableSections).where(and(eq(tableSections.id, id), eq(tableSections.merchantId, merchantId)))
     if (!existing) throw notFound('SECTION_NOT_FOUND', 'Table section not found')
+    assertInOutletScope(scope, existing.outletId)
     await db.delete(tableSections).where(eq(tableSections.id, id))
     return ok({ id, deleted: true })
   }
@@ -81,9 +87,14 @@ export class TableSectionsService {
 /* -------------------------------- table service -------------------------------- */
 
 export class TablesService {
-  static async list(merchantId: string, query: { outletId?: string; sectionId?: string; status?: string }) {
-    const conds = [eq(tables.merchantId, merchantId)]
-    if (query.outletId) conds.push(eq(tables.outletId, query.outletId))
+  static async list(merchantId: string, query: { outletId?: string; sectionId?: string; status?: string }, scope: OutletScope) {
+    const scopedIds = effectiveOutletIds(scope)
+    if (scopedIds === null) return ok([])
+    const conds = [eq(tables.merchantId, merchantId), inArray(tables.outletId, scopedIds)]
+    if (query.outletId) {
+      if (!scopedIds.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+      conds.push(eq(tables.outletId, query.outletId))
+    }
     if (query.sectionId) conds.push(eq(tables.sectionId, query.sectionId))
     if (query.status) {
       if (!isTableState(query.status)) throw badRequest('INVALID_TABLE_STATE', 'Unknown table state')
@@ -135,7 +146,7 @@ export class TablesService {
     return ok(withMeta)
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(merchantId: string, id: string, scope: OutletScope) {
     const [row] = await db
       .select({
         id: tables.id,
@@ -153,10 +164,12 @@ export class TablesService {
       .leftJoin(tableSections, eq(tables.sectionId, tableSections.id))
       .where(and(eq(tables.id, id), eq(tables.merchantId, merchantId)))
     if (!row) throw notFound('TABLE_NOT_FOUND', 'Table not found')
+    assertInOutletScope(scope, row.outletId)
     return ok(row)
   }
 
-  static async create(merchantId: string, input: { outletId: string; sectionId?: string; name: string; code: string; seats: number }) {
+  static async create(merchantId: string, input: { outletId: string; sectionId?: string; name: string; code: string; seats: number }, scope: OutletScope) {
+    assertInOutletScope(scope, input.outletId)
     const [outlet] = await db.select().from(outlets).where(and(eq(outlets.id, input.outletId), eq(outlets.merchantId, merchantId)))
     if (!outlet) throw notFound('OUTLET_NOT_FOUND', 'Outlet not found')
     if (input.sectionId) {
@@ -186,9 +199,10 @@ export class TablesService {
     return ok(row)
   }
 
-  static async update(merchantId: string, id: string, input: { sectionId?: string; name?: string; code?: string; seats?: number }) {
+  static async update(merchantId: string, id: string, input: { sectionId?: string; name?: string; code?: string; seats?: number }, scope: OutletScope) {
     const [existing] = await db.select().from(tables).where(and(eq(tables.id, id), eq(tables.merchantId, merchantId)))
     if (!existing) throw notFound('TABLE_NOT_FOUND', 'Table not found')
+    assertInOutletScope(scope, existing.outletId)
     if (input.sectionId) {
       const [sec] = await db.select().from(tableSections).where(and(eq(tableSections.id, input.sectionId), eq(tableSections.merchantId, merchantId)))
       if (!sec) throw notFound('SECTION_NOT_FOUND', 'Table section not found')
@@ -202,24 +216,27 @@ export class TablesService {
     return ok(updated)
   }
 
-  static async status(merchantId: string, id: string, next: string) {
+  static async status(merchantId: string, id: string, next: string, scope: OutletScope) {
     const [table] = await db.select().from(tables).where(and(eq(tables.id, id), eq(tables.merchantId, merchantId)))
     if (!table) throw notFound('TABLE_NOT_FOUND', 'Table not found')
+    assertInOutletScope(scope, table.outletId)
     assertTableTransition(table.status, next)
     const [updated] = await db.update(tables).set({ status: next as TableState }).where(eq(tables.id, id)).returning()
     return ok(updated)
   }
 
-  static async qr(merchantId: string, id: string, baseUrl?: string) {
+  static async qr(merchantId: string, id: string, baseUrl?: string, scope?: OutletScope) {
     const [table] = await db.select().from(tables).where(and(eq(tables.id, id), eq(tables.merchantId, merchantId)))
     if (!table) throw notFound('TABLE_NOT_FOUND', 'Table not found')
+    if (scope) assertInOutletScope(scope, table.outletId)
     const url = `${baseUrl ?? 'https://store'}${table.qrToken}`
     return ok({ token: table.qrToken, url, image: `/api/table-qr/${table.qrToken}/qr.svg` })
   }
 
-  static async remove(merchantId: string, id: string) {
+  static async remove(merchantId: string, id: string, scope: OutletScope) {
     const [existing] = await db.select().from(tables).where(and(eq(tables.id, id), eq(tables.merchantId, merchantId)))
     if (!existing) throw notFound('TABLE_NOT_FOUND', 'Table not found')
+    assertInOutletScope(scope, existing.outletId)
     const [open] = await db.select().from(tableSessions).where(and(eq(tableSessions.merchantId, merchantId), eq(tableSessions.tableId, id), eq(tableSessions.status, 'OPEN')))
     if (open) throw conflict('TABLE_OCCUPIED', 'Close the open session before removing this table')
     await db.delete(tables).where(eq(tables.id, id))
@@ -230,13 +247,18 @@ export class TablesService {
 /* ------------------------------ session service ------------------------------ */
 
 export class TablesSessionService {
-  static async list(merchantId: string, query: { status?: string; outletId?: string; tableId?: string }) {
-    const conds = [eq(tableSessions.merchantId, merchantId)]
+  static async list(merchantId: string, query: { status?: string; outletId?: string; tableId?: string }, scope: OutletScope) {
+    const scopedIds = effectiveOutletIds(scope)
+    if (scopedIds === null) return ok([])
+    const conds = [eq(tableSessions.merchantId, merchantId), inArray(tableSessions.outletId, scopedIds)]
     if (query.status) {
       if (!isSessionStatus(query.status)) throw badRequest('INVALID_SESSION_STATUS', 'Unknown session status')
       conds.push(eq(tableSessions.status, query.status))
     }
-    if (query.outletId) conds.push(eq(tableSessions.outletId, query.outletId))
+    if (query.outletId) {
+      if (!scopedIds.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+      conds.push(eq(tableSessions.outletId, query.outletId))
+    }
     if (query.tableId) conds.push(eq(tableSessions.tableId, query.tableId))
 
     const rows = await db
@@ -272,7 +294,7 @@ export class TablesSessionService {
     return ok(withMeta)
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(merchantId: string, id: string, scope: OutletScope) {
     const [row] = await db
       .select({
         id: tableSessions.id,
@@ -292,12 +314,14 @@ export class TablesSessionService {
       .leftJoin(tableSections, eq(tables.sectionId, tableSections.id))
       .where(and(eq(tableSessions.id, id), eq(tableSessions.merchantId, merchantId)))
     if (!row) throw notFound('SESSION_NOT_FOUND', 'Table session not found')
+    assertInOutletScope(scope, row.outletId)
     return ok(row)
   }
 
-  static async open(merchantId: string, input: { tableId: string; guests?: number; notes?: string }, requestedOutletId?: string | null) {
+  static async open(merchantId: string, input: { tableId: string; guests?: number; notes?: string }, scope: OutletScope) {
     const [table] = await db.select().from(tables).where(and(eq(tables.id, input.tableId), eq(tables.merchantId, merchantId)))
     if (!table) throw notFound('TABLE_NOT_FOUND', 'Table not found')
+    assertInOutletScope(scope, table.outletId)
     // Fresh seating only when the table is empty/ready (or explicitly available).
     if (!['AVAILABLE', 'RESERVED', 'CLEANING'].includes(table.status)) {
       throw conflict('TABLE_OCCUPIED', `Table ${table.name} is currently ${table.status.toLowerCase()}`)
@@ -305,7 +329,7 @@ export class TablesSessionService {
     if (table.seats > 0 && input.guests && input.guests > table.seats) {
       throw conflict('GUESTS_EXCEED_SEATS', `Table ${table.name} seats ${table.seats} guests`)
     }
-    const outletId = requestedOutletId ?? table.outletId
+    const outletId = table.outletId
 
     const session = await db.transaction(async (tx) => {
       const [s] = await tx.insert(tableSessions).values({
@@ -318,20 +342,21 @@ export class TablesSessionService {
       await tx.update(tables).set({ status: 'ORDERING' }).where(eq(tables.id, table.id))
       return s
     })
-    return this.get(merchantId, session.id)
+    return this.get(merchantId, session.id, scope)
   }
 
-  static async close(merchantId: string, id: string, nextStatus: 'CLOSED' | 'CANCELLED' = 'CLOSED') {
-    return this.finish(merchantId, id, nextStatus)
+  static async close(merchantId: string, id: string, scope: OutletScope) {
+    return this.finish(merchantId, id, 'CLOSED', scope)
   }
 
-  static async cancel(merchantId: string, id: string) {
-    return this.finish(merchantId, id, 'CANCELLED')
+  static async cancel(merchantId: string, id: string, scope: OutletScope) {
+    return this.finish(merchantId, id, 'CANCELLED', scope)
   }
 
-  private static async finish(merchantId: string, id: string, nextStatus: 'CLOSED' | 'CANCELLED') {
+  private static async finish(merchantId: string, id: string, nextStatus: 'CLOSED' | 'CANCELLED', scope: OutletScope) {
     const [session] = await db.select().from(tableSessions).where(and(eq(tableSessions.id, id), eq(tableSessions.merchantId, merchantId)))
     if (!session) throw notFound('SESSION_NOT_FOUND', 'Table session not found')
+    assertInOutletScope(scope, session.outletId)
     assertSessionTransition(session.status, nextStatus)
     if (!session.tableId) throw conflict('NO_TABLE', 'This session is not on a table')
 
@@ -341,19 +366,21 @@ export class TablesSessionService {
       await tx.update(tableSessions).set({ status: nextStatus, closedAt: new Date() }).where(eq(tableSessions.id, id))
       if (table) await tx.update(tables).set({ status: 'CLEANING' }).where(eq(tables.id, table.id))
     })
-    return this.get(merchantId, id)
+    return this.get(merchantId, id, scope)
   }
 
   /** Move this OPEN session (and its orders) to another table. */
-  static async move(merchantId: string, id: string, toTableId: string) {
+  static async move(merchantId: string, id: string, toTableId: string, scope: OutletScope) {
     const [session] = await db.select().from(tableSessions).where(and(eq(tableSessions.id, id), eq(tableSessions.merchantId, merchantId)))
     if (!session) throw notFound('SESSION_NOT_FOUND', 'Table session not found')
+    assertInOutletScope(scope, session.outletId)
     if (session.status !== 'OPEN') throw conflict('SESSION_NOT_OPEN', 'Only an open session can be moved')
     if (!session.tableId) throw conflict('NO_TABLE', 'This session is not on a table')
 
     const [fromTable] = await db.select().from(tables).where(and(eq(tables.id, session.tableId), eq(tables.merchantId, merchantId)))
     const [toTable] = await db.select().from(tables).where(and(eq(tables.id, toTableId), eq(tables.merchantId, merchantId)))
     if (!toTable) throw notFound('TABLE_NOT_FOUND', 'Destination table not found')
+    assertInOutletScope(scope, toTable.outletId)
     if (!['AVAILABLE', 'RESERVED', 'CLEANING'].includes(toTable.status)) {
       throw conflict('TABLE_OCCUPIED', `Destination table ${toTable.name} is not free`)
     }
@@ -364,16 +391,18 @@ export class TablesSessionService {
       await tx.update(tables).set({ status: 'ORDERING' }).where(eq(tables.id, toTable.id))
       if (fromTable) await tx.update(tables).set({ status: 'CLEANING' }).where(eq(tables.id, fromTable.id))
     })
-    return this.get(merchantId, id)
+    return this.get(merchantId, id, scope)
   }
 
   /** Merge other OPEN sessions into this one (their orders + guests join the target table; those tables are freed). */
-  static async merge(merchantId: string, targetId: string, sessionIds: string[]) {
+  static async merge(merchantId: string, targetId: string, sessionIds: string[], scope: OutletScope) {
     const [target] = await db.select().from(tableSessions).where(and(eq(tableSessions.id, targetId), eq(tableSessions.merchantId, merchantId)))
     if (!target) throw notFound('SESSION_NOT_FOUND', 'Target table session not found')
+    assertInOutletScope(scope, target.outletId)
     if (target.status !== 'OPEN') throw conflict('SESSION_NOT_OPEN', 'Target session must be open')
 
     const sources = await db.select().from(tableSessions).where(and(eq(tableSessions.merchantId, merchantId), inArray(tableSessions.id, sessionIds)))
+    for (const s of sources) assertInOutletScope(scope, s.outletId)
     const valid = sources.filter((s) => s.status === 'OPEN')
     if (valid.length === 0) throw notFound('SESSION_NOT_FOUND', 'No open sessions to merge')
 
@@ -386,18 +415,20 @@ export class TablesSessionService {
         if (s.tableId) await tx.update(tables).set({ status: 'CLEANING' }).where(eq(tables.id, s.tableId))
       }
     })
-    return this.get(merchantId, targetId)
+    return this.get(merchantId, targetId, scope)
   }
 
   /** Split a party: move `guests` from this OPEN session into a new session on `toTableId`. */
-  static async split(merchantId: string, id: string, toTableId: string, guests: number) {
+  static async split(merchantId: string, id: string, toTableId: string, guests: number, scope: OutletScope) {
     const [session] = await db.select().from(tableSessions).where(and(eq(tableSessions.id, id), eq(tableSessions.merchantId, merchantId)))
     if (!session) throw notFound('SESSION_NOT_FOUND', 'Table session not found')
+    assertInOutletScope(scope, session.outletId)
     if (session.status !== 'OPEN') throw conflict('SESSION_NOT_OPEN', 'Only an open session can be split')
     if (guests <= 0 || guests >= session.guests) throw badRequest('INVALID_SPLIT', `Split guests must be between 1 and ${session.guests - 1}`)
 
     const [toTable] = await db.select().from(tables).where(and(eq(tables.id, toTableId), eq(tables.merchantId, merchantId)))
     if (!toTable) throw notFound('TABLE_NOT_FOUND', 'Destination table not found')
+    assertInOutletScope(scope, toTable.outletId)
     if (!['AVAILABLE', 'RESERVED', 'CLEANING'].includes(toTable.status)) {
       throw conflict('TABLE_OCCUPIED', `Destination table ${toTable.name} is not free`)
     }
@@ -414,15 +445,16 @@ export class TablesSessionService {
       await tx.update(tables).set({ status: 'ORDERING' }).where(eq(tables.id, toTable.id))
       return [s]
     })
-    const origin = await this.get(merchantId, id)
-    const arrived = await this.get(merchantId, newSession.id)
+    const origin = await this.get(merchantId, id, scope)
+    const arrived = await this.get(merchantId, newSession.id, scope)
     return ok({ session: origin.data, splitInto: arrived.data })
   }
 
   /** Attach an existing food order to an OPEN session (dine-in linking). */
-  static async attachOrder(merchantId: string, id: string, orderId: string) {
+  static async attachOrder(merchantId: string, id: string, orderId: string, scope: OutletScope) {
     const [session] = await db.select().from(tableSessions).where(and(eq(tableSessions.id, id), eq(tableSessions.merchantId, merchantId)))
     if (!session) throw notFound('SESSION_NOT_FOUND', 'Table session not found')
+    assertInOutletScope(scope, session.outletId)
     if (session.status !== 'OPEN') throw conflict('SESSION_NOT_OPEN', 'Only an open session can take orders')
 
     const [order] = await db.select().from(orders).where(and(eq(orders.id, orderId), eq(orders.merchantId, merchantId)))
@@ -431,7 +463,7 @@ export class TablesSessionService {
     if (order.tableSessionId) throw conflict('ORDER_ATTACHED', 'This order already belongs to a session')
 
     await db.update(orders).set({ tableSessionId: id, outletId: session.outletId }).where(eq(orders.id, order.id))
-    return this.get(merchantId, id)
+    return this.get(merchantId, id, scope)
   }
 }
 

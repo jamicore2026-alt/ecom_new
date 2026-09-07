@@ -2,10 +2,11 @@ import { Elysia } from 'elysia'
 import jwt from '@elysiajs/jwt'
 import { and, eq, lt } from 'drizzle-orm'
 import { db } from '../database/client'
-import { merchants, tokenBlacklist, users } from '../database/schema'
+import { merchants, roles, tokenBlacklist, users } from '../database/schema'
 import { unauthorized, forbidden } from '../shared/errors'
 import type { UserRole, Permission } from '../shared/types'
-import type { Merchant, User } from '../database/schema'
+import { resolvePermissions } from '../shared/types'
+import type { Merchant, Role, User } from '../database/schema'
 
 const DEV_ACCESS_SECRET = 'dev-access-secret-change-me'
 const DEV_REFRESH_SECRET = 'dev-refresh-secret-change-me'
@@ -28,6 +29,8 @@ export const refreshJwt = jwt({ name: 'refreshJwt', secret: REFRESH_SECRET })
 export interface AuthContext {
   user: User
   merchant: Merchant
+  /** The user's assigned roles row (null when the user has no roleId). */
+  role: Role | null
 }
 
 /**
@@ -46,8 +49,15 @@ export const isAdmin = (auth: AuthContext): boolean =>
 export const hasRole = (auth: AuthContext, ...roles: UserRole[]): boolean =>
   roles.includes(auth.user.role as UserRole)
 
-export const hasPermission = (auth: AuthContext, ...perms: Permission[]): boolean =>
-  isAdmin(auth) || perms.some((p) => auth.user.permissions.includes(p))
+export const hasPermission = (auth: AuthContext, ...perms: Permission[]): boolean => {
+  if (isAdmin(auth)) return true
+  const granted = new Set(
+    [...(auth.role?.permissions ?? []), ...auth.user.permissions].flatMap((p) =>
+      resolvePermissions(p)
+    )
+  )
+  return perms.some((p) => resolvePermissions(p).some((expanded) => granted.has(expanded)))
+}
 
 /** Hash a token so we never store raw JWTs on the blacklist. */
 export const hashToken = (token: string) => {
@@ -151,7 +161,13 @@ export const authPlugin = new Elysia({ name: 'auth' })
       .where(and(eq(merchants.id, user.merchantId), eq(merchants.status, 'active')))
     if (!merchant) throw unauthorized('Store is not active')
 
-    return { auth: { user, merchant } }
+    let role: typeof roles.$inferSelect | null = null
+    if (user.roleId) {
+      const [roleRow] = await db.select().from(roles).where(eq(roles.id, user.roleId))
+      role = roleRow ?? null
+    }
+
+    return { auth: { user, merchant, role } }
   })
 
 /** Guard that runs BEFORE body validation (derive stage) so unauthorized

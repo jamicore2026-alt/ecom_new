@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '../database/client'
 import { merchantModules, outlets, userOutlets } from '../database/schema'
 import type { Outlet } from '../database/schema'
-import { DEFAULT_MODULES, type ModuleId } from './types'
+import { DEFAULT_MODULES, type ModuleId, type Scope } from './types'
 
 export interface MerchantContext {
   /** Every outlet the current user may act on (owner/admin default to all). */
@@ -32,7 +32,8 @@ export async function resolveMerchantContext(
   userId: string,
   merchantId: string,
   isAdminUser: boolean,
-  requestedOutletId?: string | null
+  requestedOutletId?: string | null,
+  effectiveScope?: Scope
 ): Promise<MerchantContext> {
   const [assignments, modules, merchantOutlets] = await Promise.all([
     db
@@ -44,13 +45,15 @@ export async function resolveMerchantContext(
   ])
 
   // Owners/admins with no explicit assignment implicitly cover every outlet of
-  // the merchant. Everyone else is strictly limited to their assigned outlets.
-  const allowedOutlets =
-    assignments.length > 0
+  // the merchant. GLOBAL/MERCHANT-scoped roles do the same (roles.scope is
+  // authoritative for widening, matching the orders outlet scope). Everyone
+  // else is strictly limited to their assigned outlets.
+  const wide = isAdminUser || effectiveScope === 'GLOBAL' || effectiveScope === 'MERCHANT'
+  const allowedOutlets = wide
+    ? merchantOutlets
+    : assignments.length > 0
       ? merchantOutlets.filter((o) => assignments.some((a) => a.outletId === o.id))
-      : isAdminUser
-        ? merchantOutlets
-        : []
+      : []
 
   const selectedOutlet = requestedOutletId
     ? (allowedOutlets.find((o) => o.id === requestedOutletId) ?? null)

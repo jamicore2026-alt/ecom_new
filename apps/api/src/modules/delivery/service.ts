@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, isNull, notInArray } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNull, or, notInArray } from 'drizzle-orm'
 import { db } from '../../database/client'
 import {
   deliveryZones,
@@ -14,6 +14,7 @@ import { ok } from '../../shared/response'
 import { parsePagination, makeMeta } from '../../shared/pagination'
 import { badRequest, notFound, conflict } from '../../shared/errors'
 import { assertDeliveryTransition, assertDriverTransition, isDeliveryStatus, isDriverStatus } from '../../shared/delivery-state'
+import { assertInOutletScope, assertInOutletScopeOrShared, effectiveOutletIds, outletScopeError, type OutletScope } from '../../shared/outlet-scope'
 import type { Address, DeliveryStatus, DeliveryZoneStatus } from '../../shared/types'
 
 const TERMINAL_DELIVERY = ['DELIVERED', 'FAILED', 'CANCELLED'] as const
@@ -41,9 +42,14 @@ const deliveryTimestampsFor = (status: DeliveryStatus) => {
 /* ------------------------------ delivery zones ------------------------------ */
 
 export class DeliveryZonesService {
-  static async list(merchantId: string, query: { outletId?: string }) {
-    const conds = [eq(deliveryZones.merchantId, merchantId)]
-    if (query.outletId) conds.push(eq(deliveryZones.outletId, query.outletId))
+  static async list(merchantId: string, query: { outletId?: string }, scope: OutletScope) {
+    const scopedIds = effectiveOutletIds(scope)
+    if (scopedIds === null) return ok([])
+    const conds = [eq(deliveryZones.merchantId, merchantId), or(inArray(deliveryZones.outletId, scopedIds), isNull(deliveryZones.outletId))]
+    if (query.outletId) {
+      if (!scopedIds.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+      conds.push(eq(deliveryZones.outletId, query.outletId))
+    }
     const rows = await db
       .select()
       .from(deliveryZones)
@@ -52,12 +58,13 @@ export class DeliveryZonesService {
     return ok(rows)
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(merchantId: string, id: string, scope: OutletScope) {
     const [row] = await db
       .select()
       .from(deliveryZones)
       .where(and(eq(deliveryZones.id, id), eq(deliveryZones.merchantId, merchantId)))
     if (!row) throw notFound('ZONE_NOT_FOUND', 'Delivery zone not found')
+    assertInOutletScopeOrShared(scope, row.outletId)
     return ok(row)
   }
 
@@ -74,8 +81,10 @@ export class DeliveryZonesService {
       freeDeliveryThreshold?: number
       etaMin?: number
       status?: string
-    }
+    },
+    scope: OutletScope
   ) {
+    if (input.outletId) assertInOutletScope(scope, input.outletId)
     const [dup] = await db
       .select()
       .from(deliveryZones)
@@ -118,10 +127,13 @@ export class DeliveryZonesService {
       freeDeliveryThreshold: number
       etaMin: number
       status: string
-    }>
+    }>,
+    scope: OutletScope
   ) {
     const [existing] = await db.select().from(deliveryZones).where(and(eq(deliveryZones.id, id), eq(deliveryZones.merchantId, merchantId)))
     if (!existing) throw notFound('ZONE_NOT_FOUND', 'Delivery zone not found')
+    assertInOutletScopeOrShared(scope, existing.outletId)
+    if (input.outletId !== undefined && input.outletId !== null) assertInOutletScope(scope, input.outletId)
     if (input.name && input.name !== existing.name) {
       const [dup] = await db.select().from(deliveryZones).where(and(eq(deliveryZones.merchantId, merchantId), eq(deliveryZones.name, input.name)))
       if (dup) throw conflict('ZONE_EXISTS', `A delivery zone named "${input.name}" already exists`)
@@ -146,9 +158,10 @@ export class DeliveryZonesService {
     return ok(updated)
   }
 
-  static async remove(merchantId: string, id: string) {
+  static async remove(merchantId: string, id: string, scope: OutletScope) {
     const [existing] = await db.select().from(deliveryZones).where(and(eq(deliveryZones.id, id), eq(deliveryZones.merchantId, merchantId)))
     if (!existing) throw notFound('ZONE_NOT_FOUND', 'Delivery zone not found')
+    assertInOutletScopeOrShared(scope, existing.outletId)
     const active = await db
       .select({ id: deliveryOrders.id })
       .from(deliveryOrders)
@@ -230,13 +243,15 @@ export class DriversService {
 
   static async create(
     merchantId: string,
-    input: { userId: string; name: string; phone?: string; email?: string; vehicleType?: string; vehiclePlate?: string; assignedOutletId?: string }
+    input: { userId: string; name: string; phone?: string; email?: string; vehicleType?: string; vehiclePlate?: string; assignedOutletId?: string },
+    scope: OutletScope
   ) {
     const [user] = await db.select().from(users).where(and(eq(users.id, input.userId), eq(users.merchantId, merchantId)))
     if (!user) throw notFound('USER_NOT_FOUND', 'User not found')
     const [dup] = await db.select().from(drivers).where(and(eq(drivers.merchantId, merchantId), eq(drivers.userId, input.userId)))
     if (dup) throw conflict('DRIVER_EXISTS', 'This user is already a driver')
     if (input.assignedOutletId) {
+      assertInOutletScope(scope, input.assignedOutletId)
       const [outlet] = await db.select().from(outlets).where(and(eq(outlets.id, input.assignedOutletId), eq(outlets.merchantId, merchantId)))
       if (!outlet) throw notFound('OUTLET_NOT_FOUND', 'Outlet not found')
     }
@@ -257,11 +272,14 @@ export class DriversService {
   static async update(
     merchantId: string,
     id: string,
-    input: Partial<{ userId: string; name: string; phone?: string; email?: string; vehicleType?: string; vehiclePlate?: string; assignedOutletId?: string }>
+    input: Partial<{ userId: string; name: string; phone?: string; email?: string; vehicleType?: string; vehiclePlate?: string; assignedOutletId?: string }>,
+    scope: OutletScope
   ) {
     const [existing] = await db.select().from(drivers).where(and(eq(drivers.id, id), eq(drivers.merchantId, merchantId)))
     if (!existing) throw notFound('DRIVER_NOT_FOUND', 'Driver not found')
+    assertInOutletScopeOrShared(scope, existing.assignedOutletId)
     if (input.assignedOutletId !== undefined && input.assignedOutletId !== null) {
+      assertInOutletScope(scope, input.assignedOutletId)
       const [outlet] = await db.select().from(outlets).where(and(eq(outlets.id, input.assignedOutletId), eq(outlets.merchantId, merchantId)))
       if (!outlet) throw notFound('OUTLET_NOT_FOUND', 'Outlet not found')
     }
@@ -280,9 +298,10 @@ export class DriversService {
     return ok(updated)
   }
 
-  static async remove(merchantId: string, id: string) {
+  static async remove(merchantId: string, id: string, scope: OutletScope) {
     const [existing] = await db.select().from(drivers).where(and(eq(drivers.id, id), eq(drivers.merchantId, merchantId)))
     if (!existing) throw notFound('DRIVER_NOT_FOUND', 'Driver not found')
+    assertInOutletScopeOrShared(scope, existing.assignedOutletId)
     const active = await db.select({ id: deliveryOrders.id }).from(deliveryOrders).where(activeDeliveryOnDriver(id))
     if (active.length > 0) throw conflict('DRIVER_BUSY', 'This driver still has active deliveries')
     await db.delete(drivers).where(eq(drivers.id, id))
@@ -290,9 +309,10 @@ export class DriversService {
   }
 
   /** Transition a driver's headless state (driver self-service or manager override). */
-  static async setStatus(merchantId: string, id: string, nextStatus: string, _actingUserId?: string) {
+  static async setStatus(merchantId: string, id: string, nextStatus: string, _actingUserId?: string, scope?: OutletScope) {
     const [driver] = await db.select().from(drivers).where(and(eq(drivers.id, id), eq(drivers.merchantId, merchantId)))
     if (!driver) throw notFound('DRIVER_NOT_FOUND', 'Driver not found')
+    if (scope) assertInOutletScopeOrShared(scope, driver.assignedOutletId)
     if (!isDriverStatus(nextStatus)) throw badRequest('INVALID_DRIVER_STATUS', 'Unknown driver status')
     assertDriverTransition(driver.status, nextStatus)
     const [updated] = await db.update(drivers).set({ status: nextStatus }).where(eq(drivers.id, id)).returning()
@@ -324,16 +344,19 @@ export class DriversService {
 export class DeliveryOrdersService {
   static async create(
     merchantId: string,
-    input: { orderId: string; outletId?: string; zoneId?: string; address?: Address; fee?: number; etaMin?: number; notes?: string }
+    input: { orderId: string; outletId?: string; zoneId?: string; address?: Address; fee?: number; etaMin?: number; notes?: string },
+    scope: OutletScope
   ) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, input.orderId), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('ORDER_NOT_FOUND', 'Order not found')
+    assertInOutletScopeOrShared(scope, order.outletId)
 
     const [dup] = await db.select().from(deliveryOrders).where(eq(deliveryOrders.orderId, order.id))
     if (dup) throw conflict('DELIVERY_EXISTS', 'A delivery already exists for this order')
 
     const outletId = input.outletId ?? order.outletId ?? null
     if (outletId) {
+      assertInOutletScope(scope, outletId)
       const [outlet] = await db.select().from(outlets).where(and(eq(outlets.id, outletId), eq(outlets.merchantId, merchantId)))
       if (!outlet) throw notFound('OUTLET_NOT_FOUND', 'Outlet not found')
     }
@@ -342,6 +365,7 @@ export class DeliveryOrdersService {
     if (input.zoneId) {
       const [found] = await db.select().from(deliveryZones).where(and(eq(deliveryZones.id, input.zoneId), eq(deliveryZones.merchantId, merchantId)))
       if (!found) throw notFound('ZONE_NOT_FOUND', 'Delivery zone not found')
+      assertInOutletScopeOrShared(scope, found.outletId)
       zone = found
     }
 
@@ -359,13 +383,23 @@ export class DeliveryOrdersService {
         notes: input.notes ?? null
       })
       .returning()
-    return this.get(merchantId, row.id)
+    return this.get(merchantId, row.id, scope)
   }
 
-  static async list(merchantId: string, query: { outletId?: string; status?: string; driverId?: string; search?: string; page?: number; limit?: number }) {
+  static async list(merchantId: string, query: { outletId?: string; status?: string; driverId?: string; search?: string; page?: number; limit?: number }, scope?: OutletScope) {
     const { page, limit, offset } = parsePagination(query)
     const conds = [eq(deliveryOrders.merchantId, merchantId)]
-    if (query.outletId) conds.push(eq(deliveryOrders.outletId, query.outletId))
+    if (scope) {
+      const scopedIds = effectiveOutletIds(scope)
+      if (scopedIds === null) return ok({ items: [], meta: makeMeta(page, limit, 0) })
+      conds.push(or(inArray(deliveryOrders.outletId, scopedIds), isNull(deliveryOrders.outletId)))
+      if (query.outletId) {
+        if (!scopedIds.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+        conds.push(eq(deliveryOrders.outletId, query.outletId))
+      }
+    } else if (query.outletId) {
+      conds.push(eq(deliveryOrders.outletId, query.outletId))
+    }
     if (query.status) {
       if (!isDeliveryStatus(query.status)) throw badRequest('INVALID_DELIVERY_STATUS', 'Unknown delivery status')
       conds.push(eq(deliveryOrders.status, query.status))
@@ -407,7 +441,7 @@ export class DeliveryOrdersService {
     return ok({ items: rows, meta: makeMeta(page, limit, total) })
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(merchantId: string, id: string, scope: OutletScope) {
     const [joined] = await db
       .select({
         id: deliveryOrders.id,
@@ -436,6 +470,7 @@ export class DeliveryOrdersService {
       .leftJoin(outlets, eq(deliveryOrders.outletId, outlets.id))
       .where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.merchantId, merchantId)))
     if (!joined) throw notFound('DELIVERY_NOT_FOUND', 'Delivery not found')
+    assertInOutletScopeOrShared(scope, joined.outletId)
     return ok(joined)
   }
 
@@ -462,12 +497,13 @@ export class DeliveryOrdersService {
   }
 
   /** Manual assignment against an eligible driver list (driver must be available). */
-  static async assign(merchantId: string, id: string, driverId: string) {
+  static async assign(merchantId: string, id: string, driverId: string, scope: OutletScope) {
     const [delivery] = await db
       .select()
       .from(deliveryOrders)
       .where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.merchantId, merchantId)))
     if (!delivery) throw notFound('DELIVERY_NOT_FOUND', 'Delivery not found')
+    assertInOutletScopeOrShared(scope, delivery.outletId)
     if (delivery.status !== 'UNASSIGNED') throw conflict('INVALID_TRANSITION', 'Only unassigned deliveries can be assigned')
 
     const [driver] = await db.select().from(drivers).where(and(eq(drivers.id, driverId), eq(drivers.merchantId, merchantId)))
@@ -479,23 +515,24 @@ export class DeliveryOrdersService {
     if (active.length > 0) throw conflict('DRIVER_BUSY', 'This driver already has an active delivery')
 
     await this._applyAssignment(merchantId, delivery, driver.id, driver.name, 'assign')
-    return this.get(merchantId, delivery.id)
+    return this.get(merchantId, delivery.id, scope)
   }
 
   /** Auto-dispatch: pick the first eligible driver for an unassigned delivery. */
-  static async autoDispatch(merchantId: string, id: string) {
+  static async autoDispatch(merchantId: string, id: string, scope: OutletScope) {
     const [delivery] = await db
       .select()
       .from(deliveryOrders)
       .where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.merchantId, merchantId)))
     if (!delivery) throw notFound('DELIVERY_NOT_FOUND', 'Delivery not found')
+    assertInOutletScopeOrShared(scope, delivery.outletId)
     if (delivery.status !== 'UNASSIGNED') throw conflict('INVALID_TRANSITION', 'Only unassigned deliveries can be dispatched')
 
     const eligible = await this.eligibleDrivers(merchantId, delivery)
     if (eligible.length === 0) throw conflict('NO_DRIVERS_AVAILABLE', 'No eligible drivers available for dispatch')
 
     await this._applyAssignment(merchantId, delivery, eligible[0].id, eligible[0].name, 'auto_dispatch')
-    return this.get(merchantId, delivery.id)
+    return this.get(merchantId, delivery.id, scope)
   }
 
   private static async _applyAssignment(
@@ -525,12 +562,13 @@ export class DeliveryOrdersService {
     })
   }
 
-  static async unassign(merchantId: string, id: string) {
+  static async unassign(merchantId: string, id: string, scope: OutletScope) {
     const [delivery] = await db
       .select()
       .from(deliveryOrders)
       .where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.merchantId, merchantId)))
     if (!delivery) throw notFound('DELIVERY_NOT_FOUND', 'Delivery not found')
+    assertInOutletScopeOrShared(scope, delivery.outletId)
     if (!['ASSIGNED', 'ARRIVED_AT_PICKUP', 'PICKED_UP', 'IN_TRANSIT', 'ARRIVED'].includes(delivery.status)) {
       throw conflict('INVALID_TRANSITION', 'Delivery cannot be unassigned in its current state')
     }
@@ -555,16 +593,17 @@ export class DeliveryOrdersService {
         await tx.update(drivers).set({ status: 'ONLINE' }).where(eq(drivers.id, delivery.assignedDriverId))
       }
     })
-    return this.get(merchantId, delivery.id)
+    return this.get(merchantId, delivery.id, scope)
   }
 
   /** Advance a delivery through the validated lifecycle. */
-  static async transition(merchantId: string, id: string, nextStatus: DeliveryStatus) {
+  static async transition(merchantId: string, id: string, nextStatus: DeliveryStatus, scope: OutletScope) {
     const [delivery] = await db
       .select()
       .from(deliveryOrders)
       .where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.merchantId, merchantId)))
     if (!delivery) throw notFound('DELIVERY_NOT_FOUND', 'Delivery not found')
+    assertInOutletScopeOrShared(scope, delivery.outletId)
     if (!isDeliveryStatus(nextStatus)) throw badRequest('INVALID_DELIVERY_STATUS', 'Unknown delivery status')
     assertDeliveryTransition(delivery.status, nextStatus)
 
@@ -575,7 +614,7 @@ export class DeliveryOrdersService {
         await tx.update(drivers).set({ status: 'ONLINE' }).where(eq(drivers.id, delivery.assignedDriverId))
       }
     })
-    return this.get(merchantId, delivery.id)
+    return this.get(merchantId, delivery.id, scope)
   }
 
   /** Deliveries currently assigned to a driver account (driver self-view). */

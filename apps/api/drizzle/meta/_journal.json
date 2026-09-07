@@ -183,6 +183,13 @@
       "when": 1788250351545,
       "tag": "0025_rare_garia",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788667512891,
+      "tag": "0026_legal_pet_avengers",
+      "breakpoints": true
     }
   ]
 }

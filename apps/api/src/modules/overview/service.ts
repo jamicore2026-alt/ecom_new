@@ -9,7 +9,8 @@ import {
   productVariants
 } from '../../database/schema'
 import { ok } from '../../shared/response'
-import { revenueStatuses } from '../../shared/types'
+import { netRevenue, netRevenueByDay, PAID_PAYMENT_STATUSES } from '../../shared/revenue'
+import { branchOrderCondition } from '../../shared/outlet-scope'
 
 // UTC-consistent day buckets — the visits funnel (analytics) and provider
 // webhooks all operate in UTC, so local-server day keys would misalign charts.
@@ -21,51 +22,53 @@ const startOfToday = () => startOfUtcDay(new Date())
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400000)
 
 export class OverviewService {
-  static async dashboard(merchantId: string) {
+  static async dashboard(merchantId: string, branchIds: string[] | null = null) {
     const [merchant] = await db
       .select({ currency: merchants.currency })
       .from(merchants)
       .where(eq(merchants.id, merchantId))
     const currency = merchant?.currency ?? 'USD'
+    const scope = branchOrderCondition(branchIds)
 
     const today = startOfToday()
     const start30 = daysAgo(29)
     const [todayKey] = [dayKey(today)]
 
-    const [todaySalesRow] = await db
-      .select({ revenue: sql<number>`coalesce(sum(${orders.total}), 0)` })
-      .from(orders)
-      .where(
-        and(
-          eq(orders.merchantId, merchantId),
-          inArray(orders.status, revenueStatuses),
-          gte(orders.createdAt, today)
-        )
-      )
+    const todaySales = await netRevenue(merchantId, today, branchIds)
 
     const [ordersTodayRow] = await db
       .select({ count: count() })
       .from(orders)
       .where(
-        and(eq(orders.merchantId, merchantId), gte(orders.createdAt, today))
+        and(
+          eq(orders.merchantId, merchantId),
+          gte(orders.createdAt, today),
+          ...(scope ? [scope] : [])
+        )
       )
 
     const [pendingRow] = await db
       .select({ count: count() })
       .from(orders)
-      .where(and(eq(orders.merchantId, merchantId), eq(orders.status, 'pending')))
+      .where(
+        and(
+          eq(orders.merchantId, merchantId),
+          eq(orders.status, 'pending'),
+          ...(scope ? [scope] : [])
+        )
+      )
 
     const [rangeRow] = await db
       .select({
-        revenue: sql<number>`coalesce(sum(${orders.total}), 0)`,
         ordersCount: sql<number>`count(*)`
       })
       .from(orders)
       .where(
         and(
           eq(orders.merchantId, merchantId),
-          inArray(orders.status, revenueStatuses),
-          gte(orders.createdAt, start30)
+          inArray(orders.paymentStatus, PAID_PAYMENT_STATUSES),
+          gte(orders.createdAt, start30),
+          ...(scope ? [scope] : [])
         )
       )
 
@@ -87,31 +90,34 @@ export class OverviewService {
       .innerJoin(products, eq(productVariants.productId, products.id))
       .where(and(eq(products.merchantId, merchantId), eq(productVariants.inventory, 0)))
 
-    const chartRows = await db
+    // Paid order COUNT per day (revenue comes from netRevenueByDay above).
+    const chartRowsRaw = await db
       .select({
         day: sql<string>`to_char(${orders.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`,
-        revenue: sql<number>`coalesce(sum(${orders.total}), 0)`,
         ordersCount: sql<number>`count(*)`
       })
       .from(orders)
       .where(
         and(
           eq(orders.merchantId, merchantId),
-          inArray(orders.status, revenueStatuses),
-          gte(orders.createdAt, start30)
+          inArray(orders.paymentStatus, PAID_PAYMENT_STATUSES),
+          gte(orders.createdAt, start30),
+          ...(scope ? [scope] : [])
         )
       )
       .groupBy(sql`to_char(${orders.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`)
 
-    const chartMap = new Map(chartRows.map((r) => [r.day, r]))
+    const chartMap = new Map(await netRevenueByDay(merchantId, start30, branchIds))
+    const countMap = new Map(
+      chartRowsRaw.map((r) => [r.day, Number(r.ordersCount ?? 0)])
+    )
     const salesChart = Array.from({ length: 30 }, (_, i) => {
       const date = new Date(Date.now() - (29 - i) * 86400000)
       const key = dayKey(date)
-      const row = chartMap.get(key)
       return {
         date: key,
-        revenue: Number(row?.revenue ?? 0),
-        orders: Number(row?.ordersCount ?? 0)
+        revenue: Number(chartMap.get(key) ?? 0),
+        orders: Number(countMap.get(key) ?? 0)
       }
     })
 
@@ -129,7 +135,12 @@ export class OverviewService {
       })
       .from(orders)
       .leftJoin(customers, eq(orders.customerId, customers.id))
-      .where(eq(orders.merchantId, merchantId))
+      .where(
+        and(
+          eq(orders.merchantId, merchantId),
+          ...(scope ? [scope] : [])
+        )
+      )
       .orderBy(sql`${orders.createdAt} desc`)
       .limit(10)
 
@@ -146,7 +157,8 @@ export class OverviewService {
       .where(
         and(
           eq(products.merchantId, merchantId),
-          inArray(orders.status, revenueStatuses)
+          inArray(orders.paymentStatus, PAID_PAYMENT_STATUSES),
+          ...(scope ? [scope] : [])
         )
       )
       .groupBy(products.id)
@@ -155,11 +167,11 @@ export class OverviewService {
 
     const avgOrderValue =
       Number(rangeRow?.ordersCount ?? 0) > 0
-        ? Number(rangeRow?.revenue ?? 0) / Number(rangeRow?.ordersCount ?? 0)
+        ? (await netRevenue(merchantId, start30, branchIds)) / Number(rangeRow?.ordersCount ?? 0)
         : 0
 
     return ok({
-      todaySales: Number(todaySalesRow?.revenue ?? 0),
+      todaySales,
       ordersToday: Number(ordersTodayRow?.count ?? 0),
       avgOrderValue: Number(avgOrderValue.toFixed(2)),
       pendingOrders: Number(pendingRow?.count ?? 0),

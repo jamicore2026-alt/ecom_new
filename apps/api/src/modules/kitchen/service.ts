@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, notInArray } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNull, notInArray, or } from 'drizzle-orm'
 import { db } from '../../database/client'
 import {
   kitchenStations,
@@ -16,6 +16,7 @@ import { parsePagination, makeMeta } from '../../shared/pagination'
 import { badRequest, notFound, conflict } from '../../shared/errors'
 import { isFoodOrderType } from '../../shared/order-state'
 import { assertKotTransition, isKotStatus, isKitchenItemStatus } from '../../shared/kitchen-state'
+import { assertInOutletScope, assertInOutletScopeOrShared, effectiveOutletIds, outletScopeError, type OutletScope } from '../../shared/outlet-scope'
 import type { KotStatus, KitchenStationStatus, KitchenItemStatus } from '../../shared/types'
 
 const DEFAULT_STATION = 'General'
@@ -31,9 +32,16 @@ const addMeta = (ticket: { receivedAt: Date; prepSlaMin: number; status: string 
 /* ------------------------------ stations ------------------------------ */
 
 export class KitchenStationsService {
-  static async list(merchantId: string, query: { outletId?: string }) {
-    const conds = [eq(kitchenStations.merchantId, merchantId)]
-    if (query.outletId) conds.push(eq(kitchenStations.outletId, query.outletId))
+  static async list(merchantId: string, query: { outletId?: string }, scope: OutletScope) {
+    const scopedIds = effectiveOutletIds(scope)
+    if (scopedIds === null) return ok([])
+    // A station is visible when it belongs to one of the caller's outlets, or
+    // when it is merchant-wide (outletId null, shared "General"-style station).
+    const conds = [eq(kitchenStations.merchantId, merchantId), or(inArray(kitchenStations.outletId, scopedIds), isNull(kitchenStations.outletId))]
+    if (query.outletId) {
+      if (!scopedIds.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+      conds.push(eq(kitchenStations.outletId, query.outletId))
+    }
     const rows = await db
       .select({
         id: kitchenStations.id,
@@ -50,7 +58,7 @@ export class KitchenStationsService {
     return ok(rows)
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(merchantId: string, id: string, scope: OutletScope) {
     const [row] = await db
       .select({
         id: kitchenStations.id,
@@ -64,10 +72,12 @@ export class KitchenStationsService {
       .from(kitchenStations)
       .where(and(eq(kitchenStations.id, id), eq(kitchenStations.merchantId, merchantId)))
     if (!row) throw notFound('STATION_NOT_FOUND', 'Kitchen station not found')
+    assertInOutletScopeOrShared(scope, row.outletId)
     return ok(row)
   }
 
-  static async create(merchantId: string, input: { name: string; outletId?: string; prepSlaMin?: number; sortOrder?: number; status?: string }) {
+  static async create(merchantId: string, input: { name: string; outletId?: string; prepSlaMin?: number; sortOrder?: number; status?: string }, scope: OutletScope) {
+    if (input.outletId) assertInOutletScope(scope, input.outletId)
     const [dup] = await db.select().from(kitchenStations).where(and(eq(kitchenStations.merchantId, merchantId), eq(kitchenStations.name, input.name)))
     if (dup) throw conflict('STATION_EXISTS', `A station named "${input.name}" already exists`)
     if (input.outletId) {
@@ -85,9 +95,11 @@ export class KitchenStationsService {
     return ok(row)
   }
 
-  static async update(merchantId: string, id: string, input: { name?: string; outletId?: string; prepSlaMin?: number; sortOrder?: number; status?: string }) {
+  static async update(merchantId: string, id: string, input: { name?: string; outletId?: string; prepSlaMin?: number; sortOrder?: number; status?: string }, scope: OutletScope) {
     const [existing] = await db.select().from(kitchenStations).where(and(eq(kitchenStations.id, id), eq(kitchenStations.merchantId, merchantId)))
     if (!existing) throw notFound('STATION_NOT_FOUND', 'Kitchen station not found')
+    assertInOutletScopeOrShared(scope, existing.outletId)
+    if (input.outletId) assertInOutletScope(scope, input.outletId)
     if (input.name && input.name !== existing.name) {
       const [dup] = await db.select().from(kitchenStations).where(and(eq(kitchenStations.merchantId, merchantId), eq(kitchenStations.name, input.name)))
       if (dup) throw conflict('STATION_EXISTS', `A station named "${input.name}" already exists`)
@@ -102,9 +114,10 @@ export class KitchenStationsService {
     return ok(updated)
   }
 
-  static async remove(merchantId: string, id: string) {
+  static async remove(merchantId: string, id: string, scope: OutletScope) {
     const [existing] = await db.select().from(kitchenStations).where(and(eq(kitchenStations.id, id), eq(kitchenStations.merchantId, merchantId)))
     if (!existing) throw notFound('STATION_NOT_FOUND', 'Kitchen station not found')
+    assertInOutletScopeOrShared(scope, existing.outletId)
     const open = await db.select({ id: kitchenTickets.id }).from(kitchenTickets).where(and(eq(kitchenTickets.stationId, id), notInArray(kitchenTickets.status, ['READY', 'CANCELLED'])))
     if (open.length > 0) throw conflict('STATION_BUSY', 'This station still has open tickets')
     await db.delete(kitchenStations).where(eq(kitchenStations.id, id))
@@ -133,10 +146,11 @@ export class KitchenTicketsService {
   }
 
   /** Generate KOT tickets for a food order, routed by menu item kitchen station. Idempotent per (order, station). */
-  static async generateForOrder(merchantId: string, orderId: string, priority: 'LOW' | 'NORMAL' | 'HIGH' = 'NORMAL') {
+  static async generateForOrder(merchantId: string, orderId: string, priority: 'LOW' | 'NORMAL' | 'HIGH' = 'NORMAL', scope: OutletScope) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, orderId), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('ORDER_NOT_FOUND', 'Order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'Only food orders produce kitchen tickets')
+    assertInOutletScope(scope, order.outletId)
 
     const items = await db
       .select({
@@ -198,13 +212,18 @@ export class KitchenTicketsService {
       }
     })
 
-    return this.list(merchantId, { orderId })
+    return this.list(merchantId, { orderId }, scope)
   }
 
-  static async list(merchantId: string, query: { outletId?: string; stationId?: string; status?: string; search?: string; orderId?: string; page?: number; limit?: number }) {
+  static async list(merchantId: string, query: { outletId?: string; stationId?: string; status?: string; search?: string; orderId?: string; page?: number; limit?: number }, scope: OutletScope) {
     const { page, limit, offset } = parsePagination(query)
-    const conds = [eq(kitchenTickets.merchantId, merchantId)]
-    if (query.outletId) conds.push(eq(kitchenTickets.outletId, query.outletId))
+    const scopedIds = effectiveOutletIds(scope)
+    if (scopedIds === null) return ok({ items: [], meta: makeMeta(page, limit, 0) })
+    const conds = [eq(kitchenTickets.merchantId, merchantId), inArray(kitchenTickets.outletId, scopedIds)]
+    if (query.outletId) {
+      if (!scopedIds.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+      conds.push(eq(kitchenTickets.outletId, query.outletId))
+    }
     if (query.stationId) conds.push(eq(kitchenTickets.stationId, query.stationId))
     if (query.status) {
       if (!isKotStatus(query.status)) throw badRequest('INVALID_KOT_STATUS', 'Unknown KOT status')
@@ -249,7 +268,7 @@ export class KitchenTicketsService {
     return ok({ items: rows.map((r) => ({ ...r, ...addMeta(r) })), meta: makeMeta(page, limit, total) })
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(merchantId: string, id: string, scope: OutletScope) {
     const [ticket] = await db
       .select({
         id: kitchenTickets.id,
@@ -274,6 +293,7 @@ export class KitchenTicketsService {
       .leftJoin(tables, eq(tableSessions.tableId, tables.id))
       .where(and(eq(kitchenTickets.id, id), eq(kitchenTickets.merchantId, merchantId)))
     if (!ticket) throw notFound('TICKET_NOT_FOUND', 'Kitchen ticket not found')
+    assertInOutletScope(scope, ticket.outletId)
 
     const items = await db
       .select()
@@ -291,9 +311,10 @@ export class KitchenTicketsService {
     return Promise.resolve()
   }
 
-  static async transition(merchantId: string, id: string, nextStatus: string) {
+  static async transition(merchantId: string, id: string, nextStatus: string, scope: OutletScope) {
     const [ticket] = await db.select().from(kitchenTickets).where(and(eq(kitchenTickets.id, id), eq(kitchenTickets.merchantId, merchantId)))
     if (!ticket) throw notFound('TICKET_NOT_FOUND', 'Kitchen ticket not found')
+    assertInOutletScope(scope, ticket.outletId)
     if (!isKotStatus(nextStatus)) throw badRequest('INVALID_KOT_STATUS', 'Unknown KOT status')
     assertKotTransition(ticket.status, nextStatus)
 
@@ -303,28 +324,30 @@ export class KitchenTicketsService {
         await tx.update(kitchenTicketItems).set({ status: 'READY', readyAt: new Date() }).where(and(eq(kitchenTicketItems.ticketId, id), eq(kitchenTicketItems.status, 'PENDING')))
       }
     })
-    return this.get(merchantId, id)
+    return this.get(merchantId, id, scope)
   }
 
-  static async bump(merchantId: string, id: string) {
-    return this.transition(merchantId, id, 'READY')
+  static async bump(merchantId: string, id: string, scope: OutletScope) {
+    return this.transition(merchantId, id, 'READY', scope)
   }
 
-  static async recall(merchantId: string, id: string) {
-    return this.transition(merchantId, id, 'RECALLED')
+  static async recall(merchantId: string, id: string, scope: OutletScope) {
+    return this.transition(merchantId, id, 'RECALLED', scope)
   }
 
-  static async setPriority(merchantId: string, id: string, priority: 'LOW' | 'NORMAL' | 'HIGH') {
+  static async setPriority(merchantId: string, id: string, priority: 'LOW' | 'NORMAL' | 'HIGH', scope: OutletScope) {
     const [ticket] = await db.select().from(kitchenTickets).where(and(eq(kitchenTickets.id, id), eq(kitchenTickets.merchantId, merchantId)))
     if (!ticket) throw notFound('TICKET_NOT_FOUND', 'Kitchen ticket not found')
+    assertInOutletScope(scope, ticket.outletId)
     const [updated] = await db.update(kitchenTickets).set({ priority }).where(eq(kitchenTickets.id, id)).returning()
     return ok(updated)
   }
 
   /** Item-level completion: picking items READY/DONE can bump the whole ticket when all lines are done. */
-  static async itemStatus(merchantId: string, id: string, itemId: string, status: string) {
+  static async itemStatus(merchantId: string, id: string, itemId: string, status: string, scope: OutletScope) {
     const [ticket] = await db.select().from(kitchenTickets).where(and(eq(kitchenTickets.id, id), eq(kitchenTickets.merchantId, merchantId)))
     if (!ticket) throw notFound('TICKET_NOT_FOUND', 'Kitchen ticket not found')
+    assertInOutletScope(scope, ticket.outletId)
     if (!isKitchenItemStatus(status)) throw badRequest('INVALID_ITEM_STATUS', 'Unknown item status')
     if (status === 'CANCELLED' && ['READY', 'CANCELLED'].includes(ticket.status)) {
       throw conflict('TICKET_CLOSED', 'Cannot edit a closed ticket')
@@ -342,10 +365,10 @@ export class KitchenTicketsService {
       const lines = await db.select({ status: kitchenTicketItems.status }).from(kitchenTicketItems).where(eq(kitchenTicketItems.ticketId, id))
       const remaining = lines.filter((l) => l.status !== 'DONE' && l.status !== 'CANCELLED')
       if (remaining.length === 0 && !['READY', 'CANCELLED'].includes(ticket.status)) {
-        await this.transition(merchantId, id, 'READY')
+        await this.transition(merchantId, id, 'READY', scope)
       }
     }
-    return this.get(merchantId, id)
+    return this.get(merchantId, id, scope)
   }
 }
 
@@ -353,14 +376,19 @@ export class KitchenTicketsService {
 
 export class KdsBoardService {
   /** Group open (and ready) tickets by station — the KDS display model. */
-  static async board(merchantId: string, query: { outletId?: string; stationId?: string }) {
-    const conds = [eq(kitchenTickets.merchantId, merchantId), notInArray(kitchenTickets.status, ['CANCELLED'])]
-    if (query.outletId) conds.push(eq(kitchenTickets.outletId, query.outletId))
+  static async board(merchantId: string, query: { outletId?: string; stationId?: string }, scope: OutletScope) {
+    const scopedIds = effectiveOutletIds(scope)
+    if (scopedIds === null) return ok({ stations: [], delayedCount: 0 })
+    const conds = [eq(kitchenTickets.merchantId, merchantId), notInArray(kitchenTickets.status, ['CANCELLED']), inArray(kitchenTickets.outletId, scopedIds)]
+    if (query.outletId) {
+      if (!scopedIds.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+      conds.push(eq(kitchenTickets.outletId, query.outletId))
+    }
     if (query.stationId) conds.push(eq(kitchenTickets.stationId, query.stationId))
 
     const stations = query.stationId
       ? await db.select().from(kitchenStations).where(and(eq(kitchenStations.merchantId, merchantId), eq(kitchenStations.id, query.stationId)))
-      : await db.select().from(kitchenStations).where(and(eq(kitchenStations.merchantId, merchantId), notInArray(kitchenStations.status, ['archived']))).orderBy(asc(kitchenStations.sortOrder))
+      : await db.select().from(kitchenStations).where(and(eq(kitchenStations.merchantId, merchantId), notInArray(kitchenStations.status, ['archived']), or(inArray(kitchenStations.outletId, scopedIds), isNull(kitchenStations.outletId)))).orderBy(asc(kitchenStations.sortOrder))
 
     const tickets = await db
       .select({

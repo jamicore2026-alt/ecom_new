@@ -52,7 +52,7 @@ export const uploadsModule = new Elysia({ name: 'uploads' })
     return new Response(file.stream())
   })
   .use(authPlugin)
-  .use(requirePermission('products:write'))
+  .use(requirePermission('products.create', 'products.update', 'products.delete'))
   .post(
     '/api/uploads',
     async ({ body, auth }) => {

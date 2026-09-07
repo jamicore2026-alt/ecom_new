@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 import { t } from 'elysia'
 import { authPlugin, requirePermission } from '../../plugins/auth'
+import { branchScopeOf } from '../../shared/outlet-scope'
 import { InvoicesService } from './service'
 
 const invoiceBody = t.Object({
@@ -18,18 +19,18 @@ export const invoicesModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
 
   .get('/invoices', async ({ auth, query }) => {
-    return InvoicesService.list(auth.merchant.id, query)
+    return InvoicesService.list(auth.merchant.id, await branchScopeOf(auth), query)
   }, { query: invoiceQuery })
 
   .get('/invoices/:id', async ({ auth, params }) => {
-    return InvoicesService.get(auth.merchant.id, params.id)
+    return InvoicesService.get(auth.merchant.id, await branchScopeOf(auth), params.id)
   })
 
   .get('/orders/:id/invoices', async ({ auth, params }) => {
-    return InvoicesService.getByOrder(auth.merchant.id, params.id)
+    return InvoicesService.getByOrder(auth.merchant.id, await branchScopeOf(auth), params.id)
   })
 
-  .use(requirePermission('orders:write'))
+  .use(requirePermission('orders.create', 'orders.update', 'orders.cancel'))
   .post('/invoices', async ({ auth, body }) => {
-    return InvoicesService.create(auth.merchant.id, body)
+    return InvoicesService.create(auth.merchant.id, await branchScopeOf(auth), body)
   }, { body: invoiceBody })

@@ -234,8 +234,8 @@ export async function seed() {
     .values([
       { merchantId: merchant.id, name: 'Alex Owner', email: 'owner@acme.com', passwordHash, role: 'owner', permissions: [] },
       { merchantId: merchant.id, name: 'Sam Admin', email: 'admin@acme.com', passwordHash, role: 'admin', permissions: [] },
-      { merchantId: merchant.id, name: 'Jordan Staff', email: 'staff@acme.com', passwordHash, role: 'staff', permissions: ['products:write', 'orders:write', 'inventory:write'] },
-      { merchantId: merchant.id, name: 'Riley Staff', email: 'riley@acme.com', passwordHash, role: 'staff', permissions: ['analytics:read'] },
+      { merchantId: merchant.id, name: 'Jordan Staff', email: 'staff@acme.com', passwordHash, role: 'staff', permissions: ['products.create', 'products.update', 'products.delete', 'orders.create', 'orders.update', 'orders.cancel', 'inventory.adjust', 'inventory.manage'] },
+      { merchantId: merchant.id, name: 'Riley Staff', email: 'riley@acme.com', passwordHash, role: 'staff', permissions: ['reports.read'] },
       { merchantId: merchant.id, name: 'Dana Driver', email: 'driver@acme.com', passwordHash, role: 'driver', permissions: [] }
     ])
     .returning()
@@ -278,6 +278,19 @@ export async function seed() {
     { userId: ownerUser.id, outletId: defaultOutlet.id },
     { userId: adminUser.id, outletId: defaultOutlet.id }
   ])
+
+  // Owner/admin users link to their system roles; staff/driver keep legacy
+  // per-user grants (roleId null) so their effective permissions are unchanged.
+  const ownerRole = seededRoles.find((r) => r.name === 'owner')
+  const adminRole = seededRoles.find((r) => r.name === 'admin')
+  await db
+    .update(users)
+    .set({ roleId: ownerRole?.id ?? null })
+    .where(eq(users.id, ownerUser.id))
+  await db
+    .update(users)
+    .set({ roleId: adminRole?.id ?? null })
+    .where(eq(users.id, adminUser.id))
 
   console.log(`   Seeded ${seededRoles.length} system roles, 1 outlet, ${DEFAULT_MODULES.commerce.length} modules`)
 

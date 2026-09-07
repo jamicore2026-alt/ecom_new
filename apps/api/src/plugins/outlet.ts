@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 import { authPlugin, hasPermission, isAdmin } from './auth'
 import { resolveMerchantContext } from '../shared/merchant-context'
+import { resolveEffectiveScope } from '../shared/outlet-scope'
 import { forbidden, unauthorized } from '../shared/errors'
 import type { ModuleId, Permission } from '../shared/types'
 
@@ -57,7 +58,8 @@ export const outletGuard = (opts: OutletGuardOptions = {}) => {
         auth.user.id,
         auth.merchant.id,
         isAdmin(auth),
-        requestedOutletId({ params, headers, query })
+        requestedOutletId({ params, headers, query }),
+        resolveEffectiveScope(auth)
       )
 
       // 1. Module enabled

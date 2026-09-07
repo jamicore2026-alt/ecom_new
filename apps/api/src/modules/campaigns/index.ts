@@ -27,12 +27,12 @@ const createBody = t.Object({
 
 export const campaignsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
-  .use(requirePermission('settings:write'))
+  .use(requirePermission('settings.manage'))
 
   .get('/campaigns', async ({ auth }) => CampaignsService.list(auth.merchant.id))
   .get('/campaigns/:id', async ({ auth, params }) => CampaignsService.get(auth.merchant.id, params.id))
 
-  .use(requirePermission('settings:write'))
+  .use(requirePermission('settings.manage'))
   .post('/campaigns', async ({ auth, body }) => CampaignsService.create(auth.merchant.id, body), { body: createBody })
   .put('/campaigns/:id', async ({ auth, params, body }) => CampaignsService.update(auth.merchant.id, params.id, body), { body: campaignBody })
   .post('/campaigns/:id/send', async ({ auth, params }) => CampaignsService.send(auth.merchant.id, params.id))

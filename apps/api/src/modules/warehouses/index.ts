@@ -38,7 +38,7 @@ export const warehousesModule = new Elysia({ prefix: '/api' })
   .use(requirePermission('inventory.manage'))
   .put('/warehouses/:id/inventory', async ({ auth, params, body }) => WarehousesService.setInventory(auth.merchant.id, params.id, body.variantId, body.quantity), { params: warehouseParams, body: setInventoryBody })
 
-  .use(requirePermission('inventory:write'))
+  .use(requirePermission('inventory.adjust', 'inventory.manage'))
   .post('/warehouses', async ({ auth, body }) => WarehousesService.create(auth.merchant.id, body), { body: warehouseBody })
   .put('/warehouses/:id', async ({ auth, params, body }) => WarehousesService.update(auth.merchant.id, params.id, body), { params: warehouseParams, body: warehouseBody })
   .post('/transfers', async ({ auth, body }) => WarehousesService.transfer(auth.merchant.id, body), { body: transferBody })

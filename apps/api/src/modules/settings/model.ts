@@ -80,7 +80,8 @@ export const staffCreateBody = t.Object({
   email: t.String({ format: 'email' }),
   password: t.String({ minLength: 10 }),
   role: t.Enum({ admin: 'admin', staff: 'staff' }),
-  permissions: t.Optional(t.Array(t.String()))
+  permissions: t.Optional(t.Array(t.String())),
+  roleId: t.Optional(t.String())
 })
 
 export const staffUpdateBody = t.Object({
@@ -89,6 +90,7 @@ export const staffUpdateBody = t.Object({
   password: t.Optional(t.String({ minLength: 10 })),
   role: t.Optional(t.Enum({ owner: 'owner', admin: 'admin', staff: 'staff' })),
   permissions: t.Optional(t.Array(t.String())),
+  roleId: t.Optional(t.Union([t.String(), t.Null()])),
   status: t.Optional(t.Enum({ active: 'active', disabled: 'disabled' }))
 })
 

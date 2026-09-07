@@ -10,6 +10,7 @@ import {
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
 import { makeMeta, parsePagination } from '../../shared/pagination'
+import { assertOrderInBranchScope, branchOrderCondition } from '../../shared/outlet-scope'
 import { dispatchWebhookEvent } from '../../shared/webhook-delivery'
 import { getMailer, renderEmail } from '../../shared/mailer'
 
@@ -39,22 +40,26 @@ export const FULFILLMENT_TRANSITIONS: Record<FulfillmentStatus, FulfillmentStatu
 export class FulfillmentsService {
   static async list(
     merchantId: string,
+    branchIds: string[] | null,
     query: { status?: string; orderId?: string; page?: string; limit?: string }
   ) {
     const { page, limit, offset } = parsePagination(query)
     const conditions = [eq(fulfillments.merchantId, merchantId)]
     if (query.status) conditions.push(eq(fulfillments.status, query.status))
     if (query.orderId) conditions.push(eq(fulfillments.orderId, query.orderId))
+    const scopeCondition = branchOrderCondition(branchIds)
+    if (scopeCondition) conditions.push(scopeCondition)
 
     const rows = await db
       .select()
       .from(fulfillments)
+      .innerJoin(orders, eq(fulfillments.orderId, orders.id))
       .where(and(...conditions))
       .orderBy(desc(fulfillments.createdAt))
       .limit(limit)
       .offset(offset)
 
-    const orderIds = [...new Set(rows.map((r) => r.orderId))]
+    const orderIds = [...new Set(rows.map((r) => r.orders.id))]
     const orderRows = orderIds.length
       ? await db
           .select({ id: orders.id, orderNumber: orders.orderNumber, customerId: orders.customerId })
@@ -64,26 +69,29 @@ export class FulfillmentsService {
     const orderById = new Map(orderRows.map((o) => [o.id, o]))
 
     return ok({
-      items: rows.map((f) => ({
-        ...f,
-        orderNumber: orderById.get(f.orderId)?.orderNumber ?? null,
+      items: rows.map((r) => ({
+        ...r.fulfillments,
+        orderNumber: orderById.get(r.fulfillments.orderId)?.orderNumber ?? null,
         customerEmail: null
       })),
       meta: makeMeta(page, limit, rows.length)
     })
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(merchantId: string, branchIds: string[] | null, id: string) {
     const [row] = await db
       .select()
       .from(fulfillments)
+      .innerJoin(orders, eq(fulfillments.orderId, orders.id))
       .where(and(eq(fulfillments.id, id), eq(fulfillments.merchantId, merchantId)))
     if (!row) throw notFound('FULFILLMENT_NOT_FOUND', 'Fulfillment not found')
-    return ok(row)
+    assertOrderInBranchScope(branchIds, row.orders.outletId)
+    return ok(row.fulfillments)
   }
 
   static async create(
     merchantId: string,
+    branchIds: string[] | null,
     input: {
       orderId: string
       carrier?: string
@@ -97,6 +105,7 @@ export class FulfillmentsService {
       .from(orders)
       .where(and(eq(orders.id, input.orderId), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('ORDER_NOT_FOUND', 'Order not found')
+    assertOrderInBranchScope(branchIds, order.outletId)
     if (order.status === 'cancelled' || order.status === 'refunded') {
       throw badRequest('ORDER_NOT_FULFILLABLE', 'Cancelled/refunded orders cannot be fulfilled')
     }
@@ -120,6 +129,7 @@ export class FulfillmentsService {
 
   static async update(
     merchantId: string,
+    branchIds: string[] | null,
     id: string,
     input: {
       status?: FulfillmentStatus
@@ -134,14 +144,16 @@ export class FulfillmentsService {
     const [existing] = await db
       .select()
       .from(fulfillments)
+      .innerJoin(orders, eq(fulfillments.orderId, orders.id))
       .where(and(eq(fulfillments.id, id), eq(fulfillments.merchantId, merchantId)))
     if (!existing) throw notFound('FULFILLMENT_NOT_FOUND', 'Fulfillment not found')
+    assertOrderInBranchScope(branchIds, existing.orders.outletId)
 
-    let status = existing.status as FulfillmentStatus
-    if (input.status && input.status !== existing.status) {
-      const allowed = FULFILLMENT_TRANSITIONS[existing.status as FulfillmentStatus] ?? []
+    let status = existing.fulfillments.status as FulfillmentStatus
+    if (input.status && input.status !== existing.fulfillments.status) {
+      const allowed = FULFILLMENT_TRANSITIONS[existing.fulfillments.status as FulfillmentStatus] ?? []
       if (!allowed.includes(input.status)) {
-        throw badRequest('INVALID_TRANSITION', `Cannot move fulfillment from ${existing.status} to ${input.status}`)
+        throw badRequest('INVALID_TRANSITION', `Cannot move fulfillment from ${existing.fulfillments.status} to ${input.status}`)
       }
       status = input.status
     }
@@ -186,14 +198,15 @@ export class FulfillmentsService {
 
   static async markShipped(
     merchantId: string,
+    branchIds: string[] | null,
     id: string,
     input: { trackingNumber?: string; trackingUrl?: string; labelUrl?: string; carrier?: string }
   ) {
-    return this.update(merchantId, id, { status: 'shipped', ...input })
+    return this.update(merchantId, branchIds, id, { status: 'shipped', ...input })
   }
 
-  static async cancel(merchantId: string, id: string) {
-    return this.update(merchantId, id, { status: 'cancelled' })
+  static async cancel(merchantId: string, branchIds: string[] | null, id: string) {
+    return this.update(merchantId, branchIds, id, { status: 'cancelled' })
   }
 
   private static async updateOrderFulfillmentStatus(

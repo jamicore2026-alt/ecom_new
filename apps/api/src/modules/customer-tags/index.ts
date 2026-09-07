@@ -12,7 +12,7 @@ export const customerTagsModule = new Elysia({ prefix: '/api' })
   .get('/customers/:id/tags', async ({ auth, params }) =>
     CustomerTagsService.listByCustomer(auth.merchant.id, params.id))
 
-  .use(requirePermission('settings:write'))
+  .use(requirePermission('settings.manage'))
   .post('/customers/:id/tags', async ({ auth, params, body, request }) => {
     const result = await CustomerTagsService.add(auth.merchant.id, params.id, body.tag)
     auditFromRequest(auth, request, {

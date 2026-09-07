@@ -11,7 +11,7 @@ export const reviewsModule = new Elysia({ prefix: '/api' })
     ({ query, auth }) => ReviewsService.list(auth.merchant.id, query),
     { query: reviewQuery, detail: { tags: ['Reviews'], summary: 'List product reviews' } }
   )
-  .use(requirePermission('products:write'))
+  .use(requirePermission('products.create', 'products.update', 'products.delete'))
   .patch(
     '/reviews/:id',
     async ({ params, body, auth, request }) => {

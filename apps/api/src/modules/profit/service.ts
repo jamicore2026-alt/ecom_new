@@ -1,11 +1,15 @@
 import { and, eq, gte, inArray, lte } from 'drizzle-orm'
 import { db } from '../../database/client'
-import { merchants, orderItems, orders, products } from '../../database/schema'
+import { merchants, orderItems, orders, products, refunds } from '../../database/schema'
 import { ok } from '../../shared/response'
+import { PAID_PAYMENT_STATUSES } from '../../shared/revenue'
 import { roundForCurrency } from '../../shared/currency'
 
 export class ProfitService {
-  /** Gross profit = revenue - COGS, computed across paid orders in a range. */
+  /** Gross profit = net revenue - COGS, computed across collected (paid) orders
+   *  in a range. Partially/fully refunded orders stay in revenue and are netted
+   *  by their completed refunds (a fully refunded order nets to zero instead of
+   *  vanishing from the report). COGS follows the original items. */
   static async report(merchantId: string, range: { from?: Date; to?: Date }) {
     const [merchant] = await db
       .select({ currency: merchants.currency })
@@ -13,7 +17,10 @@ export class ProfitService {
       .where(eq(merchants.id, merchantId))
     const currency = merchant?.currency ?? 'USD'
 
-    const conditions: any[] = [eq(orders.merchantId, merchantId), eq(orders.paymentStatus, 'paid')]
+    const conditions: any[] = [
+      eq(orders.merchantId, merchantId),
+      inArray(orders.paymentStatus, PAID_PAYMENT_STATUSES)
+    ]
     if (range.from) conditions.push(gte(orders.createdAt, range.from))
     if (range.to) conditions.push(lte(orders.createdAt, range.to))
 
@@ -27,12 +34,25 @@ export class ProfitService {
     let totalCost = 0
 
     if (orderIds.length > 0) {
-      // Revenue per order is stored; sum the paid totals.
+      // Revenue per order is stored; sum the collected totals.
       const revRows = await db
         .select({ id: orders.id, total: orders.total })
         .from(orders)
         .where(inArray(orders.id, orderIds))
       for (const r of revRows) revenue += Number(r.total)
+
+      // Net the completed refunds attached to these orders.
+      const refundRows = await db
+        .select({ orderId: refunds.orderId, amount: refunds.amount })
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.merchantId, merchantId),
+            eq(refunds.status, 'completed'),
+            inArray(refunds.orderId, orderIds)
+          )
+        )
+      for (const r of refundRows) revenue -= Number(r.amount)
 
       // COGS = sum(qty * product.cost) across all items in these orders.
       const items = await db

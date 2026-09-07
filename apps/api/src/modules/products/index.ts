@@ -33,7 +33,7 @@ export const productsModule = new Elysia({ prefix: '/api' })
     ProductsService.listVariants(auth.merchant.id, params.id)
   )
   .get('/categories', async ({ auth }) => ProductsService.listCategories(auth.merchant.id))
-  .use(requirePermission('products:write'))
+  .use(requirePermission('products.create', 'products.update', 'products.delete'))
   .post('/products', async ({ body, auth, request }) => {
     const result = await ProductsService.create(auth.merchant.id, body)
     auditFromRequest(auth, request, {

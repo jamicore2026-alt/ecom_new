@@ -52,6 +52,12 @@ export const users = pgTable(
     passwordHash: varchar('password_hash', { length: 255 }).notNull(),
     role: varchar('role', { length: 20 }).notNull().default('staff'),
     permissions: jsonb('permissions').$type<Permission[]>().notNull().default([]),
+    /** Authoritative permission source (DEFAULT_ROLES / custom roles table). When
+     *  set, the role's permissions are merged with the legacy `permissions`
+     *  column (kept as a backward-compatible per-user overlay). */
+    roleId: varchar('role_id', { length: 30 }).references(() => roles.id, {
+      onDelete: 'set null'
+    }),
     status: varchar('status', { length: 20 }).notNull().default('active'),
     createdAt: timestamp('created_at').defaultNow().notNull()
   },

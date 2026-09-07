@@ -68,7 +68,7 @@ export const loyaltyModule = new Elysia({ prefix: '/api' })
   .get('/loyalty/:customerId', async ({ auth, params }) => LoyaltyService.getByCustomer(auth.merchant.id, params.customerId))
   .get('/loyalty/:customerId/ledger', async ({ auth, params }) => LoyaltyService.ledger(auth.merchant.id, params.customerId))
 
-  .use(requirePermission('settings:write'))
+  .use(requirePermission('settings.manage'))
   .post('/loyalty/adjust', async ({ auth, body }) => LoyaltyService.adjust(auth.merchant.id, body.customerId, body), { body: adjustBody })
   .post('/loyalty/tiers', async ({ auth, body }) => LoyaltyProgramService.createTier(auth.merchant.id, body), { body: requiredTierBody })
   .put('/loyalty/tiers/:id', async ({ auth, params, body }) => LoyaltyProgramService.updateTier(auth.merchant.id, params.id, body), { body: tierBody })

@@ -19,7 +19,9 @@ export const authUser = t.Object({
   name: t.String(),
   email: t.String(),
   role: t.String(),
+  roleId: t.Union([t.String(), t.Null()]),
   permissions: t.Array(t.String()),
+  effectivePermissions: t.Array(t.String()),
   status: t.String(),
   isAdmin: t.Boolean()
 })

@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 import { t } from 'elysia'
 import { authPlugin, requirePermission } from '../../plugins/auth'
+import { branchScopeOf } from '../../shared/outlet-scope'
 import { AnalyticsService } from './service'
 
 export const analyticsQuery = t.Object({
@@ -11,15 +12,15 @@ export const analyticsQuery = t.Object({
 
 export const analyticsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
-  .use(requirePermission('analytics:read'))
+  .use(requirePermission('reports.read'))
   .get('/analytics/sales', async ({ query, auth }) =>
-    AnalyticsService.sales(auth.merchant.id, query), { query: analyticsQuery }
+    AnalyticsService.sales(auth.merchant.id, query, await branchScopeOf(auth)), { query: analyticsQuery }
   )
   .get('/analytics/products', async ({ query, auth }) =>
-    AnalyticsService.products(auth.merchant.id, query), { query: analyticsQuery }
+    AnalyticsService.products(auth.merchant.id, query, await branchScopeOf(auth)), { query: analyticsQuery }
   )
   .get('/analytics/customers', async ({ query, auth }) =>
-    AnalyticsService.customers(auth.merchant.id, query), { query: analyticsQuery }
+    AnalyticsService.customers(auth.merchant.id, query, await branchScopeOf(auth)), { query: analyticsQuery }
   )
   .get('/analytics/conversion', async ({ query, auth }) =>
     AnalyticsService.conversion(auth.merchant.id, query), { query: analyticsQuery }

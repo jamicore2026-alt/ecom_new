@@ -1,7 +1,11 @@
-import { and, count, desc, eq, gte, ilike, lte, or, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, ilike, lte, ne, or, sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
 import { db } from '../../database/client'
 import { toCsv } from '../../shared/csv'
+import {
+  assertOrderInBranchScope,
+  branchOrderCondition
+} from '../../shared/outlet-scope'
 import {
   customers,
   inventoryLogs,
@@ -22,7 +26,7 @@ import { emit } from '../../shared/event-dispatch'
 import { EmailsService } from '../emails/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
-import { badRequest, notFound } from '../../shared/errors'
+import { badRequest, conflict, notFound } from '../../shared/errors'
 import type { Order } from '../../database/schema'
 import type { OrderStatus } from '../../shared/types'
 import type { CallbackResult } from '../../payments/types'
@@ -69,9 +73,12 @@ interface OrderQuery {
 export class OrdersService {
   /* --------------------------------- list --------------------------------- */
 
-  static async list(merchantId: string, q: OrderQuery) {
+  static async list(merchantId: string, q: OrderQuery, branchIds: string[] | null = null) {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [eq(orders.merchantId, merchantId)]
+
+    const scoped = branchOrderCondition(branchIds)
+    if (scoped) conditions.push(scoped)
 
     if (q.status) conditions.push(eq(orders.status, q.status))
     if (q.paymentStatus) conditions.push(eq(orders.paymentStatus, q.paymentStatus))
@@ -132,7 +139,10 @@ export class OrdersService {
 
   /* ------------------------------ csv export ------------------------------ */
 
-  static async exportCsv(merchantId: string): Promise<string> {
+  static async exportCsv(merchantId: string, branchIds: string[] | null = null): Promise<string> {
+    const conditions = [eq(orders.merchantId, merchantId)]
+    const scoped = branchOrderCondition(branchIds)
+    if (scoped) conditions.push(scoped)
     const rows = await db
       .select({
         id: orders.id,
@@ -157,7 +167,7 @@ export class OrdersService {
       })
       .from(orders)
       .leftJoin(customers, eq(orders.customerId, customers.id))
-      .where(eq(orders.merchantId, merchantId))
+      .where(and(...conditions))
       .orderBy(desc(orders.createdAt))
 
     const headers = [
@@ -203,12 +213,13 @@ export class OrdersService {
 
   /* -------------------------------- detail -------------------------------- */
 
-  static async get(merchantId: string, id: string) {
+  static async get(merchantId: string, id: string, branchIds: string[] | null = null) {
     const [order] = await db
       .select()
       .from(orders)
       .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Order not found')
+    assertOrderInBranchScope(branchIds, order.outletId)
 
     const items = await db
       .select({
@@ -251,13 +262,15 @@ export class OrdersService {
   static async updateStatus(
     merchantId: string,
     id: string,
-    input: { status?: string; paymentStatus?: string; fulfillmentStatus?: string }
+    input: { status?: string; paymentStatus?: string; fulfillmentStatus?: string },
+    branchIds: string[] | null = null
   ) {
     const [order] = await db
       .select()
       .from(orders)
       .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Order not found')
+    assertOrderInBranchScope(branchIds, order.outletId)
 
     // Cancellation is a domain operation (restock + coupon restore + payment
     // validation), never a plain status write. Route it through the
@@ -266,7 +279,7 @@ export class OrdersService {
       if (input.paymentStatus && input.paymentStatus !== order.paymentStatus) {
         throw badRequest('INVALID_TRANSITION', 'Cannot combine cancellation with a payment change')
       }
-      return this.cancel(merchantId, id)
+      return this.cancel(merchantId, id, branchIds)
     }
 
     if (input.status && input.status !== order.status) {
@@ -337,12 +350,13 @@ export class OrdersService {
     return ok(updated)
   }
 
-  static async cancel(merchantId: string, id: string) {
+  static async cancel(merchantId: string, id: string, branchIds: string[] | null = null) {
     const [order] = await db
       .select()
       .from(orders)
       .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Order not found')
+    assertOrderInBranchScope(branchIds, order.outletId)
     if (order.status === 'cancelled' || order.status === 'refunded') {
       throw badRequest('INVALID_TRANSITION', `Order is already ${order.status}`)
     }
@@ -384,13 +398,15 @@ export class OrdersService {
 
   static async createReturn(
     merchantId: string,
-    input: { orderId: string; orderItemId: string; quantity: number; reason?: string }
+    input: { orderId: string; orderItemId: string; quantity: number; reason?: string },
+    branchIds: string[] | null = null
   ) {
     const [order] = await db
       .select()
       .from(orders)
       .where(and(eq(orders.id, input.orderId), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Order not found')
+    assertOrderInBranchScope(branchIds, order.outletId)
     if (order.status === 'cancelled') {
       throw badRequest('BAD_REQUEST', 'Cannot return a cancelled order')
     }
@@ -456,7 +472,8 @@ export class OrdersService {
   static async updateReturn(
     merchantId: string,
     id: string,
-    input: { status: 'approved' | 'rejected' }
+    input: { status: 'approved' | 'rejected' },
+    branchIds: string[] | null = null
   ) {
     const [ret] = await db
       .select()
@@ -466,6 +483,13 @@ export class OrdersService {
     if (ret.status !== 'pending') {
       throw badRequest('RETURN_ALREADY_PROCESSED', `Return is already ${ret.status}`)
     }
+
+    const [retOrder] = await db
+      .select({ outletId: orders.outletId })
+      .from(orders)
+      .where(and(eq(orders.id, ret.orderId), eq(orders.merchantId, merchantId)))
+    if (!retOrder) throw notFound('NOT_FOUND', 'Order not found')
+    assertOrderInBranchScope(branchIds, retOrder.outletId)
 
     const updated = await db.transaction(async (tx) => {
       // Atomic claim: only the transaction that flips pending→approved/rejected
@@ -517,9 +541,11 @@ export class OrdersService {
     return ok(updated)
   }
 
-  static async listReturns(merchantId: string, orderId?: string) {
+  static async listReturns(merchantId: string, orderId: string | undefined, branchIds: string[] | null = null) {
     const conditions = [eq(returnsTable.merchantId, merchantId)]
     if (orderId) conditions.push(eq(returnsTable.orderId, orderId))
+    const scoped = branchOrderCondition(branchIds)
+    if (scoped) conditions.push(scoped)
     const rows = await db
       .select({
         id: returnsTable.id,
@@ -541,10 +567,16 @@ export class OrdersService {
 
   static async createRefund(
     merchantId: string,
-    input: { orderId: string; returnId?: string; amount: number; method?: string; idempotencyKey?: string }
+    input: { orderId: string; returnId?: string; amount: number; method?: string; idempotencyKey?: string },
+    branchIds: string[] | null = null
   ) {
     // Idempotent replay: a client retrying with the same key gets the original
     // refund back instead of creating a second external refund (P0-02).
+    // - completed → return the original refund (replay)
+    // - pending   → still in flight; return it (double-click flush)
+    // - failed    → retry through the gateway with the SAME key by reusing the
+    //   row (attemptCount+1), so a provider that saw the first attempt dedupes.
+    let retryingFailed: (typeof refunds.$inferSelect) | null = null
     if (input.idempotencyKey) {
       const [existing] = await db
         .select()
@@ -555,7 +587,14 @@ export class OrdersService {
             eq(refunds.idempotencyKey, input.idempotencyKey)
           )
         )
-      if (existing) return ok(existing)
+      if (existing) {
+        if (existing.status === 'completed') return ok(existing)
+        if (existing.status === 'pending') return ok(existing)
+        if (existing.status !== 'failed') {
+          throw conflict('REFUND_ALREADY_RESOLVED', `Refund is already ${existing.status}`)
+        }
+        retryingFailed = existing
+      }
     }
 
     // ── tx1: reservation ────────────────────────────────────────────────
@@ -570,6 +609,7 @@ export class OrdersService {
         .where(and(eq(orders.id, input.orderId), eq(orders.merchantId, merchantId)))
         .for('update')
       if (!order) throw notFound('NOT_FOUND', 'Order not found')
+      assertOrderInBranchScope(branchIds, order.outletId)
 
       // Wallet/store-credit methods need a credit ledger that doesn't exist yet.
       if (input.method && input.method !== 'original') {
@@ -599,7 +639,10 @@ export class OrdersService {
           and(
             eq(refunds.orderId, order.id),
             // Failed attempts release their balance; pending rows hold it.
-            sql`${refunds.status} != 'failed'`
+            sql`${refunds.status} != 'failed'`,
+            // A retried failed row is about to re-reserve its amount below —
+            // don't double count it in the current outstanding balance.
+            ...(retryingFailed ? [ne(refunds.id, retryingFailed.id)] : [])
           )
         )
 
@@ -611,20 +654,30 @@ export class OrdersService {
         )
       }
 
-      const [refundRow] = await tx
-        .insert(refunds)
-        .values({
-          merchantId,
-          orderId: order.id,
-          returnId: input.returnId ?? null,
-          amount: input.amount,
-          method: input.method ?? 'original',
-          providerRef: null,
-          status: 'pending',
-          idempotencyKey: input.idempotencyKey ?? createId(),
-          attemptCount: 1
-        })
-        .returning()
+      const [refundRow] = retryingFailed
+        ? await tx
+            .update(refunds)
+            .set({
+              status: 'pending',
+              lastError: null,
+              attemptCount: sql`${refunds.attemptCount} + 1`
+            })
+            .where(and(eq(refunds.id, retryingFailed.id), eq(refunds.status, 'failed')))
+            .returning()
+        : await tx
+            .insert(refunds)
+            .values({
+              merchantId,
+              orderId: order.id,
+              returnId: input.returnId ?? null,
+              amount: input.amount,
+              method: input.method ?? 'original',
+              providerRef: null,
+              status: 'pending',
+              idempotencyKey: input.idempotencyKey ?? createId(),
+              attemptCount: 1
+            })
+            .returning()
 
       return { order, refundRow }
     })
@@ -739,7 +792,7 @@ export class OrdersService {
    * the SAME idempotency key, so a provider that saw the first attempt dedupes
    * instead of paying out twice. Attempt count is tracked for auditability.
    */
-  static async retryRefund(merchantId: string, refundId: string) {
+  static async retryRefund(merchantId: string, refundId: string, branchIds: string[] | null = null) {
     const [refund] = await db
       .select()
       .from(refunds)
@@ -755,6 +808,7 @@ export class OrdersService {
       .from(orders)
       .where(and(eq(orders.id, refund.orderId), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Order not found')
+    assertOrderInBranchScope(branchIds, order.outletId)
 
     let gatewayRef: string | null = null
     let failureMessage: string | null = null
@@ -957,9 +1011,11 @@ export class OrdersService {
     }
   }
 
-  static async listRefunds(merchantId: string, orderId?: string) {
+  static async listRefunds(merchantId: string, orderId: string | undefined, branchIds: string[] | null = null) {
     const conditions = [eq(refunds.merchantId, merchantId)]
     if (orderId) conditions.push(eq(refunds.orderId, orderId))
+    const scoped = branchOrderCondition(branchIds)
+    if (scoped) conditions.push(scoped)
     const rows = await db
       .select({
         id: refunds.id,

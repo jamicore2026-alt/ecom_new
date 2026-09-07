@@ -61,8 +61,8 @@ export const menuModule = new Elysia({ prefix: '/api' })
     auditFromRequest(auth, request, { action: 'menu.unbind_modifier', entityType: 'menu_item', entityId: params.id })
     return result
   }, { params: menuGroupParams })
-  .post('/menu/:id/outlets', async ({ params, body, auth, request }) => {
-    const result = await MenuService.setOutletRule(auth.merchant.id, params.id, body)
+  .post('/menu/:id/outlets', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await MenuService.setOutletRule(auth.merchant.id, params.id, body, merchantContext)
     auditFromRequest(auth, request, { action: 'menu.outlet_rule', entityType: 'menu_item', entityId: params.id })
     return result
   }, { params: menuParams, body: outletRuleBody })

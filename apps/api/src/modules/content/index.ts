@@ -25,7 +25,7 @@ export const contentModule = new Elysia({ prefix: '/api' })
   .get('/content', async ({ auth }) => ContentService.list(auth.merchant.id))
   .get('/content/:id', async ({ auth, params }) => ContentService.get(auth.merchant.id, params.id))
 
-  .use(requirePermission('products:write'))
+  .use(requirePermission('products.create', 'products.update', 'products.delete'))
   .post('/content', async ({ auth, body }) => ContentService.create(auth.merchant.id, body), { body: createBody })
   .put('/content/:id', async ({ auth, params, body }) => ContentService.update(auth.merchant.id, params.id, body), { body: pageBody })
   .delete('/content/:id', async ({ auth, params }) => ContentService.delete(auth.merchant.id, params.id))

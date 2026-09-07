@@ -3,6 +3,7 @@ import { db } from '../../database/client'
 import { roles } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound, conflict, badRequest } from '../../shared/errors'
+import { normalizePermissions } from '../../shared/types'
 
 export class RolesService {
   static async list(merchantId: string) {
@@ -26,7 +27,7 @@ export class RolesService {
       .values({
         merchantId,
         name: input.name,
-        permissions: (input.permissions ?? []) as never,
+        permissions: normalizePermissions(input.permissions ?? []) as never,
         scope: (input.scope ?? 'MERCHANT') as never,
         isSystem: false
       })
@@ -54,7 +55,7 @@ export class RolesService {
       .update(roles)
       .set({
         ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.permissions !== undefined ? { permissions: input.permissions as never } : {}),
+        ...(input.permissions !== undefined ? { permissions: normalizePermissions(input.permissions) as never } : {}),
         ...(input.scope !== undefined ? { scope: input.scope as never } : {})
       })
       .where(and(eq(roles.id, roleId), eq(roles.merchantId, merchantId)))

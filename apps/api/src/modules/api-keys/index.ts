@@ -17,7 +17,7 @@ const apiKeyQuery = t.Object({
 
 export const apiKeysModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
-  .use(requirePermission('settings:write'))
+  .use(requirePermission('settings.manage'))
 
   .get('/api-keys', async ({ auth, query }) => ApiKeysService.list(auth.merchant.id, query), { query: apiKeyQuery })
   .post('/api-keys', async ({ auth, body, request }) => {

@@ -11,7 +11,8 @@ import {
   visits
 } from '../../database/schema'
 import { ok } from '../../shared/response'
-import { revenueStatuses } from '../../shared/types'
+import { PAID_PAYMENT_STATUSES } from '../../shared/revenue'
+import { branchOrderCondition } from '../../shared/outlet-scope'
 
 const round2 = (n: number) => Number(n.toFixed(2))
 
@@ -45,19 +46,30 @@ const intervalTruncExpressions: Record<AnalyticsInterval, ReturnType<typeof sql.
 export class AnalyticsService {
   /* --------------------------------- sales -------------------------------- */
 
-  static async sales(merchantId: string, q: Query) {
+  static async sales(merchantId: string, q: Query, branchIds: string[] | null = null) {
     const { start, end } = parseRange(q.from, q.to)
     const interval: AnalyticsInterval = q.interval ?? 'day'
     const length = end.getTime() - start.getTime()
     const prevStart = new Date(start.getTime() - length)
     const prevEnd = new Date(start.getTime() - 1)
+    const scope = branchOrderCondition(branchIds)
 
     const inRange = (s: Date, e: Date) =>
       and(
         eq(orders.merchantId, merchantId),
-        inArray(orders.status, revenueStatuses),
+        inArray(orders.paymentStatus, PAID_PAYMENT_STATUSES),
         gte(orders.createdAt, s),
-        lte(orders.createdAt, e)
+        lte(orders.createdAt, e),
+        ...(scope ? [scope] : [])
+      )
+
+    const refundFilter = (s: Date, e: Date) =>
+      and(
+        eq(refunds.merchantId, merchantId),
+        eq(refunds.status, 'completed'),
+        gte(refunds.createdAt, s),
+        lte(refunds.createdAt, e),
+        ...(scope ? [scope] : [])
       )
 
     const truncExpr = intervalTruncExpressions[interval]
@@ -84,7 +96,8 @@ export class AnalyticsService {
       const [refundTotals] = await db
         .select({ total: sql<number>`coalesce(sum(${refunds.amount}), 0)` })
         .from(refunds)
-        .where(and(eq(refunds.merchantId, merchantId), gte(refunds.createdAt, s), lte(refunds.createdAt, e)))
+        .innerJoin(orders, eq(refunds.orderId, orders.id))
+        .where(refundFilter(s, e))
 
       return {
         series: buckets.map((b) => ({
@@ -122,14 +135,16 @@ export class AnalyticsService {
 
   /* -------------------------------- products ------------------------------ */
 
-  static async products(merchantId: string, q: Query) {
+  static async products(merchantId: string, q: Query, branchIds: string[] | null = null) {
     const { start, end } = parseRange(q.from, q.to)
+    const scope = branchOrderCondition(branchIds)
 
     const itemFilter = and(
       eq(products.merchantId, merchantId),
-      inArray(orders.status, revenueStatuses),
+      inArray(orders.paymentStatus, PAID_PAYMENT_STATUSES),
       gte(orders.createdAt, start),
-      lte(orders.createdAt, end)
+      lte(orders.createdAt, end),
+      ...(scope ? [scope] : [])
     )
 
     const top = await db
@@ -189,7 +204,8 @@ export class AnalyticsService {
                   eq(orders.merchantId, merchantId),
                   gte(orders.createdAt, start),
                   lte(orders.createdAt, end),
-                  inArray(orders.status, revenueStatuses)
+                  inArray(orders.paymentStatus, PAID_PAYMENT_STATUSES),
+                  ...(scope ? [scope] : [])
                 )
               )
           )
@@ -218,8 +234,9 @@ export class AnalyticsService {
 
   /* -------------------------------- customers ------------------------------ */
 
-  static async customers(merchantId: string, q: Query) {
+  static async customers(merchantId: string, q: Query, branchIds: string[] | null = null) {
     const { start, end } = parseRange(q.from, q.to)
+    const scope = branchOrderCondition(branchIds)
 
     const [newRow] = await db
       .select({ total: count() })
@@ -232,7 +249,12 @@ export class AnalyticsService {
       .selectDistinct({ customerId: orders.customerId })
       .from(orders)
       .where(
-        and(eq(orders.merchantId, merchantId), gte(orders.createdAt, start), lte(orders.createdAt, end))
+        and(
+          eq(orders.merchantId, merchantId),
+          gte(orders.createdAt, start),
+          lte(orders.createdAt, end),
+          ...(scope ? [scope] : [])
+        )
       )
 
     const activeCustomerIds = activeOrders
