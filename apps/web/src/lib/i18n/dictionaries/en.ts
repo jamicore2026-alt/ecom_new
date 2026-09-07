@@ -184,6 +184,8 @@ export const en: Record<string, string> = {
 	'pos.bankTransfer': 'Bank transfer',
 	'pos.wallet': 'Wallet',
 	'pos.giftCard': 'Gift card',
+	'pos.cashReceived': 'Cash received',
+	'pos.change': 'Change',
 	'pos.receiptFor': 'Receipt {orderNumber}',
 	'pos.posOrder': 'POS order',
 	'pos.newSale': 'New sale',

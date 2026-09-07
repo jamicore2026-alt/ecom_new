@@ -59,14 +59,14 @@
 	<div class="flex flex-wrap gap-3">
 		{#each images as img, i (img.url + String(i))}
 			<div class="group relative w-24">
-				<div class="h-24 w-24 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+				<div class="h-24 w-24 overflow-hidden rounded-lg border border-outline-variant bg-surface-container-low">
 					<img src={img.url} alt={img.altText ?? ''} class="h-full w-full object-cover" onerror={handleImageError} />
 					{#if i === 0}
 						<span class="absolute top-1 left-1 rounded bg-gray-900/80 px-1.5 py-0.5 text-[10px] font-medium text-white">Cover</span>
 					{/if}
 				</div>
 				<input
-					class="mt-1 w-24 rounded border border-gray-200 px-1.5 py-1 text-xs"
+					class="mt-1 w-24 rounded border border-outline-variant px-1.5 py-1 text-xs"
 					placeholder="Alt text"
 					maxlength="255"
 					bind:value={img.altText}
@@ -75,13 +75,13 @@
 				{#if !disabled}
 					<button
 						type="button"
-						class="absolute -top-2 -right-2 hidden h-5 w-5 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white group-hover:flex"
+						class="absolute -top-2 -right-2 hidden h-5 w-5 items-center justify-center rounded-full bg-error text-xs font-bold text-on-error group-hover:flex"
 						onclick={() => remove(i)}
 						aria-label="Remove image"
 					>×</button>
 					<div class="mt-1 flex w-24 justify-center gap-1">
-						<button type="button" class="rounded border border-gray-200 px-1.5 text-xs disabled:opacity-30" onclick={() => move(i, -1)} disabled={i === 0} aria-label="Move left">←</button>
-						<button type="button" class="rounded border border-gray-200 px-1.5 text-xs disabled:opacity-30" onclick={() => move(i, 1)} disabled={i === images.length - 1} aria-label="Move right">→</button>
+						<button type="button" class="rounded border border-outline-variant px-1.5 text-xs disabled:opacity-30" onclick={() => move(i, -1)} disabled={i === 0} aria-label="Move left">←</button>
+						<button type="button" class="rounded border border-outline-variant px-1.5 text-xs disabled:opacity-30" onclick={() => move(i, 1)} disabled={i === images.length - 1} aria-label="Move right">→</button>
 					</div>
 				{/if}
 			</div>
@@ -90,7 +90,7 @@
 		{#if !disabled}
 			<button
 				type="button"
-				class="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 text-gray-400 hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-50"
+				class="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-outline-variant text-secondary hover:border-primary hover:text-primary disabled:opacity-50"
 				onclick={() => fileInput?.click()}
 				disabled={uploading}
 			>
@@ -107,5 +107,5 @@
 			/>
 		{/if}
 	</div>
-	<p class="text-xs text-gray-400">JPEG / PNG / WebP / GIF · up to 5MB each · first image is the cover</p>
+	<p class="text-xs text-secondary">JPEG / PNG / WebP / GIF · up to 5MB each · first image is the cover</p>
 </div>

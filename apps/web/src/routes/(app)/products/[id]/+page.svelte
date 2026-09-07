@@ -141,14 +141,14 @@
 </script>
 
 {#if loading}
-	<div class="h-40 animate-pulse rounded-xl bg-gray-200"></div>
+	<div class="h-40 animate-pulse rounded-xl bg-surface-container-high"></div>
 {:else if product}
 	<div class="space-y-5">
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div>
-				<a href="/products" class="text-sm text-gray-500 hover:text-gray-700">← Products</a>
-				<h1 class="text-xl font-bold text-gray-900">{product.name}</h1>
-				<p class="text-sm text-gray-500">
+				<a href="/products" class="text-sm text-secondary hover:text-on-surface-variant">← Products</a>
+				<h1 class="text-xl font-bold text-on-surface">{product.name}</h1>
+				<p class="text-sm text-secondary">
 					{product.sku ?? 'No SKU'} · {product.category?.name ?? 'Uncategorized'} ·
 					{number(product.stock)} units in stock
 				</p>
@@ -162,22 +162,22 @@
 			<div class="min-w-0 space-y-5 lg:col-span-1">
 				<Card title="Details">
 					<dl class="space-y-2 text-sm">
-						<div class="flex justify-between"><dt class="text-gray-500">Price</dt><dd class="font-medium">{currency(product.price)}</dd></div>
+						<div class="flex justify-between"><dt class="text-secondary">Price</dt><dd class="font-medium">{currency(product.price)}</dd></div>
 						{#if product.compareAtPrice != null}
-							<div class="flex justify-between"><dt class="text-gray-500">Compare-at</dt><dd class="font-medium text-gray-700 line-through">{currency(product.compareAtPrice)}</dd></div>
+							<div class="flex justify-between"><dt class="text-secondary">Compare-at</dt><dd class="font-medium text-on-surface-variant line-through">{currency(product.compareAtPrice)}</dd></div>
 						{/if}
-						<div class="flex justify-between"><dt class="text-gray-500">Cost</dt><dd class="font-medium">{currency(product.cost)}</dd></div>
-						<div class="flex justify-between"><dt class="text-gray-500">Status</dt><dd><Badge label={product.status} /></dd></div>
-						<div class="flex justify-between"><dt class="text-gray-500">Track inventory</dt><dd class="font-medium">{product.trackInventory ? 'Yes' : 'No'}</dd></div>
-						<div class="flex justify-between"><dt class="text-gray-500">Low-stock threshold</dt><dd class="font-medium">{product.lowStockThreshold}</dd></div>
-						<div class="flex justify-between"><dt class="text-gray-500">Slug</dt><dd class="font-mono text-xs text-gray-700">{product.slug}</dd></div>
-						<div class="flex justify-between"><dt class="text-gray-500">Created</dt><dd class="text-gray-700">{dateTimeFull(product.createdAt)}</dd></div>
+						<div class="flex justify-between"><dt class="text-secondary">Cost</dt><dd class="font-medium">{currency(product.cost)}</dd></div>
+						<div class="flex justify-between"><dt class="text-secondary">Status</dt><dd><Badge label={product.status} /></dd></div>
+						<div class="flex justify-between"><dt class="text-secondary">Track inventory</dt><dd class="font-medium">{product.trackInventory ? 'Yes' : 'No'}</dd></div>
+						<div class="flex justify-between"><dt class="text-secondary">Low-stock threshold</dt><dd class="font-medium">{product.lowStockThreshold}</dd></div>
+						<div class="flex justify-between"><dt class="text-secondary">Slug</dt><dd class="font-mono text-xs text-on-surface-variant">{product.slug}</dd></div>
+						<div class="flex justify-between"><dt class="text-secondary">Created</dt><dd class="text-on-surface-variant">{dateTimeFull(product.createdAt)}</dd></div>
 					</dl>
 				</Card>
 
 				{#if product.description}
 					<Card title="Description">
-						<p class="whitespace-pre-line text-sm text-gray-600">{product.description}</p>
+						<p class="whitespace-pre-line text-sm text-on-surface-variant">{product.description}</p>
 					</Card>
 				{/if}
 
@@ -194,12 +194,12 @@
 			<div class="min-w-0 lg:col-span-2">
 				<Card title={`Variants (${product.variants.length})`} padded={false}>
 					{#if product.variants.length === 0}
-						<p class="py-10 text-center text-sm text-gray-400">No variants yet.</p>
+						<p class="py-10 text-center text-sm text-secondary">No variants yet.</p>
 					{:else}
 						<div class="overflow-x-auto">
 							<table class="w-full text-sm">
 								<thead>
-									<tr class="border-b border-gray-100 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+									<tr class="border-b border-outline-variant text-left text-xs font-medium uppercase tracking-wide text-secondary">
 										<th class="px-5 py-3">Options</th>
 										<th class="px-3 py-3">SKU</th>
 										<th class="px-3 py-3">Price</th>
@@ -209,29 +209,29 @@
 								</thead>
 								<tbody>
 									{#each product.variants as v (v.id)}
-										<tr class="border-b border-gray-50 hover:bg-gray-50/60">
+										<tr class="border-b border-outline-variant hover:bg-surface-container-low">
 											<td class="px-5 py-3">
 												{#if v.image}
 													<img src={v.image} alt="" class="mr-2 inline h-8 w-8 rounded object-cover" onerror={handleImageError} />
 												{/if}
 												{#if Object.keys(v.optionValues ?? {}).length}
-													<span class="text-gray-700">
+													<span class="text-on-surface-variant">
 														{Object.entries(v.optionValues).map(([k, val]) => `${k}: ${val}`).join(', ')}
 													</span>
 												{:else}
-													<span class="text-gray-400">Default</span>
+													<span class="text-secondary">Default</span>
 												{/if}
 											</td>
-											<td class="px-3 py-3 text-gray-600">{v.sku ?? '—'}</td>
+											<td class="px-3 py-3 text-on-surface-variant">{v.sku ?? '—'}</td>
 											<td class="px-3 py-3 font-medium">{currency(v.price)}</td>
-											<td class="px-3 py-3" class:font-semibold={true} class:text-red-600={v.inventory === 0}>
+											<td class="px-3 py-3" class:font-semibold={true} class:text-error={v.inventory === 0}>
 												{number(v.inventory)}
 											</td>
 											<td class="px-5 py-3 text-right">
 												{#if canWrite()}
-													<button class="text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => openEditVariant(v)}>Edit</button>
-													<span class="mx-1 text-gray-300">|</span>
-													<button class="text-xs font-medium text-red-600 hover:text-red-800" onclick={() => deleteVariant(v)}>Delete</button>
+													<button class="text-xs font-medium text-primary hover:text-on-primary-fixed-variant" onclick={() => openEditVariant(v)}>Edit</button>
+													<span class="mx-1 text-outline">|</span>
+													<button class="text-xs font-medium text-error hover:text-error" onclick={() => deleteVariant(v)}>Delete</button>
 												{/if}
 											</td>
 										</tr>
@@ -245,7 +245,7 @@
 		</div>
 	</div>
 {:else}
-	<p class="text-sm text-gray-500">Product not found.</p>
+	<p class="text-sm text-secondary">Product not found.</p>
 {/if}
 
 {#if variantModal && canWrite()}
@@ -258,41 +258,41 @@
 			}}
 		>
 			<div>
-				<label for="v-sku" class="mb-1 block text-sm font-medium text-gray-700">SKU</label>
-				<input id="v-sku" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vSku} />
+				<label for="v-sku" class="mb-1 block text-sm font-medium text-on-surface-variant">SKU</label>
+				<input id="v-sku" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vSku} />
 			</div>
 
 			<div>
-				<label for="v-price" class="mb-1 block text-sm font-medium text-gray-700">Price</label>
-				<input id="v-price" type="number" step="0.01" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vPrice} />
+				<label for="v-price" class="mb-1 block text-sm font-medium text-on-surface-variant">Price</label>
+				<input id="v-price" type="number" step="0.01" min="0" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vPrice} />
 			</div>
 
 			<div>
-				<label for="v-compare-at" class="mb-1 block text-sm font-medium text-gray-700">Compare-at price</label>
-				<input id="v-compare-at" type="number" step="0.01" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vCompareAt} />
+				<label for="v-compare-at" class="mb-1 block text-sm font-medium text-on-surface-variant">Compare-at price</label>
+				<input id="v-compare-at" type="number" step="0.01" min="0" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vCompareAt} />
 			</div>
 
 			<div>
-				<label for="v-inventory" class="mb-1 block text-sm font-medium text-gray-700">Inventory</label>
-				<input id="v-inventory" type="number" min="0" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vInventory} />
-				{#if vFieldErrors.inventory}<p class="mt-1 text-xs text-red-600">{vFieldErrors.inventory}</p>{/if}
+				<label for="v-inventory" class="mb-1 block text-sm font-medium text-on-surface-variant">Inventory</label>
+				<input id="v-inventory" type="number" min="0" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vInventory} />
+				{#if vFieldErrors.inventory}<p class="mt-1 text-xs text-error">{vFieldErrors.inventory}</p>{/if}
 			</div>
 
 			<div>
-				<label for="v-image" class="mb-1 block text-sm font-medium text-gray-700">Image URL</label>
-				<input id="v-image" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" bind:value={vImage} placeholder="https://…" />
+				<label for="v-image" class="mb-1 block text-sm font-medium text-on-surface-variant">Image URL</label>
+				<input id="v-image" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vImage} placeholder="https://…" />
 			</div>
 
 			<div>
-				<p class="mb-1 block text-sm font-medium text-gray-700">Options (Size, Color, …)</p>
+				<p class="mb-1 block text-sm font-medium text-on-surface-variant">Options (Size, Color, …)</p>
 				<div class="space-y-2">
 					{#each optionValues as row, i (i)}
 						<div class="flex gap-2">
-							<input class="w-1/3 rounded-lg border border-gray-300 px-3 py-1.5 text-sm" placeholder="Size" bind:value={optionValues[i].key} />
-							<input class="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm" placeholder="M" bind:value={optionValues[i].value} />
+							<input class="w-1/3 rounded-lg border border-outline-variant px-3 py-1.5 text-sm" placeholder="Size" bind:value={optionValues[i].key} />
+							<input class="flex-1 rounded-lg border border-outline-variant px-3 py-1.5 text-sm" placeholder="M" bind:value={optionValues[i].value} />
 							<button
 								type="button"
-								class="px-2 text-gray-400 hover:text-red-600"
+								class="px-2 text-secondary hover:text-error"
 								onclick={() => (optionValues = optionValues.filter((_, j) => j !== i))}
 							>
 								×
@@ -300,7 +300,7 @@
 						</div>
 					{/each}
 				</div>
-				<button type="button" class="mt-2 text-xs font-medium text-indigo-600 hover:text-indigo-800" onclick={() => (optionValues = [...optionValues, { key: '', value: '' }])}>
+				<button type="button" class="mt-2 text-xs font-medium text-primary hover:text-on-primary-fixed-variant" onclick={() => (optionValues = [...optionValues, { key: '', value: '' }])}>
 					+ Add option
 				</button>
 			</div>

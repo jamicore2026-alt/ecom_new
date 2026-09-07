@@ -37,6 +37,7 @@
 	let choice = $state<ModifierChoice[]>([])
 	let completing = $state(false)
 	let paymentMethod = $state('card')
+	let cashReceived = $state<number | null>(null)
 	let placing = $state(false)
 	let receiptOrder = $state<FoodOrder | null>(null)
 	let receiptPaid = $state(false)
@@ -207,7 +208,8 @@
 			let paid = false
 			try {
 				await api.post<{ success: boolean; data: FoodOrder }>(`/api/food-orders/${order.id}/pay`, {
-					paymentMethod
+					paymentMethod,
+					...(paymentMethod === 'cash' && cashReceived !== null ? { cashReceived } : {})
 				})
 				paid = true
 			} catch (payErr) {
@@ -443,6 +445,26 @@
 					<option value="gift_card">{t('pos.giftCard')}</option>
 				</select>
 			</div>
+			{#if paymentMethod === 'cash'}
+				<div>
+					<label for="pos-cash-received" class="field-label">{t('pos.cashReceived')}</label>
+					<input
+						id="pos-cash-received"
+						type="number"
+						inputmode="decimal"
+						min={cartTotal()}
+						step="0.01"
+						class="field"
+						bind:value={cashReceived}
+						placeholder={String(cartTotal())}
+					/>
+					{#if cashReceived !== null && cashReceived >= cartTotal()}
+						<p class="mt-1 text-sm text-on-surface-variant">
+							{t('pos.change')}: {currency(cashReceived - cartTotal())}
+						</p>
+					{/if}
+				</div>
+			{/if}
 			<div class="pt-1">
 				<Button class="w-full" size="md" onclick={placeOrder} loading={placing} disabled={placing}>
 					<Icon name="check" size="text-[20px]" /> {t('pos.charge')} {currency(cartTotal())}

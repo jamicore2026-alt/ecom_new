@@ -6,9 +6,10 @@
 	{#each toast.items as t (t.id)}
 		<div
 			class="pointer-events-auto rounded border border-outline-variant px-4 py-3 text-sm font-medium shadow-md"
-			class:bg-emerald-600={t.type === 'success'}
-			class:bg-red-600={t.type === 'error'}
-			class:text-white={true}
+			class:bg-success={t.type === 'success'}
+			class:bg-error={t.type === 'error'}
+			class:text-on-success={t.type === 'success'}
+			class:text-on-error={t.type === 'error'}
 		>
 			{t.message}
 		</div>

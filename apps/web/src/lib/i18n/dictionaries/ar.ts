@@ -184,6 +184,8 @@ export const ar: Record<string, string> = {
 	'pos.bankTransfer': 'تحويل بنكي',
 	'pos.wallet': 'محفظة',
 	'pos.giftCard': 'بطاقة هدايا',
+	'pos.cashReceived': 'المبلغ المستلم نقداً',
+	'pos.change': 'الباقي',
 	'pos.receiptFor': 'إيصال {orderNumber}',
 	'pos.posOrder': 'طلب نقطة البيع',
 	'pos.newSale': 'بيع جديد',

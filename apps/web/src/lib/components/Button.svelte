@@ -15,7 +15,7 @@
 		primary:
 			'bg-primary text-on-primary hover:bg-on-primary-fixed-variant focus-visible:ring-primary',
 		secondary:
-			'bg-white text-on-surface ring-1 ring-inset ring-outline-variant hover:bg-surface-container-low focus-visible:ring-primary',
+			'bg-surface-container-lowest text-on-surface ring-1 ring-inset ring-outline-variant hover:bg-surface-container-low focus-visible:ring-primary',
 		danger: 'bg-error text-on-error hover:bg-on-error-container focus-visible:ring-error',
 		ghost: 'text-secondary hover:bg-surface-container hover:text-on-surface focus-visible:ring-primary'
 	}
