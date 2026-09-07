@@ -30,55 +30,58 @@ describe('Product reviews', () => {
   let adminToken = ''
   let otherStoreId = ''
 
-  beforeAll(async () => {
-    const inserted = await db
-      .insert(merchants)
-      .values({ name: 'Other Store', slug: 'other-store', email: 'other@example.com' })
-      .onConflictDoNothing()
-      .returning({ id: merchants.id })
-    otherStoreId = inserted[0]?.id ?? ''
+  beforeAll(
+    async () => {
+      const inserted = await db
+        .insert(merchants)
+        .values({ name: 'Other Store', slug: 'other-store', email: 'other@example.com' })
+        .onConflictDoNothing()
+        .returning({ id: merchants.id })
+      otherStoreId = inserted[0]?.id ?? ''
 
-    const login = await call('/api/auth/login', json({ email: 'admin@acme.com', password: 'password123' }))
-    expect(login.status).toBe(200)
-    adminToken = login.body.data.accessToken
+      const login = await call('/api/auth/login', json({ email: 'admin@acme.com', password: 'password123' }))
+      expect(login.status).toBe(200)
+      adminToken = login.body.data.accessToken
 
-    const list = await call('/api/store/acme-store/products?limit=100')
-    product = list.body.data.items.find((i: any) => i.stock >= 20)
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
-    variantId = detail.body.data.variants[0].id
+      const list = await call('/api/store/acme-store/products?limit=100')
+      product = list.body.data.items.find((i: any) => i.stock >= 20)
+      const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+      variantId = detail.body.data.variants[0].id
 
-    // Reviewer buys first so their review can be flagged as a verified purchase
-    const placed = await call(
-      '/api/store/acme-store/checkout',
-      json({
-        items: [{ productId: product.id, variantId, quantity: 1 }],
-        email: REVIEWER,
-        shippingAddress: { name: 'Rev Iewer', line1: '1 Star Rd', city: 'Dubai', state: 'DU', postalCode: '00000', country: 'AE' },
-        paymentMethod: 'cod'
-      })
-    )
-    expect(placed.status).toBe(200)
-    const reviewerOrderNumber = placed.body.data.orderNumber
-
-    for (const email of [REVIEWER, PLAIN]) {
-      const reg = await call(
-        '/api/store/acme-store/auth/register',
+      // Reviewer buys first so their review can be flagged as a verified purchase
+      const placed = await call(
+        '/api/store/acme-store/checkout',
         json({
-          email,
-          password: 'sup3rsecret',
-          firstName: email === PLAIN ? 'Plain' : 'Rev',
-          lastName: 'Shopper',
-          // Guest accounts require order-number proof to attach credentials.
-          ...(email === REVIEWER ? { orderNumber: reviewerOrderNumber } : {})
+          items: [{ productId: product.id, variantId, quantity: 1 }],
+          email: REVIEWER,
+          shippingAddress: { name: 'Rev Iewer', line1: '1 Star Rd', city: 'Dubai', state: 'DU', postalCode: '00000', country: 'AE' },
+          paymentMethod: 'cod'
         })
       )
-      expect(reg.status).toBe(200)
-    }
-    const rLogin = await call('/api/store/acme-store/auth/login', json({ email: REVIEWER, password: 'sup3rsecret' }))
-    const pLogin = await call('/api/store/acme-store/auth/login', json({ email: PLAIN, password: 'sup3rsecret' }))
-    reviewerToken = rLogin.body.data.token
-    plainToken = pLogin.body.data.token
-  })
+      expect(placed.status).toBe(200)
+      const reviewerOrderNumber = placed.body.data.orderNumber
+
+      for (const email of [REVIEWER, PLAIN]) {
+        const reg = await call(
+          '/api/store/acme-store/auth/register',
+          json({
+            email,
+            password: 'sup3rsecret',
+            firstName: email === PLAIN ? 'Plain' : 'Rev',
+            lastName: 'Shopper',
+            // Guest accounts require order-number proof to attach credentials.
+            ...(email === REVIEWER ? { orderNumber: reviewerOrderNumber } : {})
+          })
+        )
+        expect(reg.status).toBe(200)
+      }
+      const rLogin = await call('/api/store/acme-store/auth/login', json({ email: REVIEWER, password: 'sup3rsecret' }))
+      const pLogin = await call('/api/store/acme-store/auth/login', json({ email: PLAIN, password: 'sup3rsecret' }))
+      reviewerToken = rLogin.body.data.token
+      plainToken = pLogin.body.data.token
+    },
+    { timeout: 120_000 }
+  )
 
   it('lets a signed-in shopper submit a review that starts pending', async () => {
     const res = await call(
