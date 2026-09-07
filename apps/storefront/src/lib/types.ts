@@ -197,6 +197,8 @@ export interface CheckoutInput {
 	paymentMethod: string
 	notes?: string
 	cartId?: string
+	/** Client-generated key so a retry of the same attempt can't double-order. */
+	idempotencyKey?: string
 }
 
 export interface CheckoutPreviewInput {
@@ -220,7 +222,7 @@ export interface CheckoutOrder {
 export interface ProviderCheckoutSession {
 	id: string
 	orderNumber: string
-	requiresRedirect: true
+	requiresRedirect: boolean
 	provider: string
 	redirectUrl: string
 	total: number

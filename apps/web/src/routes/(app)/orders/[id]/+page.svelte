@@ -31,6 +31,9 @@
 	let refundAmount = $state('')
 	let refundMethod = $state<'original'>('original')
 	let refundReturnId = $state('')
+	// Same key per refund attempt: a retry after a gateway failure reuses it so
+	// the server can never double-refund (unique merchant+key).
+	let refundAttemptId = $state('')
 
 	const canWrite = () => session.can('orders:write')
 
@@ -134,7 +137,8 @@
 				orderId: id,
 				...(refundReturnId ? { returnId: refundReturnId } : {}),
 				amount: Number(refundAmount),
-				method: refundMethod
+				method: refundMethod,
+				idempotencyKey: refundAttemptId
 			})
 			toast.success('Refund recorded')
 			refundOpen = false
@@ -226,7 +230,7 @@
 					>
 						Cancel order
 					</Button>
-					<Button variant="secondary" size="sm" onclick={() => (refundOpen = true)} disabled={saving || refundable() <= 0}>
+					<Button variant="secondary" size="sm" onclick={() => { refundOpen = true; refundAttemptId = crypto.randomUUID() }} disabled={saving || refundable() <= 0}>
 						Record refund
 					</Button>
 				</div>

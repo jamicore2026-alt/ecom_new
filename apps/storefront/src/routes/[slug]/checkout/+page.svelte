@@ -61,6 +61,10 @@
 	let placing = $state(false)
 	let previewed = $state(false)
 
+	// Idempotency key for this checkout attempt — regenerated per page load so a
+	// timeout/retry of the same attempt can never double-order on the server.
+	const checkoutAttemptId = crypto.randomUUID()
+
 	const countries = ['SA', 'AE', 'KW', 'QA', 'BH', 'OM', 'US', 'GB', 'DE', 'FR']
 
 	$effect(() => {
@@ -202,12 +206,22 @@
 				},
 				paymentMethod,
 				notes: notes.trim() || undefined,
-				cartId: cart.persistedCartId
+				cartId: cart.persistedCartId,
+				// Same key per attempt: a network retry reuses the original order
+				// instead of creating a second one.
+				idempotencyKey: checkoutAttemptId
 			}
 
 			if (selectedIsProvider) {
 				const session = await storefrontApi.checkoutPay(fetch, slug, payload)
 				sessionStorage.setItem(`ecom:pending:${slug}`, session.orderNumber)
+				// A provider replay (same key already placed) returns the stored
+				// order without a redirect — go straight to the confirmation page.
+				if (!session.requiresRedirect) {
+					cart.clear()
+					await goto(`/${slug}/orders/${encodeURIComponent(session.orderNumber)}`)
+					return
+				}
 				// Defense in depth: only ever redirect to an https gateway URL.
 				if (!/^https:\/\//i.test(session.redirectUrl)) {
 					orderError = t('checkout.invalidRedirect')

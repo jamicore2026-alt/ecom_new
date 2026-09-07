@@ -32,6 +32,7 @@ import { CartsService } from '../carts/service'
 import { OrdersService } from '../orders/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { runCancelPendingOrder } from '../../shared/order-cancel'
+import { markOrderPaidEffects } from '../../shared/order-payments'
 import { emit } from '../../shared/event-dispatch'
 import { roundForCurrency } from '../../shared/currency'
 import { productSearchCondition, productSearchRank } from '../../shared/product-search'
@@ -56,6 +57,9 @@ export interface CheckoutInput extends CheckoutPreviewInput {
   cartId?: string
   /** Warehouse to fulfill this order from. Defaults to the merchant's default active warehouse when set. */
   fulfillmentWarehouseId?: string
+  /** Client-generated key (e.g. crypto.randomUUID) — same key = same logical
+   *  checkout attempt; retries return the original order instead of a duplicate. */
+  idempotencyKey?: string
 }
 
 export interface CheckoutPreviewInput {
@@ -1120,9 +1124,26 @@ export class StorefrontService {
           promotionId: summary.promotionId ?? null,
           attributionChannel: 'direct',
           warehouseId: fulfillingWarehouseId,
+          idempotencyKey: body.idempotencyKey ?? null,
           expiresAt: opts.expiresAt ?? null
         })
         .returning()
+
+      // Orders born paid (legacy "card" paid-on-place) still need a real payment
+      // transaction row + the paid effects (customer spend, funnel) — otherwise
+      // the dashboard "no transaction" refund/journal/analytics paths break.
+      if (opts.paymentStatus === 'paid') {
+        await tx.insert(paymentTransactions).values({
+          merchantId: store.merchant.id,
+          orderId: order.id,
+          provider: opts.provider ?? 'card',
+          providerRef: null,
+          status: 'paid',
+          amount: summary.total,
+          currency
+        })
+        await markOrderPaidEffects(tx, store.merchant.id, order)
+      }
 
       // Coupon + promotion quota claims come BEFORE the variant locks so every
       // transaction acquires row locks in the same order (quota rows → variant
@@ -1220,11 +1241,32 @@ export class StorefrontService {
     })
   }
 
+  /** Shared confirmation shape returned by the idempotent checkout replay. */
+  private static confirmationFor(order: typeof orders.$inferSelect) {
+    return {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      total: number(order.total),
+      currency: order.currency
+    }
+  }
+
+  /** Find an order for this merchant+key (idempotent replay path). */
+  private static async findByIdempotencyKey(merchantId: string, key: string) {
+    const [existing] = await db
+      .select()
+      .from(orders)
+      .where(
+        and(eq(orders.merchantId, merchantId), eq(orders.idempotencyKey, key))
+      )
+    return existing ?? null
+  }
+
   static async checkout(slug: string, body: CheckoutInput) {
-    const kind = await this.assertPaymentMethodAvailable(
-      (await this.resolveStore(slug)).merchant.id,
-      body.paymentMethod
-    )
+    const store = await this.resolveStore(slug)
+    const kind = await this.assertPaymentMethodAvailable(store.merchant.id, body.paymentMethod)
     if (kind.kind === 'provider') {
       throw badRequest(
         'PAYMENT_REQUIRES_REDIRECT',
@@ -1232,7 +1274,76 @@ export class StorefrontService {
       )
     }
 
-    const summary = await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
+    let summary: Awaited<ReturnType<typeof this.buildSummary>>
+    if (body.idempotencyKey) {
+      const existing = await this.findByIdempotencyKey(store.merchant.id, body.idempotencyKey)
+      if (existing) {
+        return ok({
+          ...this.confirmationFor(existing),
+          email: body.email.trim().toLowerCase(),
+          createdAt: existing.createdAt
+        })
+      }
+      summary = await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
+
+      await this.assertCodAvailable(
+        summary.store.merchant.id,
+        body.paymentMethod,
+        summary.total,
+        body.shippingAddress as { country?: string; postalCode?: string }
+      )
+
+      // Legacy "card" demo method is treated as paid-on-place; everything else waits for payment.
+      const paymentStatus = body.paymentMethod === 'card' ? 'paid' : 'unpaid'
+      let result
+      try {
+        result = await this.createOrderTx(summary.store, body, {
+          items: summary.items,
+          subtotal: summary.subtotal,
+          discountTotal: summary.discountTotal,
+          shipping: summary.shipping,
+          taxTotal: summary.taxTotal,
+          total: summary.total,
+          coupon: summary.coupon,
+          promotionId: summary.promotion?.id ?? null
+        }, { paymentStatus })
+      } catch (err) {
+        // Concurrent duplicate raced past the pre-check — the unique
+        // (merchant_id, idempotency_key) index wins; return the winner.
+        if (body.idempotencyKey && (err as { code?: string }).code === '23505') {
+          const existing = await this.findByIdempotencyKey(store.merchant.id, body.idempotencyKey)
+          if (existing) {
+            return ok({
+              ...this.confirmationFor(existing),
+              email: body.email.trim().toLowerCase(),
+              createdAt: existing.createdAt
+            })
+          }
+        }
+        throw err
+      }
+
+      void EmailsService.orderPlaced(result)
+      emit(summary.store.merchant.id, 'order.created', {
+        orderId: result.id,
+        orderNumber: result.orderNumber,
+        status: result.status,
+        paymentStatus: result.paymentStatus
+      })
+
+      // Convert the tracked shopping cart (if the shopper had one) into an order.
+      if (body.cartId) {
+        void CartsService.markConverted(summary.store.merchant.id, body.cartId, result.id)
+      }
+
+      return ok({
+        ...this.confirmationFor(result),
+        email: body.email.trim().toLowerCase(),
+        createdAt: result.createdAt
+      })
+    }
+
+    summary = await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
 
     await this.assertCodAvailable(
       summary.store.merchant.id,
@@ -1268,12 +1379,7 @@ export class StorefrontService {
     }
 
     return ok({
-      id: result.id,
-      orderNumber: result.orderNumber,
-      status: result.status,
-      paymentStatus: result.paymentStatus,
-      total: number(result.total),
-      currency: result.currency,
+      ...this.confirmationFor(result),
       email: body.email.trim().toLowerCase(),
       createdAt: result.createdAt
     })
@@ -1282,6 +1388,25 @@ export class StorefrontService {
   static async createProviderCheckout(slug: string, body: CheckoutInput) {
     const store = await this.resolveStore(slug)
     const providerId = body.paymentMethod
+
+    // Idempotent replay: the same logical checkout retried (gateway timeout /
+    // network error) returns the stored order instead of creating a duplicate
+    // order + session. No redirect URL is re-issued — the shopper lands on the
+    // confirmation page and re-verifies with the provider.
+    if (body.idempotencyKey) {
+      const existing = await this.findByIdempotencyKey(store.merchant.id, body.idempotencyKey)
+      if (existing) {
+        return ok({
+          id: existing.id,
+          orderNumber: existing.orderNumber,
+          requiresRedirect: false,
+          provider: existing.paymentProvider ?? providerId,
+          redirectUrl: '',
+          total: number(existing.total),
+          currency: existing.currency
+        })
+      }
+    }
 
     const [configRow] = await db
       .select()
@@ -1310,20 +1435,40 @@ export class StorefrontService {
 
     const summary = await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
 
-    const order = await this.createOrderTx(store, body, {
-      items: summary.items,
-      subtotal: summary.subtotal,
-      discountTotal: summary.discountTotal,
-      shipping: summary.shipping,
-      taxTotal: summary.taxTotal,
-      total: summary.total,
-      coupon: summary.coupon,
-      promotionId: summary.promotion?.id ?? null
-    }, {
-      paymentStatus: 'unpaid',
-      provider: providerId,
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000)
-    })
+    let order: typeof orders.$inferSelect
+    try {
+      order = await this.createOrderTx(store, body, {
+        items: summary.items,
+        subtotal: summary.subtotal,
+        discountTotal: summary.discountTotal,
+        shipping: summary.shipping,
+        taxTotal: summary.taxTotal,
+        total: summary.total,
+        coupon: summary.coupon,
+        promotionId: summary.promotion?.id ?? null
+      }, {
+        paymentStatus: 'unpaid',
+        provider: providerId,
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000)
+      })
+    } catch (err) {
+      // Concurrent duplicate raced past the pre-check — hand back the winner.
+      if (body.idempotencyKey && (err as { code?: string }).code === '23505') {
+        const existing = await this.findByIdempotencyKey(store.merchant.id, body.idempotencyKey)
+        if (existing) {
+          return ok({
+            id: existing.id,
+            orderNumber: existing.orderNumber,
+            requiresRedirect: false,
+            provider: existing.paymentProvider ?? providerId,
+            redirectUrl: '',
+            total: number(existing.total),
+            currency: existing.currency
+          })
+        }
+      }
+      throw err
+    }
 
     void EmailsService.orderPlaced(order)
     emit(store.merchant.id, 'order.created', {
