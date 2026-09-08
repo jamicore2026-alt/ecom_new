@@ -421,7 +421,7 @@
 				{#if order.customer}
 					<Card title="Customer">
 						<div class="text-sm">
-							<a href="/customers/{order.customer.id}" class="inline-block rounded py-1 font-medium text-primary hover:text-on-primary-fixed-variant hover:underline">
+							<a href="/customers/{order.customer.id}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:text-on-primary-fixed-variant hover:underline">
 								{order.customer.firstName ?? ''} {order.customer.lastName ?? ''}
 							</a>
 							<p class="text-secondary">{order.customer.email}</p>

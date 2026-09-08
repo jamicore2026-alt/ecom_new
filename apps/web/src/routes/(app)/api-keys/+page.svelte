@@ -187,7 +187,7 @@
 			{ key: 'deliveries', label: 'Deliveries' },
 			{ key: 'jobs', label: 'Background jobs' }
 		] as t (t.key)}
-			<button class="rounded px-3 py-1.5 text-sm font-medium transition-colors {tab === t.key ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => (tab = t.key as Tab)}>
+			<button class="rounded px-3 py-1.5 text-sm font-medium max-sm:min-h-11 max-sm:inline-flex max-sm:items-center transition-colors {tab === t.key ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => (tab = t.key as Tab)}>
 				{t.label}
 			</button>
 		{/each}

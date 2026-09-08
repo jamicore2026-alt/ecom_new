@@ -64,7 +64,7 @@
 			<div class="flex flex-col items-center gap-2 py-16 text-center">
 				<Icon name="search_off" size="text-[32px]" class="text-outline" />
 				<p class="text-sm text-secondary">This campaign could not be found.</p>
-				<a href="/campaigns" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">Back to campaigns</a>
+				<a href="/campaigns" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">Back to campaigns</a>
 			</div>
 		</Card>
 	{:else}

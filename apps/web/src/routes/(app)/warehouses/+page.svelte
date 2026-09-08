@@ -236,7 +236,7 @@
 						{#each inventoryMap[selected.id].items as it (it.id)}
 							<tr class="border-t border-outline-variant/60 transition-colors hover:bg-surface-container-low">
 								<td class="px-table-cell-x py-table-cell-y">
-									<a href="/products/{it.productId}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{it.productName}</a>
+									<a href="/products/{it.productId}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{it.productName}</a>
 								</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">
 									{#if Object.keys(it.optionValues).length}

@@ -115,7 +115,7 @@
 		<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded border border-outline-variant bg-surface-container-lowest p-1">
 			{#each tabs as t (t.id)}
 				<button
-					class="rounded px-3 py-1.5 text-sm font-medium transition-colors {tab === t.id ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}"
+					class="rounded px-3 py-1.5 text-sm font-medium max-sm:min-h-11 max-sm:inline-flex max-sm:items-center transition-colors {tab === t.id ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}"
 					onclick={() => switchTab(t.id)}
 				>
 					{t.label}
@@ -155,7 +155,22 @@
 				<p class="text-sm text-secondary">Nothing here.</p>
 			</div>
 		{:else if tab === 'history'}
-			<div class="overflow-x-auto">
+			<div class="divide-y divide-outline-variant/60 md:hidden">
+				{#each history as h (h.id)}
+					<div class="px-4 py-3">
+						<a href="/products/{h.productId}" class="inline-flex min-h-11 items-center font-medium text-primary">{h.productName}</a>
+						<p class="mt-1 text-xs text-secondary">
+							<span class="font-semibold" class:text-success={h.change > 0} class:text-error={h.change < 0}>{h.change > 0 ? `+${h.change}` : h.change}</span>
+							<span class="text-outline"> · {h.sku ?? '—'} · before {number(h.beforeValue)} → after {number(h.afterValue)}</span>
+						</p>
+						<p class="mt-0.5 text-xs text-secondary">
+							<span class="rounded-full bg-secondary/10 px-2 py-0.5">{titleCase(h.reason)}</span>
+							<span class="text-outline"> · {dateTime(h.createdAt)}</span>
+						</p>
+					</div>
+				{/each}
+			</div>
+			<div class="hidden overflow-x-auto md:block">
 				<table class="w-full text-left text-sm">
 					<thead>
 						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
@@ -191,7 +206,34 @@
 			</div>
 			<Pagination {meta} {onPage} />
 		{:else}
-			<div class="overflow-x-auto">
+			<div class="divide-y divide-outline-variant/60 md:hidden">
+				{#each items as it (it.id)}
+					<div class="flex items-start gap-3 px-4 py-3">
+						<div class="min-w-0 flex-1">
+							<a href="/products/{it.productId}" class="inline-flex min-h-11 items-center font-medium text-primary">{it.productName}</a>
+							<p class="mt-0.5 truncate text-xs text-secondary">
+								{#if Object.keys(it.optionValues ?? {}).length}
+									{Object.entries(it.optionValues).map(([k, v]) => `${k}: ${v}`).join(', ')}
+								{:else}
+									Default
+								{/if}
+								<span class="text-outline"> · {it.sku ?? '—'}</span>
+							</p>
+							<p class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+								<span class="font-mono-label text-mono-label text-on-surface">{currency(it.price)}</span>
+								<Badge label={it.productStatus} />
+								<span class:font-semibold={true} class:text-error={it.inventory === 0} class:text-warning={it.inventory > 0 && it.trackInventory && it.inventory <= it.lowStockThreshold}>
+									{number(it.inventory)} in stock
+								</span>
+							</p>
+						</div>
+						{#if canWrite()}
+							<button class="inline-flex min-h-11 shrink-0 items-center rounded px-2 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => { adjustTarget = it; adjustChange = '1'; adjustReason = 'adjustment' }}>Adjust</button>
+						{/if}
+					</div>
+				{/each}
+			</div>
+			<div class="hidden overflow-x-auto md:block">
 				<table class="w-full text-left text-sm">
 					<thead>
 						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">

@@ -118,7 +118,7 @@
 								{#each orders as o (o.id)}
 									<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
 										<td class="px-table-cell-x py-table-cell-y">
-											<a href="/orders/{o.id}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">#{o.orderNumber}</a>
+											<a href="/orders/{o.id}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">#{o.orderNumber}</a>
 										</td>
 										<td class="px-table-cell-x py-table-cell-y"><Badge label={o.status} /></td>
 										<td class="px-table-cell-x py-table-cell-y"><Badge label={o.paymentStatus} /></td>

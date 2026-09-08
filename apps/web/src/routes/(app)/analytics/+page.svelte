@@ -58,6 +58,14 @@
 	function barWidth(v: number, max: number) {
 		return max > 0 ? `${Math.max(3, (v / max) * 100)}%` : '3%'
 	}
+
+	function deltaClass(v: number) {
+		return v > 0 ? 'text-success' : v < 0 ? 'text-error' : 'text-secondary'
+	}
+
+	function deltaText(v: number) {
+		return `${v > 0 ? '+' : ''}${v}% vs prev`
+	}
 </script>
 
 <svelte:head>
@@ -84,7 +92,7 @@
 		<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded border border-outline-variant bg-surface-container-lowest p-1">
 			{#each ['sales', 'products', 'customers', 'conversion'] as t (t)}
 				<button
-					class="rounded px-3 py-1.5 text-sm font-medium transition-colors {tab === t ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}"
+					class="rounded px-3 py-1.5 text-sm font-medium max-sm:min-h-11 max-sm:inline-flex max-sm:items-center transition-colors {tab === t ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}"
 					onclick={() => switchTab(t as Tab)}
 				>
 					{t[0].toUpperCase() + t.slice(1)}
@@ -103,12 +111,12 @@
 				<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
 					<p class="text-xs text-secondary">Revenue</p>
 					<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{currency(sales.revenue)}</p>
-					<p class="mt-0.5 text-xs text-success">{sales.comparison.revenueDeltaPct > 0 ? '+' : ''}{sales.comparison.revenueDeltaPct}% vs prev</p>
+					<p class="mt-0.5 text-xs {deltaClass(sales.comparison.revenueDeltaPct)}">{deltaText(sales.comparison.revenueDeltaPct)}</p>
 				</div>
 				<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
 					<p class="text-xs text-secondary">Orders</p>
 					<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{number(sales.orders)}</p>
-					<p class="mt-0.5 text-xs text-success">{sales.comparison.ordersDeltaPct > 0 ? '+' : ''}{sales.comparison.ordersDeltaPct}% vs prev</p>
+					<p class="mt-0.5 text-xs {deltaClass(sales.comparison.ordersDeltaPct)}">{deltaText(sales.comparison.ordersDeltaPct)}</p>
 				</div>
 				<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
 					<p class="text-xs text-secondary">Avg order value</p>
@@ -246,7 +254,7 @@
 							{#each customers.topSpenders as c (c.id)}
 								<li class="flex items-center justify-between gap-3 px-5 py-3">
 									<div class="min-w-0">
-										<a href="/customers/{c.id}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{c.firstName ?? ''} {c.lastName ?? ''}</a>
+										<a href="/customers/{c.id}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{c.firstName ?? ''} {c.lastName ?? ''}</a>
 										<p class="text-xs text-secondary">{c.ordersCount} orders</p>
 									</div>
 									<span class="font-mono-label text-mono-label text-on-surface">{currency(c.totalSpent)}</span>
@@ -261,12 +269,12 @@
 				<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
 					<p class="text-xs text-secondary">Conversion rate</p>
 					<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{pct(conversion.conversionRate)}</p>
-					<p class="mt-0.5 text-xs text-success">{conversion.comparison.conversionDeltaPct > 0 ? '+' : ''}{conversion.comparison.conversionDeltaPct}% vs prev</p>
+					<p class="mt-0.5 text-xs {deltaClass(conversion.comparison.conversionDeltaPct)}">{deltaText(conversion.comparison.conversionDeltaPct)}</p>
 				</div>
 				<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
 					<p class="text-xs text-secondary">Views</p>
 					<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{number(conversion.views)}</p>
-					<p class="mt-0.5 text-xs text-success">{conversion.comparison.viewsDeltaPct > 0 ? '+' : ''}{conversion.comparison.viewsDeltaPct}% vs prev</p>
+					<p class="mt-0.5 text-xs {deltaClass(conversion.comparison.viewsDeltaPct)}">{deltaText(conversion.comparison.viewsDeltaPct)}</p>
 				</div>
 				<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
 					<p class="text-xs text-secondary">Cart adds</p>

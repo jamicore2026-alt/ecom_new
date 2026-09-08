@@ -243,7 +243,36 @@
 				<p class="text-sm text-secondary">{t('products.noProducts')}</p>
 			</div>
 		{:else}
-			<div class="overflow-x-auto">
+			<div class="divide-y divide-outline-variant/60 md:hidden">
+				{#each items as p (p.id)}
+					<div class="flex items-start gap-3 px-4 py-3">
+						{#if canWrite()}
+							<input type="checkbox" class="mt-1 field-check" checked={selected.includes(p.id)} onchange={() => toggle(p.id)} aria-label="Select {p.name}" />
+						{/if}
+						<div class="min-w-0 flex-1">
+							<a href="/products/{p.id}" class="inline-flex min-h-11 items-center font-medium text-primary">{p.name}</a>
+							<p class="mt-0.5 text-xs text-secondary">{p.sku ?? '—'} · {dateTime(p.updatedAt)}</p>
+							<p class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+								<span class="font-mono-label text-mono-label text-on-surface">{currency(p.price)}</span>
+								<Badge label={p.status} />
+								<span class:font-semibold={p.stock > 0} class:text-error={p.stock <= 0 && p.trackInventory} class:text-on-surface-variant={p.stock > 0}>
+									{number(p.stock)} in stock
+								</span>
+								{#if p.variantCount > 1}
+									<span class="text-outline">({p.variantCount} variants)</span>
+								{/if}
+							</p>
+						</div>
+						{#if canWrite()}
+							<div class="flex shrink-0 items-center gap-1">
+								<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => { editProduct = p; editOpen = true }}>Edit</button>
+								<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => archiveProduct(p)}>Archive</button>
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+			<div class="hidden overflow-x-auto md:block">
 				<table class="w-full text-left text-sm">
 					<thead>
 						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">

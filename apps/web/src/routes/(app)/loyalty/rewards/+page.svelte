@@ -121,10 +121,10 @@
 </svelte:head>
 
 <div class="mb-6 flex flex-wrap gap-1 rounded border border-outline-variant bg-surface-container-lowest p-1">
-	<a href="/loyalty" class="rounded px-3 py-1.5 text-sm font-medium text-secondary transition-colors hover:bg-surface-container hover:text-on-surface">Overview</a>
-	<a href="/loyalty/tiers" class="rounded px-3 py-1.5 text-sm font-medium text-secondary transition-colors hover:bg-surface-container hover:text-on-surface">Tiers</a>
-	<a href="/loyalty/rules" class="rounded px-3 py-1.5 text-sm font-medium text-secondary transition-colors hover:bg-surface-container hover:text-on-surface">Earning rules</a>
-	<a href="/loyalty/rewards" aria-current="page" class="rounded bg-surface-container px-3 py-1.5 text-sm font-medium text-on-surface">Rewards catalog</a>
+	<a href="/loyalty" class="rounded px-3 py-1.5 text-sm font-medium max-sm:min-h-11 max-sm:inline-flex max-sm:items-center text-secondary transition-colors hover:bg-surface-container hover:text-on-surface">Overview</a>
+	<a href="/loyalty/tiers" class="rounded px-3 py-1.5 text-sm font-medium max-sm:min-h-11 max-sm:inline-flex max-sm:items-center text-secondary transition-colors hover:bg-surface-container hover:text-on-surface">Tiers</a>
+	<a href="/loyalty/rules" class="rounded px-3 py-1.5 text-sm font-medium max-sm:min-h-11 max-sm:inline-flex max-sm:items-center text-secondary transition-colors hover:bg-surface-container hover:text-on-surface">Earning rules</a>
+	<a href="/loyalty/rewards" aria-current="page" class="rounded bg-surface-container px-3 py-1.5 text-sm font-medium max-sm:min-h-11 max-sm:inline-flex max-sm:items-center text-on-surface">Rewards catalog</a>
 </div>
 
 {#if !canRead()}

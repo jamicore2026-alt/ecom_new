@@ -76,9 +76,7 @@
 		<div class="lg:grid lg:grid-cols-[240px_1fr]">
 			<!-- Sidebar -->
 			<aside
-				class="fixed inset-y-0 left-0 z-30 flex w-sidebar-width flex-col transform border-r border-outline-variant bg-surface transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0"
-				class:translate-x-0={sidebarOpen}
-				class:-translate-x-full={!sidebarOpen}
+				class="fixed inset-y-0 start-0 z-30 flex w-sidebar-width flex-col transform border-e border-outline-variant bg-surface transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 {sidebarOpen ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full'}"
 			>
 				<!-- Brand -->
 				<div class="flex h-16 shrink-0 items-center gap-3 border-b border-outline-variant px-container-padding">
@@ -106,7 +104,7 @@
 										href={item.route}
 										onclick={() => (sidebarOpen = false)}
 										title={t(item.key ?? item.label)}
-										class="flex items-center gap-3 rounded border-l-2 px-3 py-2.5 text-sm font-medium transition-colors"
+										class="flex items-center gap-3 rounded border-s-2 px-3 py-2.5 text-sm font-medium transition-colors"
 										class:bg-surface-container={active === item.route || active.startsWith(item.route + '/')}
 										class:text-primary={active === item.route || active.startsWith(item.route + '/')}
 										class:border-primary={active === item.route || active.startsWith(item.route + '/')}
@@ -128,7 +126,7 @@
 					<a
 						href="/settings"
 						onclick={() => (sidebarOpen = false)}
-						class="flex items-center gap-3 rounded border-l-2 border-transparent px-3 py-2.5 text-sm font-medium text-secondary transition-colors hover:bg-surface-container-low"
+						class="flex items-center gap-3 rounded border-s-2 border-transparent px-3 py-2.5 text-sm font-medium text-secondary transition-colors hover:bg-surface-container-low"
 						class:bg-surface-container={active.startsWith('/settings')}
 						class:text-primary={active.startsWith('/settings')}
 					>

@@ -98,7 +98,7 @@
 
 	<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded border border-outline-variant bg-surface-container-lowest p-1">
 		{#each ['all', 'draft', 'sent'] as s (s)}
-			<button class="rounded px-3 py-1.5 text-sm font-medium transition-colors {statusFilter === s ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => (statusFilter = s)}>
+			<button class="rounded px-3 py-1.5 text-sm font-medium max-sm:min-h-11 max-sm:inline-flex max-sm:items-center transition-colors {statusFilter === s ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => (statusFilter = s)}>
 				{s[0].toUpperCase() + s.slice(1)}
 			</button>
 		{/each}
@@ -137,7 +137,7 @@
 						{#each filtered as c (c.id)}
 							<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
 								<td class="px-table-cell-x py-table-cell-y">
-									<a href="/campaigns/{c.id}" class="inline-block rounded py-1 font-medium text-on-surface hover:text-primary">
+									<a href="/campaigns/{c.id}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-on-surface hover:text-primary">
 										<span class="truncate">{c.name}</span>
 										{#if c.subject}<span class="block text-xs font-normal text-secondary">{c.subject}</span>{/if}
 									</a>

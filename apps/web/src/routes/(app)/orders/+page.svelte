@@ -112,7 +112,25 @@
 				<p class="text-sm text-secondary">No orders found.</p>
 			</div>
 		{:else}
-			<div class="overflow-x-auto">
+			<div class="divide-y divide-outline-variant/60 md:hidden">
+				{#each items as o (o.id)}
+					<a href="/orders/{o.id}" class="block px-4 py-3 transition-colors hover:bg-surface-container-low">
+						<div class="flex items-center justify-between gap-3">
+							<p class="font-medium text-primary">#{o.orderNumber}</p>
+							<span class="font-mono-label text-mono-label text-on-surface">{currency(o.total, o.currency)}</span>
+						</div>
+						<div class="mt-1 flex items-center justify-between gap-3">
+							<p class="text-xs text-secondary">{o.customerName || 'Guest'}</p>
+							<span class="flex items-center gap-2">
+								<Badge label={o.status} />
+								<Badge label={o.paymentStatus} />
+							</span>
+						</div>
+						<p class="mt-0.5 text-xs text-secondary">{o.itemCount} items · {timeAgo(o.createdAt)}</p>
+					</a>
+				{/each}
+			</div>
+			<div class="hidden overflow-x-auto md:block">
 				<table class="w-full text-left text-sm">
 					<thead>
 						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">

@@ -140,7 +140,7 @@
 		<div class="flex flex-wrap items-center gap-2 px-5 py-3">
 			<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded border border-outline-variant bg-surface-container-lowest p-1">
 				<button
-					class="rounded px-3 py-1.5 text-sm font-medium transition-colors {statusFilter === '' ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}"
+					class="rounded px-3 py-1.5 text-sm font-medium max-sm:min-h-11 max-sm:inline-flex max-sm:items-center transition-colors {statusFilter === '' ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}"
 					onclick={() => (statusFilter = '')}
 				>
 					All transfers
@@ -185,14 +185,14 @@
 						{#each filtered as t (t.id)}
 							<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
 								<td class="px-table-cell-x py-table-cell-y">
-									<a href="/transfers/{t.id}" class="inline-block rounded py-1 font-mono-label text-mono-label font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">
+									<a href="/transfers/{t.id}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-mono-label text-mono-label font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">
 										#{t.id.slice(0, 8).toUpperCase()}
 									</a>
 								</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{t.sourceName ?? '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{t.destinationName ?? '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">
-									<a href="/products/{t.productId}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{itemLabel(t)}</a>
+									<a href="/products/{t.productId}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{itemLabel(t)}</a>
 								</td>
 								<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTime(t.createdAt)}</td>
 								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label font-medium text-on-surface">{number(t.quantity)}</td>

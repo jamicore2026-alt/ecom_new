@@ -370,7 +370,7 @@
 
 		<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border border-outline-variant bg-surface-container-lowest p-1">
 			{#each sections as s (s.id)}
-				<button class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {section === s.id ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => switchSection(s.id)}>
+				<button class="rounded-md px-3 py-1.5 text-sm font-medium max-sm:min-h-11 max-sm:inline-flex max-sm:items-center transition-colors {section === s.id ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => switchSection(s.id)}>
 					{s.label}
 				</button>
 			{/each}

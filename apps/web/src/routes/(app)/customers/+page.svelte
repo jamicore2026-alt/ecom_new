@@ -6,7 +6,7 @@
 	import Card from '$lib/components/Card.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import Icon from '$lib/components/Icon.svelte'
-	import { currency, dateTime, number } from '$lib/format'
+	import { currency, dateTime, number, timeAgo } from '$lib/format'
 	import { t } from '$lib/i18n'
 	import type { Customer, PaginationMeta } from '$lib/types'
 
@@ -114,7 +114,26 @@
 				<p class="text-sm text-secondary">No customers found.</p>
 			</div>
 		{:else}
-			<div class="overflow-x-auto">
+			<div class="divide-y divide-outline-variant/60 md:hidden">
+				{#each items as c (c.id)}
+					<a href="/customers/{c.id}" class="block px-4 py-3 transition-colors hover:bg-surface-container-low">
+						<div class="flex items-center justify-between gap-3">
+							<p class="font-medium text-primary">{c.firstName ?? ''} {c.lastName ?? ''}</p>
+							<span class="font-mono-label text-mono-label text-on-surface">{currency(c.totalSpent)}</span>
+						</div>
+						<p class="mt-1 text-xs text-secondary">{c.email}{#if c.phone}<span class="text-outline"> · {c.phone}</span>{/if}</p>
+						<p class="mt-1 text-xs text-secondary">{number(c.ordersCount)} orders · {c.lastOrderAt ? 'Last ' + timeAgo(c.lastOrderAt) : 'No orders'}</p>
+						{#if c.tags.length}
+							<span class="mt-1.5 flex flex-wrap gap-1">
+								{#each c.tags as t (t)}
+									<span class="inline-block rounded-full border border-outline-variant bg-surface-container-low px-2 py-0.5 text-xs text-on-surface-variant">{t}</span>
+								{/each}
+							</span>
+						{/if}
+					</a>
+				{/each}
+			</div>
+			<div class="hidden overflow-x-auto md:block">
 				<table class="w-full text-left text-sm">
 					<thead>
 						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">

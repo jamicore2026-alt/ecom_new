@@ -60,7 +60,7 @@
 			<div class="flex flex-col items-center gap-2 py-16 text-center">
 				<Icon name="search_off" size="text-[32px]" class="text-outline" />
 				<p class="text-sm text-secondary">This transfer could not be found.</p>
-				<a href="/transfers" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">Back to transfers</a>
+				<a href="/transfers" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">Back to transfers</a>
 			</div>
 		</Card>
 	{:else}
@@ -104,7 +104,7 @@
 					<Icon name="inventory_2" size="text-[18px]" class="text-primary" />
 				</div>
 				{#if transfer.productId}
-					<a href="/products/{transfer.productId}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{transfer.productName}</a>
+					<a href="/products/{transfer.productId}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{transfer.productName}</a>
 				{:else}
 					<p class="font-medium text-on-surface">{transfer.productName ?? '—'}</p>
 				{/if}

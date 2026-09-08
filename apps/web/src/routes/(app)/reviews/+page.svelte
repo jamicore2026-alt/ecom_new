@@ -146,7 +146,7 @@
 								{/if}
 							</div>
 							<div class="w-full sm:w-52">
-								<a href="/products/{review.productId}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">
+								<a href="/products/{review.productId}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">
 									{review.productName ?? review.productId}
 								</a>
 								<p class="mt-0.5 truncate text-xs text-secondary">

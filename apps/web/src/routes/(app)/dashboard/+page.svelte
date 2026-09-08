@@ -186,7 +186,7 @@
 						{#each data.topProducts as p (p.productId)}
 							<li class="flex items-center justify-between gap-3">
 								<div class="min-w-0">
-									<a href="/products/{p.productId}" class="inline-block truncate py-1 text-sm font-medium text-primary hover:text-on-primary-fixed-variant hover:underline">{p.name}</a>
+									<a href="/products/{p.productId}" class="inline-block truncate py-1 text-sm font-medium text-primary max-sm:py-3 hover:text-on-primary-fixed-variant hover:underline">{p.name}</a>
 									<p class="text-xs text-secondary">{number(p.quantity)} {t('dash.sold')}</p>
 								</div>
 								<div class="flex items-center gap-2">
@@ -221,7 +221,7 @@
 							{#each data.recentOrders as o (o.id)}
 								<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
 									<td class="px-table-cell-x py-table-cell-y font-medium text-primary">
-										<a href="/orders/{o.id}" class="lowercase" title={o.orderNumber}>#{formatOrderNumber(o.orderNumber)}</a>
+										<a href="/orders/{o.id}" class="lowercase max-sm:inline-flex max-sm:min-h-11 max-sm:items-center" title={o.orderNumber}>#{formatOrderNumber(o.orderNumber)}</a>
 									</td>
 									<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{o.customerName}</td>
 									<td class="px-table-cell-x py-table-cell-y"><Badge label={o.status} /></td>

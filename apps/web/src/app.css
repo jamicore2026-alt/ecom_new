@@ -58,7 +58,7 @@
 	--color-background: #f8f9ff;
 	--color-on-background: #0b1c30;
 
-	--color-success: #059669;
+	--color-success: #047857;
 	--color-on-success: #ffffff;
 	--color-danger: #d92d20;
 	--color-warning: #b45309;
@@ -248,5 +248,17 @@
 		border: 1px solid var(--color-outline);
 		background-color: var(--color-surface-container-lowest);
 		accent-color: var(--color-primary);
+	}
+}
+
+/* Touch-target sizing: guarantee a ~44px tap area for form controls and
+   other compact interactive elements on small screens without inflating
+   desktop-density layouts. */
+@media (max-width: 640px) {
+	.field,
+	select,
+	input:not([type='checkbox']):not([type='radio']),
+	textarea {
+		min-height: 2.75rem;
 	}
 }
