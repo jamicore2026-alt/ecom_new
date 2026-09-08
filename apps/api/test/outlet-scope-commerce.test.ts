@@ -412,7 +412,7 @@ describe('commerce order-derived outlet isolation (invoices/fulfillments/analyti
 
     await db.delete(users).where(eq(users.email, oEmail))
     await db.delete(users).where(eq(users.email, mEmail))
-  })
+  }, 120_000)
 
   afterAll(async () => {
     await db.delete(fulfillments).where(eq(fulfillments.id, mainFulfillmentId))

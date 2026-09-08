@@ -33,41 +33,45 @@ phase-gated tests.
     over-restocking beyond the ordered quantity.
 11. **Transfers move stock atomically**: source decrements and destination
     increments in the same transaction with the source row locked.
+12. **Goods receipts never over-receive a PO line**: received quantity is
+    capped at outstanding (`quantity - received_quantity`), line updates are
+    transactional, and a receipt moves stock into a warehouse *and* the global
+    ledger in one transaction with `reason: purchase`.
 
 ## Order lifecycle
 
-12. **Only valid state transitions are allowed** (see `docs/lifecycles.md`);
+13. **Only valid state transitions are allowed** (see `docs/lifecycles.md`);
     every write validates the previous state.
-13. **Cancelling a pending/unpaid order restores stock and coupon usage**;
+14. **Cancelling a pending/unpaid order restores stock and coupon usage**;
     paid orders require the refund path.
-14. **Food orders are idempotent** via `(merchant, idempotencyKey)`; POS sales
+15. **Food orders are idempotent** via `(merchant, idempotencyKey)`; POS sales
     reuse the same mechanism with a per-sale UUID.
 
 ## Idempotency
 
-15. All money- and stock-changing operations (checkout, POS sale, payment
-    capture, refund, stock adjust/transfer, goods receipt when introduced,
+16. All money- and stock-changing operations (checkout, POS sale, payment
+    capture, refund, stock adjust/transfer, goods receipt,
     production, loyalty award) must be repeatable without duplicating
     business effects — generally via a unique `(merchant, key)` constraint.
 
 ## Loyalty
 
-16. **Points change only through the ledger** — always a `loyalty_ledger`
+17. **Points change only through the ledger** — always a `loyalty_ledger`
     row; balance can never go negative; earn/redeem/reversal are atomic.
 
 ## Multi-tenancy & authorization
 
-17. **Every request is merchant-scoped**; out-of-tenant records are
+18. **Every request is merchant-scoped**; out-of-tenant records are
     unreachable. IDOR is rejected server-side.
-18. **Outlet-sensitive operations validate the user → merchant → outlet
+19. **Outlet-sensitive operations validate the user → merchant → outlet
     chain**; browser-supplied `outletId` is never trusted.
-19. Frontend hiding is not authorization — server guards are mandatory.
+20. Frontend hiding is not authorization — server guards are mandatory.
 
 ## Integrity
 
-20. Financial numbers (overview, analytics, profit) are derived from
+21. Financial numbers (overview, analytics, profit) are derived from
     transaction tables, not cached/estimated figures.
-21. Destructive actions require permission + server validation + transaction
+22. Destructive actions require permission + server validation + transaction
     + audit event + UI refresh.
-22. Important business actions are audited (`audit_logs`): actor, action,
+23. Important business actions are audited (`audit_logs`): actor, action,
     resource, resource ID, timestamp, metadata.

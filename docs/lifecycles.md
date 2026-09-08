@@ -106,3 +106,15 @@ created → assigned → picked_up → arrived → delivered  (+ failed/cancelle
 - Every stock change is an `inventory_logs` row with a `reason`.
 - Sale decrement, cancel restore, return restock, manual adjustment, and bulk
   set all go through locked, transactional helpers (`shared/inventory.ts`).
+
+## Purchase order (`purchase_orders.status`)
+
+- `draft → pending → approved → (partial →)* received | cancelled`.
+- `draft` items are editable; `submit` (`pending`) and `approve` (`approved`,
+  stamps `approvedAt`/`approvedBy`) lock the line set.
+- Receiving is partial by default: each `goods_receipt` moves stock into a
+  warehouse while the global variant ledger is incremented in the same
+  transaction (`reason: purchase`, `reference: <receiptNumber>`). The PO is
+  `partial` while lines remain and `received` once all `quantity` is met.
+- A PO can be cancelled until its first receipt; terminal `received`/`cancelled`
+  POs cannot transition.

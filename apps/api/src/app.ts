@@ -21,6 +21,7 @@ import { fulfillmentsModule } from './modules/fulfillments'
 import { cartsModule } from './modules/carts'
 import { invoicesModule } from './modules/invoices'
 import { warehousesModule } from './modules/warehouses'
+import { procurementModule } from './modules/procurement'
 import { apiKeysModule } from './modules/api-keys'
 import { loyaltyModule } from './modules/loyalty'
 import { affiliatesModule } from './modules/affiliates'
@@ -105,7 +106,8 @@ export const app = new Elysia({
         { name: 'Settings', description: 'Store, payments, shipping, taxes and staff' },
         { name: 'Storefront', description: 'Public storefront endpoints (no auth required)' },
         { name: 'Webhooks', description: 'Payment provider webhooks (signed/verified server-side)' },
-        { name: 'Uploads', description: 'Product image uploads and file serving' }
+        { name: 'Uploads', description: 'Product image uploads and file serving' },
+          { name: 'Procurement', description: 'Suppliers, purchase orders and goods receipts' }
         ]
       }
     })
@@ -133,6 +135,7 @@ export const app = new Elysia({
   .use(cartsModule)
   .use(invoicesModule)
   .use(warehousesModule)
+  .use(procurementModule)
   .use(apiKeysModule)
   .use(loyaltyModule)
   .use(affiliatesModule)

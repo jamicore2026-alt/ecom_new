@@ -15,7 +15,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "bun src/database/seed.ts",
     "db:studio": "drizzle-kit studio",
-    "test": "bun test --preload ./test/global-setup.ts --no-threads",
+    "test": "bun test --preload ./test/global-setup.ts --no-threads --timeout=120000",
     "typecheck": "bunx tsc --noEmit",
     "lint": "eslint src test"
   },

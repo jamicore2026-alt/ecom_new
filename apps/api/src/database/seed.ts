@@ -209,7 +209,8 @@ export async function seed() {
       warehouse_inventory, warehouses, webhook_deliveries, webhook_endpoints,
       webhook_events, wishlist_items, notification_settings, store_settings,
       payment_settings, shipping_settings, tax_settings, checkout_settings,
-      theme_configs, cod_rules, merchants
+      theme_configs, cod_rules, suppliers, purchase_orders, purchase_order_items,
+      goods_receipts, goods_receipt_items, merchants
     RESTART IDENTITY CASCADE
   `)
 

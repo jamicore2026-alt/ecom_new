@@ -220,6 +220,12 @@ export type RefundStatus = (typeof REFUND_STATUSES)[number]
 export const INVENTORY_REASONS = ['sale', 'adjustment', 'purchase', 'return', 'cancel'] as const
 export type InventoryReason = (typeof INVENTORY_REASONS)[number]
 
+export const PURCHASE_ORDER_STATUSES = ['draft', 'pending', 'approved', 'partial', 'received', 'cancelled'] as const
+export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number]
+
+export const SUPPLIER_STATUSES = ['active', 'inactive'] as const
+export type SupplierStatus = (typeof SUPPLIER_STATUSES)[number]
+
 export const CHANNELS = ['organic', 'paid', 'social', 'email', 'direct'] as const
 export type Channel = (typeof CHANNELS)[number]
 

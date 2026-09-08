@@ -72,6 +72,11 @@ Products, inventory, customers, discounts, campaigns and warehouses carry no
 per-outlet row to leak, so no outlet filter applies (catalog/customer/settings
 data is common to every branch).
 
+Procurement (suppliers, purchase orders, goods receipts) declared **merchant-wide
+by design** at introduction (consistent with products/warehouses/inventory): the
+tables carry no `outletId`, so the procurement module needs no outlet guard —
+merchant-wide read/write gated only by `inventory.read` / `inventory.manage`.
+
 **Gap**: every restaurant-era `list` read is now default-deny outlet-scoped or
 an explicit merchant-wide entity. The remaining decision points are documented
 in "Planned evolution" (delivery driver pool and menu catalog are merchant-wide
@@ -82,7 +87,7 @@ by design, with their per-outlet write surfaces already asserted).
 - Confirm remaining restaurant-era semantics with product: menu sales/
   availability reporting by outlet (merchant-wide catalog, so outlet-gated
   *reporting* is a future analytics concern, not a row-isolation one).
-- Every new domain (procurement, production/BOM, recipes, stock counts)
+- Every new domain (production/BOM, recipes, stock counts)
   must declare its outlet/merchant scope when introduced.
 - Default-deny for outlet-required operations; merchant-wide operations stay
   merchant-scoped.

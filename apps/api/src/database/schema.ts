@@ -1432,6 +1432,124 @@ export const stockTransfers = pgTable(
   (t) => [index('stock_transfers_merchant_idx').on(t.merchantId)]
 )
 
+/* ------------------------------- procurement ------------------------------ */
+
+export const suppliers = pgTable(
+  'suppliers',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 255 }).notNull(),
+    contactName: varchar('contact_name', { length: 255 }),
+    email: varchar('email', { length: 255 }),
+    phone: varchar('phone', { length: 50 }),
+    address: jsonb('address').$type<Address>().notNull().default({}),
+    taxId: varchar('tax_id', { length: 100 }),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    index('suppliers_merchant_idx').on(t.merchantId),
+    index('suppliers_name_idx').on(t.merchantId, t.name)
+  ]
+)
+
+export const purchaseOrders = pgTable(
+  'purchase_orders',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    poNumber: varchar('po_number', { length: 50 }).notNull(),
+    supplierId: varchar('supplier_id', { length: 30 })
+      .notNull()
+      .references(() => suppliers.id, { onDelete: 'restrict' }),
+    status: varchar('status', { length: 20 }).notNull().default('draft'),
+    expectedAt: timestamp('expected_at'),
+    notes: text('notes'),
+    // currency is inherited from the merchant; totals are snapshotted so cost
+    // history survives later price changes
+    subtotal: numeric('subtotal', { precision: 12, scale: 3, mode: 'number' }).notNull().default(0),
+    approvedAt: timestamp('approved_at'),
+    approvedBy: varchar('approved_by', { length: 30 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('purchase_orders_merchant_number_idx').on(t.merchantId, t.poNumber),
+    index('purchase_orders_merchant_idx').on(t.merchantId),
+    index('purchase_orders_supplier_idx').on(t.supplierId)
+  ]
+)
+
+export const purchaseOrderItems = pgTable(
+  'purchase_order_items',
+  {
+    id: id('id').primaryKey(),
+    purchaseOrderId: varchar('purchase_order_id', { length: 30 })
+      .notNull()
+      .references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+    variantId: varchar('variant_id', { length: 30 })
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'restrict' }),
+    quantity: integer('quantity').notNull().default(1),
+    // unit cost snapshot so the order total is stable
+    unitCost: numeric('unit_cost', { precision: 12, scale: 3, mode: 'number' }).notNull().default(0),
+    receivedQuantity: integer('received_quantity').notNull().default(0)
+  },
+  (t) => [
+    index('purchase_order_items_order_idx').on(t.purchaseOrderId),
+    index('purchase_order_items_variant_idx').on(t.variantId)
+  ]
+)
+
+export const goodsReceipts = pgTable(
+  'goods_receipts',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    receiptNumber: varchar('receipt_number', { length: 50 }).notNull(),
+    purchaseOrderId: varchar('purchase_order_id', { length: 30 })
+      .notNull()
+      .references(() => purchaseOrders.id, { onDelete: 'restrict' }),
+    warehouseId: varchar('warehouse_id', { length: 30 })
+      .notNull()
+      .references(() => warehouses.id, { onDelete: 'restrict' }),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdBy: varchar('created_by', { length: 30 })
+  },
+  (t) => [
+    uniqueIndex('goods_receipts_merchant_number_idx').on(t.merchantId, t.receiptNumber),
+    index('goods_receipts_merchant_idx').on(t.merchantId),
+    index('goods_receipts_order_idx').on(t.purchaseOrderId),
+    index('goods_receipts_warehouse_idx').on(t.warehouseId)
+  ]
+)
+
+export const goodsReceiptItems = pgTable(
+  'goods_receipt_items',
+  {
+    id: id('id').primaryKey(),
+    goodsReceiptId: varchar('goods_receipt_id', { length: 30 })
+      .notNull()
+      .references(() => goodsReceipts.id, { onDelete: 'cascade' }),
+    purchaseOrderItemId: varchar('purchase_order_item_id', { length: 30 })
+      .notNull()
+      .references(() => purchaseOrderItems.id, { onDelete: 'restrict' }),
+    variantId: varchar('variant_id', { length: 30 })
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'restrict' }),
+    quantity: integer('quantity').notNull().default(1),
+    unitCost: numeric('unit_cost', { precision: 12, scale: 3, mode: 'number' }).notNull().default(0)
+  },
+  (t) => [
+    index('goods_receipt_items_receipt_idx').on(t.goodsReceiptId),
+    index('goods_receipt_items_order_item_idx').on(t.purchaseOrderItemId)
+  ]
+)
+
 /* --------------------------- customer segments --------------------------- */
 
 export const customerSegments = pgTable(
@@ -1804,6 +1922,11 @@ export const table = {
   warehouses,
   warehouseInventory,
   stockTransfers,
+  suppliers,
+  purchaseOrders,
+  purchaseOrderItems,
+  goodsReceipts,
+  goodsReceiptItems,
   customerSegments,
   loyaltyAccounts,
   loyaltyLedger,
@@ -1925,6 +2048,16 @@ export type WarehouseInventory = typeof warehouseInventory.$inferSelect
 export type NewWarehouseInventory = typeof warehouseInventory.$inferInsert
 export type StockTransfer = typeof stockTransfers.$inferSelect
 export type NewStockTransfer = typeof stockTransfers.$inferInsert
+export type Supplier = typeof suppliers.$inferSelect
+export type NewSupplier = typeof suppliers.$inferInsert
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect
+export type NewPurchaseOrder = typeof purchaseOrders.$inferInsert
+export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect
+export type NewPurchaseOrderItem = typeof purchaseOrderItems.$inferInsert
+export type GoodsReceipt = typeof goodsReceipts.$inferSelect
+export type NewGoodsReceipt = typeof goodsReceipts.$inferInsert
+export type GoodsReceiptItem = typeof goodsReceiptItems.$inferSelect
+export type NewGoodsReceiptItem = typeof goodsReceiptItems.$inferInsert
 export type CustomerSegment = typeof customerSegments.$inferSelect
 export type NewCustomerSegment = typeof customerSegments.$inferInsert
 export type LoyaltyAccount = typeof loyaltyAccounts.$inferSelect
