@@ -65,10 +65,12 @@ describe('Production: BOMs and production orders (merchant-wide)', () => {
     const list = await call('/api/store/acme-store/products?limit=100')
     const productsArr = list.body.data.items as Array<{ slug: string; stock: number }>
     const compProduct = productsArr.find((i: any) => i.stock >= 10)
+    if (!compProduct) throw new Error('no stocked product found')
     const compDetail = await call(`/api/store/acme-store/products/${compProduct.slug}`)
     componentVariantId = compDetail.body.data.variants[0].id
 
     const outProduct = productsArr.find((i: any) => i.slug !== compProduct.slug)
+    if (!outProduct) throw new Error('no second product found')
     const outDetail = await call(`/api/store/acme-store/products/${outProduct.slug}`)
     outputVariantId = outDetail.body.data.variants[0].id
 

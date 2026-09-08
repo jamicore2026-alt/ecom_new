@@ -13,7 +13,7 @@ import { SettingsService } from '../src/modules/settings/service'
 const call = async (path: string, init?: RequestInit) => {
   const res = await app.handle(new Request(`http://localhost${path}`, init))
   const text = await res.text()
-  let body: unknown
+  let body: any
   try {
     body = JSON.parse(text)
   } catch {
@@ -167,7 +167,6 @@ describe('permission convergence (P2-2)', () => {
       permissions: ['settings:write', 'orders.read']
     })
     expect(created.success).toBe(true)
-    // @ts-expect-error data.wrapper type unknown
     expect(created.data.permissions).toEqual(['settings.manage', 'orders.read'])
     createdStaffEmails.push(email)
   })

@@ -236,7 +236,7 @@ export class FoodOrdersService {
    * tender). A real `payment_transactions` row is always written so refunds,
    * journals and reporting see the payment.
    */
-  static async pay(merchantId: string, id: string, paymentMethod?: string, cashReceived?: number, scope: OutletScope) {
+  static async pay(merchantId: string, id: string, scope: OutletScope, paymentMethod?: string, cashReceived?: number) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Food order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
@@ -317,7 +317,7 @@ export class FoodOrdersService {
       })
     }
 
-    return this.get(merchantId, id)
+    return this.get(merchantId, id, scope)
   }
 
   private static async buildResolver(merchantId: string, menuIds: string[]): Promise<ResolverCtx> {

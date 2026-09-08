@@ -109,7 +109,7 @@ describe('restaurant-era outlet reads default-deny (delivery + menu)', () => {
     })
     expect(mainDelivery.status).toBe(200)
     mainDel = mainDelivery.body.data.id
-    cleanup.deliveries.push(mainDel)
+    if (mainDel) cleanup.deliveries.push(mainDel)
   })
 
   it('filters delivery zones to the caller\'s outlets + shared zones', async () => {

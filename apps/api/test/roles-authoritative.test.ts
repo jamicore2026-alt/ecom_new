@@ -7,7 +7,7 @@ import { users } from '../src/database/schema'
 const call = async (path: string, init?: RequestInit) => {
   const res = await app.handle(new Request(`http://localhost${path}`, init))
   const text = await res.text()
-  let body: unknown
+  let body: any
   try {
     body = JSON.parse(text)
   } catch {

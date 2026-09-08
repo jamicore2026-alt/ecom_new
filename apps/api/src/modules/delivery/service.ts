@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, inArray, isNull, or, notInArray } from 'drizzle-orm'
+import type { SQL } from 'drizzle-orm'
 import { db } from '../../database/client'
 import {
   deliveryZones,
@@ -388,7 +389,7 @@ export class DeliveryOrdersService {
 
   static async list(merchantId: string, query: { outletId?: string; status?: string; driverId?: string; search?: string; page?: number; limit?: number }, scope?: OutletScope) {
     const { page, limit, offset } = parsePagination(query)
-    const conds = [eq(deliveryOrders.merchantId, merchantId)]
+    const conds = [eq(deliveryOrders.merchantId, merchantId)] as (SQL | undefined)[]
     if (scope) {
       const scopedIds = effectiveOutletIds(scope)
       if (scopedIds === null) return ok({ items: [], meta: makeMeta(page, limit, 0) })
