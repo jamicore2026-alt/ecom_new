@@ -24,6 +24,7 @@ validation → authorization → audit → downstream effects → tests.
 | products / menu | Catalog (ecommerce) and restaurant menu, modifiers |
 | inventory / warehouses / transfers | Stock, warehouses, transfers |
 | suppliers / purchase-orders / goods-receipts | Procurement (merchant-wide: PO → approval → receipt → stock) |
+| bill-of-materials / production-orders | Production (merchant-wide: BOM → production order → component consumption → finished goods) |
 | carts / orders / food-orders / fulfillments / invoices | Commerce core |
 | payments (myfatoorah, tamara, cod) | Payment adapters + transactions |
 | customers / customer-tags / segments / reviews / loyalty | Customer 360 + retention |
@@ -49,7 +50,8 @@ webhook_events, shipping_settings, tax_settings, visits,
 notification_settings, email_logs, token_blacklist, webhook_endpoints,
 webhook_deliveries, background_jobs, fulfillments, carts, invoices,
 warehouses, warehouse_inventory, stock_transfers, suppliers, purchase_orders,
-purchase_order_items, goods_receipts, goods_receipt_items, customer_segments,
+purchase_order_items, goods_receipts, goods_receipt_items, bill_of_materials,
+bom_items, production_orders, production_order_items, customer_segments,
 loyalty_accounts, loyalty_ledger, loyalty_tiers, loyalty_earning_rules,
 loyalty_rewards, affiliates, referrals, content_pages, api_keys,
 password_reset_tokens, verification_tokens, checkout_settings,
@@ -71,8 +73,10 @@ theme_configs, cod_rules, carriers, campaigns, customer_tags.
   warehouse B → receive.
 - **FLOW F — Return**: Order → return request → approval → restock →
   refund → idempotent payment reversal.
-- **FLOW G — Production / BOM** *(planned)*: BOM → production order →
-  component consumption → finished goods.
+- **FLOW G — Production / BOM**: BOM → production order (planned →
+  in_progress) → complete → component consumption + finished goods (warehouse
+  mirror + global ledger, `reason: production`). Cancellable until completion;
+  BOM component edits locked once active; stock never negative.
 - **FLOW H — Recipe** *(planned)*: recipe → ingredient consumption →
   inventory decrease → menu sale.
 
@@ -81,6 +85,8 @@ theme_configs, cod_rules, carriers, campaigns, customer_tags.
 Orders use combined `status` (order lifecycle) + `paymentStatus` +
 `fulfillmentStatus`. Food orders reuse `orders.status`. Inventory changes are
 recorded in `inventory_logs` with `reason` (`sale`, `adjustment`, `import`,
-`cancel`, `return`, `count`, `transfer`, `purchase`). Purchase orders use
-`draft` → `pending` → `approved` → `partial` → `received` (or `cancelled`).
+`cancel`, `return`, `count`, `transfer`, `purchase`, `production`). Purchase
+orders use `draft` → `pending` → `approved` → `partial` → `received` (or
+`cancelled`). Production orders use `planned` → `in_progress` → `completed`
+(or `cancelled`). BOMs use `draft` → `active` → `inactive`.
 See `docs/business-invariants.md`.

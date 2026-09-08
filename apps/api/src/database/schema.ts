@@ -1550,6 +1550,97 @@ export const goodsReceiptItems = pgTable(
   ]
 )
 
+/* ---------------------------- production / BOM ---------------------------- */
+
+export const billOfMaterials = pgTable(
+  'bill_of_materials',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 255 }).notNull(),
+    outputVariantId: varchar('output_variant_id', { length: 30 })
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'restrict' }),
+    // Units of the finished good produced by one run of this BOM.
+    outputQuantity: integer('output_quantity').notNull().default(1),
+    status: varchar('status', { length: 20 }).notNull().default('draft'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    index('bom_merchant_idx').on(t.merchantId),
+    index('bom_output_variant_idx').on(t.outputVariantId)
+  ]
+)
+
+export const bomItems = pgTable(
+  'bom_items',
+  {
+    id: id('id').primaryKey(),
+    bomId: varchar('bom_id', { length: 30 })
+      .notNull()
+      .references(() => billOfMaterials.id, { onDelete: 'cascade' }),
+    variantId: varchar('variant_id', { length: 30 })
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'restrict' }),
+    // Units of this component consumed by one run of the BOM.
+    quantity: integer('quantity').notNull().default(1)
+  },
+  (t) => [
+    index('bom_items_bom_idx').on(t.bomId),
+    index('bom_items_variant_idx').on(t.variantId)
+  ]
+)
+
+export const productionOrders = pgTable(
+  'production_orders',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    productionNumber: varchar('production_number', { length: 50 }).notNull(),
+    bomId: varchar('bom_id', { length: 30 })
+      .notNull()
+      .references(() => billOfMaterials.id, { onDelete: 'restrict' }),
+    status: varchar('status', { length: 20 }).notNull().default('planned'),
+    // Number of BOM runs to execute.
+    quantity: integer('quantity').notNull().default(1),
+    notes: text('notes'),
+    startedAt: timestamp('started_at'),
+    completedAt: timestamp('completed_at'),
+    cancelledAt: timestamp('cancelled_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [
+    uniqueIndex('production_orders_merchant_number_idx').on(t.merchantId, t.productionNumber),
+    index('production_orders_merchant_idx').on(t.merchantId),
+    index('production_orders_bom_idx').on(t.bomId)
+  ]
+)
+
+export const productionOrderItems = pgTable(
+  'production_order_items',
+  {
+    id: id('id').primaryKey(),
+    productionOrderId: varchar('production_order_id', { length: 30 })
+      .notNull()
+      .references(() => productionOrders.id, { onDelete: 'cascade' }),
+    variantId: varchar('variant_id', { length: 30 })
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'restrict' }),
+    // Component scorecard snapshot recorded at completion: negative = consumed,
+    // positive = produced.
+    change: integer('change').notNull(),
+    beforeValue: integer('before_value').notNull(),
+    afterValue: integer('after_value').notNull()
+  },
+  (t) => [
+    index('production_order_items_order_idx').on(t.productionOrderId),
+    index('production_order_items_variant_idx').on(t.variantId)
+  ]
+)
+
 /* --------------------------- customer segments --------------------------- */
 
 export const customerSegments = pgTable(
@@ -1927,6 +2018,10 @@ export const table = {
   purchaseOrderItems,
   goodsReceipts,
   goodsReceiptItems,
+  billOfMaterials,
+  bomItems,
+  productionOrders,
+  productionOrderItems,
   customerSegments,
   loyaltyAccounts,
   loyaltyLedger,
@@ -2058,6 +2153,14 @@ export type GoodsReceipt = typeof goodsReceipts.$inferSelect
 export type NewGoodsReceipt = typeof goodsReceipts.$inferInsert
 export type GoodsReceiptItem = typeof goodsReceiptItems.$inferSelect
 export type NewGoodsReceiptItem = typeof goodsReceiptItems.$inferInsert
+export type BillOfMaterials = typeof billOfMaterials.$inferSelect
+export type NewBillOfMaterials = typeof billOfMaterials.$inferInsert
+export type BomItem = typeof bomItems.$inferSelect
+export type NewBomItem = typeof bomItems.$inferInsert
+export type ProductionOrder = typeof productionOrders.$inferSelect
+export type NewProductionOrder = typeof productionOrders.$inferInsert
+export type ProductionOrderItem = typeof productionOrderItems.$inferSelect
+export type NewProductionOrderItem = typeof productionOrderItems.$inferInsert
 export type CustomerSegment = typeof customerSegments.$inferSelect
 export type NewCustomerSegment = typeof customerSegments.$inferInsert
 export type LoyaltyAccount = typeof loyaltyAccounts.$inferSelect

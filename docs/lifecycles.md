@@ -118,3 +118,20 @@ created → assigned → picked_up → arrived → delivered  (+ failed/cancelle
   `partial` while lines remain and `received` once all `quantity` is met.
 - A PO can be cancelled until its first receipt; terminal `received`/`cancelled`
   POs cannot transition.
+
+## Production order (`production_orders.status`)
+
+- `planned → in_progress → completed | cancelled`.
+- A production order references an **active** BOM; creating against a
+  `draft`/`inactive` BOM is rejected. BOM items are editable only while the BOM
+  is `draft` (`draft → active → inactive`); activation freezes the component
+  list, and a BOM cannot consume its own output variant.
+- `complete` consumes `BOM quantity × order quantity` of each component and
+  produces the BOM output. Components with insufficient stock make the
+  completion fail atomically (`INSUFFICIENT_STOCK`). Stock moves in one locked
+  transaction: warehouse mirror (component decrement floor-at-0, output upsert
+  increment, skipped for warehouses without a row like the checkout path) plus
+  the global variant ledger (`reason: production`,
+  `reference: <productionNumber>`).
+- Terminal `completed`/`cancelled` orders cannot transition. `completed` orders
+  cannot be completed again.

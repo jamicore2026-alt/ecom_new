@@ -77,6 +77,12 @@ by design** at introduction (consistent with products/warehouses/inventory): the
 tables carry no `outletId`, so the procurement module needs no outlet guard —
 merchant-wide read/write gated only by `inventory.read` / `inventory.manage`.
 
+Production (BOMs, production orders) is likewise **merchant-wide by design**
+(same rationale as warehouses/inventory/procurement): stock is a shared pool, so
+manufacturing ingests from the shared pool and emits finished goods into it.
+Tables carry no `outletId`; reads require `inventory.read`, writes require
+`inventory.manage`.
+
 **Gap**: every restaurant-era `list` read is now default-deny outlet-scoped or
 an explicit merchant-wide entity. The remaining decision points are documented
 in "Planned evolution" (delivery driver pool and menu catalog are merchant-wide

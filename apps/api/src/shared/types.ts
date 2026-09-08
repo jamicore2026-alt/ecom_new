@@ -217,8 +217,14 @@ export type RefundMethod = (typeof REFUND_METHODS)[number]
 export const REFUND_STATUSES = ['pending', 'completed'] as const
 export type RefundStatus = (typeof REFUND_STATUSES)[number]
 
-export const INVENTORY_REASONS = ['sale', 'adjustment', 'purchase', 'return', 'cancel'] as const
+export const INVENTORY_REASONS = ['sale', 'adjustment', 'purchase', 'production', 'return', 'cancel'] as const
 export type InventoryReason = (typeof INVENTORY_REASONS)[number]
+
+export const BOM_STATUSES = ['draft', 'active', 'inactive'] as const
+export type BomStatus = (typeof BOM_STATUSES)[number]
+
+export const PRODUCTION_ORDER_STATUSES = ['planned', 'in_progress', 'completed', 'cancelled'] as const
+export type ProductionOrderStatus = (typeof PRODUCTION_ORDER_STATUSES)[number]
 
 export const PURCHASE_ORDER_STATUSES = ['draft', 'pending', 'approved', 'partial', 'received', 'cancelled'] as const
 export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number]
