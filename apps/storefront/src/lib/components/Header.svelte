@@ -43,11 +43,7 @@
 					onerror={handleImageError}
 				/>
 			{:else}
-				<span
-					class="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white"
-				>
-					{store.settings.name.charAt(0)}
-				</span>
+				<img src="/logo.jpg" alt={store.settings.name} class="h-9 w-9 rounded-full object-cover" />
 			{/if}
 			<span class="truncate text-lg font-semibold tracking-tight text-gray-900">
 				{store.settings.name}

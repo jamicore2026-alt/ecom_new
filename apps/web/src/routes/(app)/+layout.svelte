@@ -80,9 +80,11 @@
 			>
 				<!-- Brand -->
 				<div class="flex h-16 shrink-0 items-center gap-3 border-b border-outline-variant px-container-padding">
-					<div class="flex h-10 w-10 items-center justify-center rounded bg-primary-container text-on-primary-container">
-						<Icon name="storefront" size="text-[20px]" />
-					</div>
+					<img
+						src="/logo.jpg"
+						alt={merchant?.name ? `${merchant.name} logo` : 'logo'}
+						class="h-10 w-10 flex-none rounded object-cover"
+					/>
 					<div class="min-w-0">
 						<p class="truncate text-sm font-semibold tracking-tight text-on-surface">{merchant?.name}</p>
 						<p class="truncate text-xs text-secondary">Merchant OS</p>
