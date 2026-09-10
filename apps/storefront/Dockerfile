@@ -4,9 +4,16 @@ FROM oven/bun:1.3-alpine
 
 WORKDIR /app
 
+# All workspace manifests are copied so the frozen lockfile resolves unchanged.
 COPY package.json bun.lock ./
-COPY apps/storefront/package.json ./apps/storefront/
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/storefront/package.json ./apps/storefront/package.json
+COPY packages/api-proxy/package.json ./packages/api-proxy/package.json
 RUN bun install --frozen-lockfile
+
+# Workspace member @merchant-dashboard/api-proxy is source-only (.ts), bundled at build.
+COPY packages/api-proxy ./packages/api-proxy
 
 COPY apps/storefront ./apps/storefront
 WORKDIR /app/apps/storefront

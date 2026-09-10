@@ -4,8 +4,12 @@ FROM oven/bun:1.3-alpine
 
 WORKDIR /app
 
+# All workspace manifests are copied so the frozen lockfile resolves unchanged.
 COPY package.json bun.lock ./
-COPY apps/api/package.json ./apps/api/
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/storefront/package.json ./apps/storefront/package.json
+COPY packages/api-proxy/package.json ./packages/api-proxy/package.json
 # devDependencies stay installed: drizzle-kit (db:migrate) runs as a deploy command.
 RUN bun install --frozen-lockfile
 
