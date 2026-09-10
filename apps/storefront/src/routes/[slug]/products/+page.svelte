@@ -17,27 +17,27 @@
 </svelte:head>
 
 <div class="mx-auto max-w-7xl px-4 py-10">
-	<h1 class="text-3xl font-bold text-gray-900">{t('navigation.shop')}</h1>
-	<p class="mt-2 text-gray-600">{data.products.meta.total} {t('home.products')}</p>
+	<h1 class="text-3xl font-bold text-neutral-900">{t('navigation.shop')}</h1>
+	<p class="mt-2 text-neutral-600">{data.products.meta.total} {t('home.products')}</p>
 
 	<form
 		method="get"
 		action={`/${data.slug}/products`}
 		class="mt-6 flex flex-wrap items-end gap-3"
 	>
-		<label class="flex flex-col gap-1 text-xs font-medium text-gray-600">
+		<label class="flex flex-col gap-1 text-xs font-medium text-neutral-600">
 			{t('products.sort')}
 			<select
 				name="sort"
 				value={data.query.sort ?? ''}
-				class="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm"
+				class="h-11 rounded-lg border border-neutral-300 bg-white px-3 text-sm"
 			>
 				<option value="">{t('product_list.newest')}</option>
 				<option value="price_asc">{t('product_list.priceLowToHigh')}</option>
 				<option value="price_desc">{t('product_list.priceHighToLow')}</option>
 			</select>
 		</label>
-		<label class="flex flex-col gap-1 text-xs font-medium text-gray-600">
+		<label class="flex flex-col gap-1 text-xs font-medium text-neutral-600">
 			{t('products.minPrice')}
 			<input
 				type="number"
@@ -46,10 +46,10 @@
 				step="0.01"
 				value={data.query.minPrice ?? ''}
 				placeholder="0"
-				class="h-10 w-28 rounded-lg border border-gray-300 px-3 text-sm"
+				class="h-11 w-28 rounded-lg border border-neutral-300 px-3 text-sm"
 			/>
 		</label>
-		<label class="flex flex-col gap-1 text-xs font-medium text-gray-600">
+		<label class="flex flex-col gap-1 text-xs font-medium text-neutral-600">
 			{t('products.maxPrice')}
 			<input
 				type="number"
@@ -58,12 +58,12 @@
 				step="0.01"
 				value={data.query.maxPrice ?? ''}
 				placeholder={t('products.any')}
-				class="h-10 w-28 rounded-lg border border-gray-300 px-3 text-sm"
+				class="h-11 w-28 rounded-lg border border-neutral-300 px-3 text-sm"
 			/>
 		</label>
 		<button
 			type="submit"
-			class="h-10 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700"
+			class="h-11 rounded-lg bg-brand-600 px-4 text-sm font-semibold text-white hover:bg-brand-700"
 		>
 			{t('products.apply')}
 		</button>

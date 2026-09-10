@@ -82,6 +82,7 @@ export const en: Record<string, string> = {
 	'cart.summary': 'Order summary',
 	'cart.calculatedAtCheckout': 'Shipping and taxes calculated at checkout.',
 	'cart.remove': 'Remove',
+	'cart.list': 'Cart items',
 
 	// Checkout
 	'checkout.title': 'Checkout',
@@ -277,6 +278,48 @@ export const en: Record<string, string> = {
 	'search.resultsFor': 'Search results for "{query}"',
 	'search.noResults': 'No results found for "{query}".',
 	'search.tryAgain': 'Try a different search.',
+
+	// Checkout return
+	'checkoutReturn.title': 'Payment status',
+	'checkoutReturn.errorHeading': 'We hit a snag',
+	'checkoutReturn.viewOrder': 'View your order',
+	'checkoutReturn.processingHeading': 'Payment processing',
+	'checkoutReturn.processingBody': 'Your payment for {order} is still being confirmed. This usually takes only a moment.',
+	'checkoutReturn.checkAgain': 'Check again',
+	'checkoutReturn.backToCheckout': 'Back to checkout',
+	'checkoutReturn.failedHeading': 'Payment not completed',
+	'checkoutReturn.failedBody': 'The payment for {order} did not go through. Your items are still in the cart if you would like to try again.',
+	'checkoutReturn.tryAgain': 'Try again',
+
+	// Error page
+	'error.label': 'Error',
+	'error.notFound': 'Page not shown',
+	'error.somethingWrong': 'Something went wrong',
+	'error.unexpected': 'An unexpected error occurred.',
+	'error.goHome': 'Go home',
+
+	// Product card
+	'productCard.sale': 'Sale',
+	'productCard.general': 'General',
+	'productCard.inStock': '{count} in stock',
+	'productCard.inStockUntracked': 'In stock',
+	'productCard.outOfStock': 'Out of stock',
+
+	// Pagination
+	'pagination.previous': 'Previous',
+	'pagination.pageOf': 'Page {page} of {total}',
+	'pagination.next': 'Next',
+
+	// SKU
+	'product.sku': 'SKU:',
+
+	// Checkout placeholders
+	'checkout.emailPlaceholder': 'you@example.com',
+	'checkout.fullNamePlaceholder': 'Jane Doe',
+	'checkout.addressPlaceholder': 'Street and number',
+
+	// Account placeholders
+	'account.orderNumberPlaceholder': 'e.g. #W-XXXXXXXX-XXXXXXXX',
 
 	// Common
 	'common.loading': 'Loading…',

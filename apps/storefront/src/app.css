@@ -1,8 +1,31 @@
 @import '@fontsource-variable/cairo/index.css';
-@import '@fontsource-variable/inter/index.css';
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
 @theme {
-	--font-sans: 'Cairo Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+	--font-sans: 'Cairo Variable', ui-sans-serif, system-ui, sans-serif;
+
+	/* Semantic brand palette (maps to the previous raw indigo scale) */
+	--color-brand-50: #eef2ff;
+	--color-brand-100: #e0e7ff;
+	--color-brand-200: #c7d2fe;
+	--color-brand-300: #a5b4fc;
+	--color-brand-400: #818cf8;
+	--color-brand-500: #6366f1;
+	--color-brand-600: #4f46e5;
+	--color-brand-700: #4338ca;
+	--color-brand-800: #3730a3;
+	--color-brand-900: #312e81;
+
+	/* Neutral surface palette (maps to the previous raw gray scale) */
+	--color-neutral-50: #f9fafb;
+	--color-neutral-100: #f3f4f6;
+	--color-neutral-200: #e5e7eb;
+	--color-neutral-300: #d1d5db;
+	--color-neutral-400: #9ca3af;
+	--color-neutral-500: #6b7280;
+	--color-neutral-600: #4b5563;
+	--color-neutral-700: #374151;
+	--color-neutral-800: #1f2937;
+	--color-neutral-900: #111827;
 }

@@ -295,6 +295,7 @@
 						class="field pl-9"
 						bind:value={query}
 						placeholder={t('pos.searchPlaceholder')}
+						aria-label={t('pos.searchPlaceholder')}
 					/>
 				</div>
 			{/if}

@@ -74,11 +74,12 @@
 				<input
 					class="w-full rounded border border-outline-variant bg-surface-container-lowest py-2 pl-9 pr-3 text-sm text-on-surface placeholder:text-secondary focus:outline-2 focus:outline-primary"
 					placeholder="Search order # or customer…"
+					aria-label="Search order # or customer"
 					bind:value={search}
 					onkeydown={(e) => e.key === 'Enter' && applyFilters()}
 				/>
 			</div>
-			<select class="rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface focus:outline-2 focus:outline-primary" bind:value={status}>
+			<select class="rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface focus:outline-2 focus:outline-primary" bind:value={status} aria-label="Filter by status">
 				<option value="">All statuses</option>
 				<option value="pending">Pending</option>
 				<option value="processing">Processing</option>
@@ -87,7 +88,7 @@
 				<option value="cancelled">Cancelled</option>
 				<option value="refunded">Refunded</option>
 			</select>
-			<select class="rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface focus:outline-2 focus:outline-primary" bind:value={paymentStatus}>
+			<select class="rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface focus:outline-2 focus:outline-primary" bind:value={paymentStatus} aria-label="Filter by payment status">
 				<option value="">Any payment</option>
 				<option value="unpaid">Unpaid</option>
 				<option value="paid">Paid</option>
@@ -99,6 +100,7 @@
 		</div>
 	</div>
 
+	<h2 class="sr-only">{t('orders.list')}</h2>
 	<Card padded={false}>
 		{#if loading}
 			<div class="space-y-2 p-5">
@@ -147,7 +149,7 @@
 						{#each items as o (o.id)}
 							<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
 								<td class="px-table-cell-x py-table-cell-y">
-									<a href="/orders/{o.id}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">#{o.orderNumber}</a>
+									<a href="/orders/{o.id}" class="inline-flex min-h-11 items-center rounded font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">#{o.orderNumber}</a>
 								</td>
 								<td class="px-table-cell-x py-table-cell-y">
 									<p class="font-medium text-on-surface">{o.customerName || 'Guest'}</p>

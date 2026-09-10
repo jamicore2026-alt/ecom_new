@@ -129,9 +129,9 @@
 					<div class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-secondary">
 						<Icon name="search" size="text-[16px]" />
 					</div>
-					<input class="field pl-9" placeholder="Search product or SKU…" bind:value={search} onkeydown={(e) => e.key === 'Enter' && load()} />
+					<input class="field pl-9" placeholder="Search product or SKU…" aria-label="Search product or SKU" bind:value={search} onkeydown={(e) => e.key === 'Enter' && load()} />
 				</div>
-				<select class="field w-auto" bind:value={status}>
+				<select class="field w-auto" bind:value={status} aria-label="Filter by status">
 					<option value="">All statuses</option>
 					<option value="active">Active</option>
 					<option value="draft">Draft</option>

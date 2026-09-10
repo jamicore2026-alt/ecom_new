@@ -41,23 +41,23 @@
 </svelte:head>
 
 <div class="mx-auto max-w-md px-4 py-14">
-	<div class="rounded-2xl border border-gray-200 bg-white p-6 sm:p-8">
+	<div class="rounded-2xl border border-neutral-200 bg-white p-6 sm:p-8">
 		{#if success}
 			<div class="text-center">
-				<h1 class="text-xl font-bold text-gray-900">{t('account.reset.success')}</h1>
+				<h1 class="text-xl font-bold text-neutral-900">{t('account.reset.success')}</h1>
 				<a
 					href={`/${slug}/account`}
-					class="mt-6 inline-block rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
+					class="mt-6 inline-block rounded-lg bg-brand-600 px-6 py-3 text-sm font-semibold text-white hover:bg-brand-700"
 				>
 					{t('account.reset.signIn')}
 				</a>
 			</div>
 		{:else}
-			<h1 class="text-xl font-bold text-gray-900">{t('account.reset.title')}</h1>
+			<h1 class="text-xl font-bold text-neutral-900">{t('account.reset.title')}</h1>
 
 			<form class="mt-6 space-y-4" onsubmit={submit}>
 				<div>
-					<label class="text-sm font-medium text-gray-700" for="resetPassword">{t('account.reset.newPassword')}</label>
+					<label class="text-sm font-medium text-neutral-700" for="resetPassword">{t('account.reset.newPassword')}</label>
 					<input
 						id="resetPassword"
 						type="password"
@@ -65,7 +65,7 @@
 						placeholder={t('account.reset.passwordMinLengthHint')}
 						autocomplete="new-password"
 						required
-						class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 					/>
 				</div>
 
@@ -76,7 +76,7 @@
 				<button
 					type="submit"
 					disabled={submitting}
-					class="w-full rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+					class="w-full rounded-lg bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
 				>
 					{submitting ? t('common.loading') : t('account.reset.submit')}
 				</button>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { ProductSummary } from '$lib/types'
 	import { money, inStock, placeholderImage, handleImageError } from '$lib/format'
+	import { t } from '$lib/i18n'
 
 	interface Props {
 		product: ProductSummary
@@ -15,9 +16,9 @@
 
 <a
 	href={`/${storeSlug}/products/${product.slug}`}
-	class="group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white transition hover:shadow-lg"
+	class="group flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition hover:shadow-lg"
 >
-	<div class="relative aspect-square overflow-hidden bg-gray-100">
+	<div class="relative aspect-square overflow-hidden bg-neutral-100">
 		<img
 			src={product.image ?? placeholderImage()}
 			alt={product.name}
@@ -29,20 +30,20 @@
 			<span
 				class="absolute left-3 top-3 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white"
 			>
-				Sale
+				{t('productCard.sale')}
 			</span>
 		{/if}
 	</div>
 
 	<div class="flex flex-1 flex-col gap-1 p-4">
-		<p class="text-xs text-gray-500">{product.category?.name ?? 'General'}</p>
-		<h2 class="line-clamp-2 text-sm font-medium text-gray-900 group-hover:underline">
+		<p class="text-xs text-neutral-500">{product.category?.name ?? t('productCard.general')}</p>
+		<h2 class="line-clamp-2 text-sm font-medium text-neutral-900 group-hover:underline">
 			{product.name}
 		</h2>
 		<div class="mt-auto flex items-baseline gap-2 pt-2">
-			<span class="text-base font-semibold text-gray-900">{money(product.price, currency)}</span>
+			<span class="text-base font-semibold text-neutral-900">{money(product.price, currency)}</span>
 			{#if product.compareAtPrice && product.compareAtPrice > product.price}
-				<span class="text-sm text-gray-400 line-through">{money(product.compareAtPrice, currency)}</span>
+				<span class="text-sm text-neutral-400 line-through">{money(product.compareAtPrice, currency)}</span>
 			{/if}
 		</div>
 		<p
@@ -51,9 +52,9 @@
 				: 'text-red-600'}"
 		>
 			{#if available}
-				{product.stock > 0 ? `${product.stock} in stock` : 'In stock'}
+				{product.stock > 0 ? t('productCard.inStock').replace('{count}', String(product.stock)) : t('productCard.inStockUntracked')}
 			{:else}
-				Out of stock
+				{t('productCard.outOfStock')}
 			{/if}
 		</p>
 	</div>

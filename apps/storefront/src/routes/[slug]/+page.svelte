@@ -25,15 +25,15 @@
 	<meta property="og:url" content={`${siteUrl(data.origin)}/${data.slug}`} />
 </svelte:head>
 
-<section class="bg-gradient-to-br from-indigo-600 to-purple-700 text-white">
+<section class="bg-gradient-to-br from-brand-600 to-purple-700 text-white">
 	<div class="mx-auto max-w-7xl px-4 py-20 text-center">
 		<h1 class="text-4xl font-bold tracking-tight sm:text-5xl">{store.settings.name}</h1>
-		<p class="mx-auto mt-4 max-w-xl text-lg text-indigo-100">
+		<p class="mx-auto mt-4 max-w-xl text-lg text-brand-100">
 			{t('home.heroTagline', { store: store.settings.name })}
 		</p>
 		<a
 			href={`/${data.slug}/products`}
-			class="mt-8 inline-block rounded-full bg-white px-8 py-3 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+			class="mt-8 inline-block rounded-full bg-white px-8 py-3 text-sm font-semibold text-brand-700 hover:bg-brand-50"
 		>
 			{t('home.shopNow')}
 		</a>
@@ -42,8 +42,8 @@
 
 <section class="mx-auto max-w-7xl px-4 py-12">
 	<div class="mb-6 flex items-center justify-between">
-		<h2 class="text-2xl font-bold text-gray-900">{t('home.featured')}</h2>
-		<a href={`/${data.slug}/products`} class="text-sm font-semibold text-indigo-600 hover:text-indigo-700">
+		<h2 class="text-2xl font-bold text-neutral-900">{t('home.featured')}</h2>
+		<a href={`/${data.slug}/products`} class="inline-flex min-h-11 items-center text-sm font-semibold text-brand-600 hover:text-brand-700">
 			{t('home.viewAll')}
 		</a>
 	</div>
@@ -54,21 +54,21 @@
 			{/each}
 		</div>
 	{:else}
-		<p class="py-12 text-center text-gray-500">{t('home.noProducts')}</p>
+		<p class="py-12 text-center text-neutral-500">{t('home.noProducts')}</p>
 	{/if}
 </section>
 
 {#if data.categories.length}
 	<section class="mx-auto max-w-7xl px-4 pb-12">
-	<h2 class="mb-6 text-2xl font-bold text-gray-900">{t('home.shopByCategory')}</h2>
+	<h2 class="mb-6 text-2xl font-bold text-neutral-900">{t('home.shopByCategory')}</h2>
 			<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
 				{#each data.categories as cat (cat.id)}
 					<a
 						href={`/${data.slug}/categories/${cat.slug}`}
-						class="rounded-xl border border-gray-200 bg-white p-6 text-center transition hover:border-indigo-300 hover:shadow"
+						class="rounded-xl border border-neutral-200 bg-white p-6 text-center transition hover:border-brand-300 hover:shadow"
 					>
-						<h3 class="font-semibold text-gray-900">{cat.name}</h3>
-						<p class="mt-1 text-sm text-gray-500">{cat.productCount} {t('home.products')}</p>
+						<h3 class="font-semibold text-neutral-900">{cat.name}</h3>
+						<p class="mt-1 text-sm text-neutral-500">{cat.productCount} {t('home.products')}</p>
 					</a>
 			{/each}
 		</div>

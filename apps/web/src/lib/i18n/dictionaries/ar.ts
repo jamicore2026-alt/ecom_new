@@ -116,6 +116,16 @@ export const ar: Record<string, string> = {
 	'products.archived': 'مؤرشف',
 	'products.outOfStock': 'نفذ المخزون',
 	'products.noProducts': 'لا توجد منتجات',
+	'products.list': 'قائمة المنتجات',
+	'products.apply': 'تطبيق',
+	'products.bulkEdit': 'تعديل جماعي',
+	'products.bulkEditTitle': 'تعديل جماعي للمنتجات',
+	'products.draft': 'مسودة',
+	'products.updated': 'آخر تحديث',
+	'products.archive': 'أرشفة',
+	'products.selected': 'تم تحديد {n}',
+	'products.inStock': 'في المخزون: {n}',
+	'products.variants': '{n} إصدارات',
 
 	// Orders
 	'orders.title': 'الطلبات',
@@ -130,6 +140,7 @@ export const ar: Record<string, string> = {
 	'orders.discount': 'الخصم',
 	'orders.grandTotal': 'الإجمالي',
 	'orders.noOrders': 'لا توجد طلبات',
+	'orders.list': 'قائمة الطلبات',
 
 	// Customers
 	'customers.title': 'العملاء',

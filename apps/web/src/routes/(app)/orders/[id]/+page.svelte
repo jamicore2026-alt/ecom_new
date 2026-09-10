@@ -328,8 +328,8 @@
 										<td class="px-table-cell-x py-table-cell-y">
 											{#if canWrite() && r.status === 'pending'}
 												<div class="flex gap-2">
-													<button class="inline-block rounded p-1.5 text-xs font-medium text-success hover:bg-primary-fixed-dim/40" onclick={() => setReturnStatus(r, 'approved')}>Approve</button>
-													<button class="inline-block rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => setReturnStatus(r, 'rejected')}>Reject</button>
+													<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-success hover:bg-primary-fixed-dim/40" onclick={() => setReturnStatus(r, 'approved')}>Approve</button>
+													<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => setReturnStatus(r, 'rejected')}>Reject</button>
 												</div>
 											{:else}
 												<span class="text-xs text-outline">—</span>
@@ -421,7 +421,7 @@
 				{#if order.customer}
 					<Card title="Customer">
 						<div class="text-sm">
-							<a href="/customers/{order.customer.id}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:text-on-primary-fixed-variant hover:underline">
+							<a href="/customers/{order.customer.id}" class="inline-flex min-h-11 items-center rounded font-medium text-primary hover:text-on-primary-fixed-variant hover:underline">
 								{order.customer.firstName ?? ''} {order.customer.lastName ?? ''}
 							</a>
 							<p class="text-secondary">{order.customer.email}</p>

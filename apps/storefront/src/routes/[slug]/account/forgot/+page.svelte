@@ -40,32 +40,32 @@
 </svelte:head>
 
 <div class="mx-auto max-w-md px-4 py-14">
-	<div class="rounded-2xl border border-gray-200 bg-white p-6 sm:p-8">
+	<div class="rounded-2xl border border-neutral-200 bg-white p-6 sm:p-8">
 		{#if sent}
 			<div class="text-center">
-				<h1 class="text-xl font-bold text-gray-900">{t('account.forgot.sentTitle')}</h1>
-				<p class="mt-3 text-sm text-gray-500">{t('account.forgot.sentBody')}</p>
+				<h1 class="text-xl font-bold text-neutral-900">{t('account.forgot.sentTitle')}</h1>
+				<p class="mt-3 text-sm text-neutral-500">{t('account.forgot.sentBody')}</p>
 				<a
 					href={`/${slug}/account`}
-					class="mt-6 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-700"
+					class="mt-6 inline-block text-sm font-medium text-brand-600 hover:text-brand-700"
 				>
 					{t('account.forgot.backToLogin')}
 				</a>
 			</div>
 		{:else}
-			<h1 class="text-xl font-bold text-gray-900">{t('account.forgot.title')}</h1>
-			<p class="mt-2 text-sm text-gray-500">{t('account.forgot.subtitle')}</p>
+			<h1 class="text-xl font-bold text-neutral-900">{t('account.forgot.title')}</h1>
+			<p class="mt-2 text-sm text-neutral-500">{t('account.forgot.subtitle')}</p>
 
 			<form class="mt-6 space-y-4" onsubmit={submit}>
 				<div>
-					<label class="text-sm font-medium text-gray-700" for="forgotEmail">{t('account.forgot.email')}</label>
+					<label class="text-sm font-medium text-neutral-700" for="forgotEmail">{t('account.forgot.email')}</label>
 					<input
 						id="forgotEmail"
 						type="email"
 						bind:value={email}
 						autocomplete="email"
 						required
-						class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 					/>
 				</div>
 
@@ -76,11 +76,11 @@
 				<button
 					type="submit"
 					disabled={submitting}
-					class="w-full rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+					class="w-full rounded-lg bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
 				>
 					{submitting ? t('account.forgot.loading') : t('account.forgot.submit')}
 				</button>
-				<a href={`/${slug}/account`} class="block text-center text-sm font-medium text-indigo-600 hover:text-indigo-700">
+				<a href={`/${slug}/account`} class="block text-center text-sm font-medium text-brand-600 hover:text-brand-700">
 					{t('account.forgot.backToLogin')}
 				</a>
 			</form>

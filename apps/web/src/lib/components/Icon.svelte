@@ -8,7 +8,7 @@
 </script>
 
 <span
-	class="material-symbols-outlined inline-flex select-none {fill ? 'fill' : ''} {size} {className}"
+	class="material-symbols-outlined inline-flex w-[1em] select-none overflow-hidden {fill ? 'fill' : ''} {size} {className}"
 	aria-hidden="true"
 >{name}</span
 >

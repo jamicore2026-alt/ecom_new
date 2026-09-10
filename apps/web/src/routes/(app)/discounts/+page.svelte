@@ -304,10 +304,10 @@
 					<div class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-secondary">
 						<Icon name="search" size="text-[16px]" />
 					</div>
-					<input class="field pl-9" placeholder="Search code…" bind:value={search} onkeydown={(e) => { if (e.key === 'Enter') { page = 1; load() } }} />
+					<input class="field pl-9" placeholder="Search code…" aria-label="Search discount codes" bind:value={search} onkeydown={(e) => { if (e.key === 'Enter') { page = 1; load() } }} />
 				</div>
 			{/if}
-			<select class="field w-auto" bind:value={statusFilter}>
+			<select class="field w-auto" bind:value={statusFilter} aria-label="Filter by status">
 				<option value="">All statuses</option>
 				<option value="active">Active</option>
 				<option value="disabled">Disabled</option>

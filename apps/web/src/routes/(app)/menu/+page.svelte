@@ -119,6 +119,7 @@
 					bind:value={search}
 					oninput={() => load()}
 					placeholder="Search menu items…"
+					aria-label="Search menu items"
 				/>
 			</div>
 			<span class="text-sm text-secondary">{items.length} item{items.length === 1 ? '' : 's'}</span>

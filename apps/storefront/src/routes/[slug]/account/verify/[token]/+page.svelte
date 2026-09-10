@@ -28,28 +28,28 @@
 </svelte:head>
 
 <div class="mx-auto max-w-md px-4 py-14">
-	<div class="rounded-2xl border border-gray-200 bg-white p-6 sm:p-8">
+	<div class="rounded-2xl border border-neutral-200 bg-white p-6 sm:p-8">
 		{#if state === 'pending'}
-			<p class="py-6 text-center text-sm text-gray-400">{t('common.loading')}</p>
+			<p class="py-6 text-center text-sm text-neutral-400">{t('common.loading')}</p>
 		{:else if state === 'verified'}
 			<div class="text-center">
 				<div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600">✓</div>
-				<h1 class="mt-4 text-xl font-bold text-gray-900">{t('accountVerify.success')}</h1>
-				<a href={`/${slug}/account`} class="mt-6 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-700">
+				<h1 class="mt-4 text-xl font-bold text-neutral-900">{t('accountVerify.success')}</h1>
+				<a href={`/${slug}/account`} class="mt-6 inline-block text-sm font-medium text-brand-600 hover:text-brand-700">
 					{t('accountVerify.account')}
 				</a>
 			</div>
 		{:else if state === 'already'}
 			<div class="text-center">
-				<h1 class="mt-4 text-xl font-bold text-gray-900">{t('accountVerify.alreadyVerified')}</h1>
-				<a href={`/${slug}/account`} class="mt-6 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-700">
+				<h1 class="mt-4 text-xl font-bold text-neutral-900">{t('accountVerify.alreadyVerified')}</h1>
+				<a href={`/${slug}/account`} class="mt-6 inline-block text-sm font-medium text-brand-600 hover:text-brand-700">
 					{t('accountVerify.account')}
 				</a>
 			</div>
 		{:else}
 			<div class="text-center">
-				<h1 class="mt-4 text-xl font-bold text-gray-900">{t('accountVerify.error')}</h1>
-				<a href={`/${slug}/account`} class="mt-6 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-700">
+				<h1 class="mt-4 text-xl font-bold text-neutral-900">{t('accountVerify.error')}</h1>
+				<a href={`/${slug}/account`} class="mt-6 inline-block text-sm font-medium text-brand-600 hover:text-brand-700">
 					{t('accountVerify.signIn')}
 				</a>
 			</div>

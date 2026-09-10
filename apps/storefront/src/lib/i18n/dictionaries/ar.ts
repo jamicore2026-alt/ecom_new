@@ -32,6 +32,7 @@ export const ar: Record<string, string> = {
 	'products.maxPrice': 'أعلى سعر',
 	'products.any': 'أي',
 	'products.apply': 'تطبيق',
+	'products.noProducts': 'لم يتم العثور على منتجات.',
 	'product_list.newest': 'الأحدث',
 	'product_list.priceHighToLow': 'السعر: من الأعلى إلى الأقل',
 	'product_list.priceLowToHigh': 'السعر: من الأقل إلى الأعلى',
@@ -81,6 +82,7 @@ export const ar: Record<string, string> = {
 	'cart.summary': 'ملخص الطلب',
 	'cart.calculatedAtCheckout': 'سيتم حساب الشحن والضرائب عند الدفع.',
 	'cart.remove': 'إزالة',
+	'cart.list': 'عناصر السلة',
 
 	// Checkout
 	'checkout.title': 'إتمام الشراء',
@@ -276,6 +278,48 @@ export const ar: Record<string, string> = {
 	'search.resultsFor': 'نتائج البحث عن "{query}"',
 	'search.noResults': 'لا توجد نتائج لـ "{query}".',
 	'search.tryAgain': 'جرّب بحثاً مختلفاً.',
+
+	// Checkout return
+	'checkoutReturn.title': 'حالة الدفع',
+	'checkoutReturn.errorHeading': 'واجهنا مشكلة',
+	'checkoutReturn.viewOrder': 'عرض طلبك',
+	'checkoutReturn.processingHeading': 'جارٍ معالجة الدفع',
+	'checkoutReturn.processingBody': 'لا يزال تأكيد دفعتك للطلب {order} قيد المعالجة. عادةً ما يستغرق هذا لحظة فقط.',
+	'checkoutReturn.checkAgain': 'تحقق مرة أخرى',
+	'checkoutReturn.backToCheckout': 'العودة للدفع',
+	'checkoutReturn.failedHeading': 'لم يتم الدفع',
+	'checkoutReturn.failedBody': 'لم تتم معالجة الدفع للطلب {order}. عناصر سلتك لا تزال هناك إذا أردت المحاولة مرة أخرى.',
+	'checkoutReturn.tryAgain': 'حاول مرة أخرى',
+
+	// Error page
+	'error.label': 'خطأ',
+	'error.notFound': 'الصفحة غير معروضة',
+	'error.somethingWrong': 'حدث خطأ ما',
+	'error.unexpected': 'حدث خطأ غير متوقع.',
+	'error.goHome': 'الذهاب للرئيسية',
+
+	// Product card
+	'productCard.sale': 'تخفيض',
+	'productCard.general': 'عام',
+	'productCard.inStock': '{count} متوفر',
+	'productCard.inStockUntracked': 'متوفر',
+	'productCard.outOfStock': 'نفذ المخزون',
+
+	// Pagination
+	'pagination.previous': 'السابق',
+	'pagination.pageOf': 'صفحة {page} من {total}',
+	'pagination.next': 'التالي',
+
+	// SKU
+	'product.sku': 'كود المنتج:',
+
+	// Checkout placeholders
+	'checkout.emailPlaceholder': 'you@example.com',
+	'checkout.fullNamePlaceholder': 'الاسم الكامل',
+	'checkout.addressPlaceholder': 'الشارع ورقم المبنى',
+
+	// Account placeholders
+	'account.orderNumberPlaceholder': 'مثال: #W-XXXXXXXX-XXXXXXXX',
 
 	// Common
 	'common.loading': 'جارٍ التحميل…',

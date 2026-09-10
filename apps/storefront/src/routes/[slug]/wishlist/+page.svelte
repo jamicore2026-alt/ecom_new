@@ -65,12 +65,12 @@
 
 <div class="mx-auto max-w-5xl px-4 py-10">
 	{#if !account.signedIn}
-		<div class="mx-auto max-w-md rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-			<h1 class="text-xl font-bold text-gray-900">{t('wishlist.signIn')}</h1>
-			<p class="mt-2 text-sm text-gray-500">{t('wishlist.emptyHeading')}</p>
+		<div class="mx-auto max-w-md rounded-2xl border border-dashed border-neutral-300 bg-white px-6 py-12 text-center">
+			<h1 class="text-xl font-bold text-neutral-900">{t('wishlist.signIn')}</h1>
+			<p class="mt-2 text-sm text-neutral-500">{t('wishlist.emptyHeading')}</p>
 			<a
 				href={`/${slug}/account`}
-				class="mt-6 inline-block rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+				class="mt-6 inline-block rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
 			>
 				{t('wishlist.signInOrCreate')}
 			</a>
@@ -78,13 +78,13 @@
 	{:else}
 		<div class="flex flex-wrap items-center justify-between gap-4">
 			<div>
-				<h1 class="text-3xl font-bold text-gray-900">{t('wishlist.title')}</h1>
-				<p class="mt-1 text-sm text-gray-500">
+				<h1 class="text-3xl font-bold text-neutral-900">{t('wishlist.title')}</h1>
+				<p class="mt-1 text-sm text-neutral-500">
 					{account.wishlist.length}
 					{t('wishlist.saved', { count: account.wishlist.length })}
 				</p>
 			</div>
-			<a href={`/${slug}/products`} class="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+			<a href={`/${slug}/products`} class="text-sm font-medium text-brand-600 hover:text-brand-700">
 				{t('wishlist.continueShopping')}
 			</a>
 		</div>
@@ -94,11 +94,11 @@
 		{/if}
 
 		{#if account.wishlist.length === 0}
-			<div class="mt-8 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-				<p class="text-sm text-gray-500">{t('wishlist.nothingSaved')}</p>
+			<div class="mt-8 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-neutral-300 bg-white px-6 py-12 text-center">
+				<p class="text-sm text-neutral-500">{t('wishlist.nothingSaved')}</p>
 				<a
 					href={`/${slug}/products`}
-					class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+					class="rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
 				>
 					{t('wishlist.browseProducts')}
 				</a>
@@ -106,27 +106,27 @@
 		{:else}
 			<ul class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				{#each account.wishlist as item (item.productId)}
-					<li class="flex overflow-hidden rounded-2xl border border-gray-200 bg-white transition hover:border-indigo-300 hover:shadow-sm">
-						<a href={`/${slug}/products/${item.slug}`} class="w-24 shrink-0 bg-gray-100 sm:w-28">
+					<li class="flex overflow-hidden rounded-2xl border border-neutral-200 bg-white transition hover:border-brand-300 hover:shadow-sm">
+						<a href={`/${slug}/products/${item.slug}`} class="w-24 shrink-0 bg-neutral-100 sm:w-28">
 							{#if item.image}
 								<img src={item.image} alt={item.name} class="h-full w-full object-cover" loading="lazy" onerror={handleImageError} />
 							{:else}
-								<span class="flex h-full w-full items-center justify-center text-xl text-gray-300">✦</span>
+								<span class="flex h-full w-full items-center justify-center text-xl text-neutral-300">✦</span>
 							{/if}
 						</a>
 						<div class="flex min-w-0 flex-1 flex-col p-4">
-							<a href={`/${slug}/products/${item.slug}`} class="truncate text-sm font-semibold text-gray-900 hover:text-indigo-600">
+							<a href={`/${slug}/products/${item.slug}`} class="truncate text-sm font-semibold text-neutral-900 hover:text-brand-600">
 								{item.name}
 							</a>
-							<p class="mt-1 text-sm font-semibold text-gray-900">
+							<p class="mt-1 text-sm font-semibold text-neutral-900">
 								{money(item.price, data.store.merchant.currency)}
 								{#if item.compareAtPrice !== null && item.compareAtPrice > item.price}
-									<span class="ml-1 text-xs font-normal text-gray-400 line-through">
+									<span class="ml-1 text-xs font-normal text-neutral-400 line-through">
 										{money(item.compareAtPrice, data.store.merchant.currency)}
 									</span>
 								{/if}
 							</p>
-							<p class="mt-1 text-xs {item.stock > 0 ? 'text-gray-400' : 'font-medium text-red-600'}">
+							<p class="mt-1 text-xs {item.stock > 0 ? 'text-neutral-400' : 'font-medium text-red-600'}">
 								{item.stock > 0 ? t('product.xAvailable', { stock: item.stock }) : t('product.outOfStock')}
 							</p>
 							<div class="mt-auto flex items-center gap-2 pt-3">
@@ -134,7 +134,7 @@
 									type="button"
 									disabled={item.stock <= 0 || busyId === item.productId}
 									onclick={() => addToCart(item)}
-									class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+									class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
 								>
 									{t('product.addToCart')}
 								</button>
@@ -142,7 +142,7 @@
 									type="button"
 									disabled={busyId === item.productId}
 									onclick={() => removeItem(item)}
-									class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+									class="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
 								>
 									{t('cart.remove')}
 								</button>

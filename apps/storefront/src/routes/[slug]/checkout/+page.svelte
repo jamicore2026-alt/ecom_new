@@ -250,14 +250,14 @@
 </svelte:head>
 
 <div class="mx-auto max-w-6xl px-4 py-10">
-	<h1 class="text-3xl font-bold text-gray-900">{t('checkout.title')}</h1>
+	<h1 class="text-3xl font-bold text-neutral-900">{t('checkout.title')}</h1>
 
 	{#if cart.items.length === 0}
-		<div class="mt-10 flex flex-col items-center gap-4 rounded-2xl border border-gray-200 bg-white px-6 py-16 text-center">
-			<p class="text-lg font-medium text-gray-700">{t('cart.empty')}</p>
+		<div class="mt-10 flex flex-col items-center gap-4 rounded-2xl border border-neutral-200 bg-white px-6 py-16 text-center">
+			<p class="text-lg font-medium text-neutral-700">{t('cart.empty')}</p>
 			<a
 				href={`/${slug}/products`}
-				class="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
+				class="rounded-lg bg-brand-600 px-6 py-3 text-sm font-semibold text-white hover:bg-brand-700"
 			>
 				{t('wishlist.browseProducts')}
 			</a>
@@ -271,47 +271,47 @@
 					</p>
 				{/if}
 
-				<section class="rounded-2xl border border-gray-200 bg-white p-6">
-					<h2 class="text-lg font-semibold text-gray-900">{t('checkout.contact')}</h2>
+				<section class="rounded-2xl border border-neutral-200 bg-white p-6">
+					<h2 class="text-lg font-semibold text-neutral-900">{t('checkout.contact')}</h2>
 					{#if account.signedIn && account.customer}
-						<p class="mt-1 text-xs text-gray-400">
+						<p class="mt-1 text-xs text-neutral-400">
 							{t('checkout.orderingAs', { email: account.customer.email })} ·
-							<a href={`/${slug}/account`} class="font-medium text-indigo-600 hover:text-indigo-700">{t('checkout.account')}</a>
+							<a href={`/${slug}/account`} class="font-medium text-brand-600 hover:text-brand-700">{t('checkout.account')}</a>
 						</p>
 					{/if}
 					<div class="mt-4">
-						<label class="text-sm font-medium text-gray-700" for="email">{t('checkout.email')}</label>
+						<label class="text-sm font-medium text-neutral-700" for="email">{t('checkout.email')}</label>
 						<input
 							id="email"
 							type="email"
 							bind:value={email}
 							placeholder="you@example.com"
-							class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+							class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 						/>
 					</div>
 				</section>
 
-				<section class="rounded-2xl border border-gray-200 bg-white p-6">
-					<h2 class="text-lg font-semibold text-gray-900">{t('checkout.address')}</h2>
+				<section class="rounded-2xl border border-neutral-200 bg-white p-6">
+					<h2 class="text-lg font-semibold text-neutral-900">{t('checkout.address')}</h2>
 					<div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="sm:col-span-2">
-							<label class="text-sm font-medium text-gray-700" for="shippingName">{t('checkout.fullName')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="shippingName">{t('checkout.fullName')}</label>
 							<input
 								id="shippingName"
 								type="text"
 								bind:value={shippingName}
 								placeholder="Jane Doe"
-								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div class="sm:col-span-2">
-							<label class="text-sm font-medium text-gray-700" for="line1">{t('checkout.address')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="line1">{t('checkout.address')}</label>
 							<input
 								id="line1"
 								type="text"
 								bind:value={line1}
 								placeholder="Street and number"
-								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div class="sm:col-span-2">
@@ -319,45 +319,45 @@
 								type="text"
 								bind:value={line2}
 								placeholder={t('checkout.addressLine2')}
-								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="city">{t('checkout.city')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="city">{t('checkout.city')}</label>
 							<input
 								id="city"
 								type="text"
 								bind:value={city}
 								placeholder={t('checkout.city')}
-								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="state">{t('checkout.state')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="state">{t('checkout.state')}</label>
 							<input
 								id="state"
 								type="text"
 								bind:value={region}
 								placeholder={t('checkout.state')}
-								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="postalCode">{t('checkout.postalCode')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="postalCode">{t('checkout.postalCode')}</label>
 							<input
 								id="postalCode"
 								type="text"
 								bind:value={postalCode}
 								placeholder={t('checkout.postalCode')}
-								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="country">{t('checkout.country')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="country">{t('checkout.country')}</label>
 							<select
 								id="country"
 								bind:value={country}
-								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							>
 								{#each countries as c (c)}
 									<option value={c}>{c}</option>
@@ -365,73 +365,73 @@
 							</select>
 						</div>
 						<div class="sm:col-span-2">
-							<label class="text-sm font-medium text-gray-700" for="phone">{t('checkout.phone')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="phone">{t('checkout.phone')}</label>
 							<input
 								id="phone"
 								type="tel"
 								bind:value={phone}
 								placeholder="+1 555 000 0000"
-								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 					</div>
 				</section>
 
-				<section class="rounded-2xl border border-gray-200 bg-white p-6">
-					<h2 class="text-lg font-semibold text-gray-900">{t('checkout.paymentMethod')}</h2>
+				<section class="rounded-2xl border border-neutral-200 bg-white p-6">
+					<h2 class="text-lg font-semibold text-neutral-900">{t('checkout.paymentMethod')}</h2>
 					<div class="mt-4 space-y-3">
 						{#each onlineProviders as provider (provider.id)}
 							<label
 								class="flex cursor-pointer items-center gap-3 rounded-lg border p-4
-									{paymentMethod === provider.id ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}"
+									{paymentMethod === provider.id ? 'border-brand-600 bg-brand-50' : 'border-neutral-200 hover:border-neutral-300'}"
 							>
 								<input
 									type="radio"
 									name="paymentMethod"
 									value={provider.id}
 									bind:group={paymentMethod}
-									class="accent-indigo-600"
+									class="accent-brand-600"
 								/>
-								<span class="text-sm font-medium text-gray-800">{provider.label}</span>
-								<span class="ml-auto text-xs text-gray-400">{t('checkout.secure')}</span>
+								<span class="text-sm font-medium text-neutral-800">{provider.label}</span>
+								<span class="ml-auto text-xs text-neutral-400">{t('checkout.secure')}</span>
 							</label>
 						{/each}
 						{#if onlineProviders.length > 0 && paymentMethods.length > 0}
-							<p class="pt-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+							<p class="pt-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
 								{t('checkout.payOnDelivery')}
 							</p>
 						{/if}
 						{#each paymentMethods as method (method.id)}
 							<label
 								class="flex cursor-pointer items-center gap-3 rounded-lg border p-4
-									{paymentMethod === method.id ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}"
+									{paymentMethod === method.id ? 'border-brand-600 bg-brand-50' : 'border-neutral-200 hover:border-neutral-300'}"
 							>
 								<input
 									type="radio"
 									name="paymentMethod"
 									value={method.id}
 									bind:group={paymentMethod}
-									class="accent-indigo-600"
+									class="accent-brand-600"
 								/>
-								<span class="text-sm font-medium text-gray-800">{method.label}</span>
+								<span class="text-sm font-medium text-neutral-800">{method.label}</span>
 							</label>
 						{/each}
 					</div>
 				</section>
 
-				<section class="rounded-2xl border border-gray-200 bg-white p-6">
-					<h2 class="text-lg font-semibold text-gray-900">{t('checkout.notes')}</h2>
+				<section class="rounded-2xl border border-neutral-200 bg-white p-6">
+					<h2 class="text-lg font-semibold text-neutral-900">{t('checkout.notes')}</h2>
 					<textarea
 						bind:value={notes}
 						rows="2"
 						placeholder={t('checkout.notesPlaceholder')}
-						class="mt-2 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						class="mt-2 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 					></textarea>
 				</section>
 			</div>
 
-			<aside class="h-fit rounded-2xl border border-gray-200 bg-white p-6 lg:sticky lg:top-24 lg:col-span-2">
-				<h2 class="text-lg font-semibold text-gray-900">{t('cart.summary')}</h2>
+			<aside class="h-fit rounded-2xl border border-neutral-200 bg-white p-6 lg:sticky lg:top-24 lg:col-span-2">
+				<h2 class="text-lg font-semibold text-neutral-900">{t('cart.summary')}</h2>
 
 				<ul class="mt-4 space-y-4">
 					{#each cart.items as line (line.variantId)}
@@ -440,22 +440,22 @@
 								<img
 									src={line.image ?? placeholderImage()}
 									alt={line.name}
-									class="h-14 w-14 rounded-lg border border-gray-200 object-cover"
+									class="h-14 w-14 rounded-lg border border-neutral-200 object-cover"
 									onerror={handleImageError}
 								/>
 								<span
-									class="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-gray-900 px-1 text-[10px] font-bold text-white"
+									class="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-900 px-1 text-[10px] font-bold text-white"
 								>
 									{line.quantity}
 								</span>
 							</div>
 							<div class="flex-1">
-								<p class="text-sm font-medium text-gray-900">{line.name}</p>
+								<p class="text-sm font-medium text-neutral-900">{line.name}</p>
 								{#if lineOptions(line.optionValues)}
-									<p class="text-xs text-gray-500">{lineOptions(line.optionValues)}</p>
+									<p class="text-xs text-neutral-500">{lineOptions(line.optionValues)}</p>
 								{/if}
 							</div>
-							<p class="text-sm font-medium text-gray-900">
+							<p class="text-sm font-medium text-neutral-900">
 								{money(line.price * line.quantity, store.merchant.currency)}
 							</p>
 						</li>
@@ -468,12 +468,12 @@
 							type="text"
 							bind:value={couponCode}
 							placeholder={t('checkout.couponCode')}
-							class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500"
+							class="w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-brand-500"
 						/>
 						{#if summary?.coupon}
 							<button
 								type="button"
-								class="rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-600 hover:bg-gray-50"
+								class="rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
 								onclick={removeCoupon}
 							>
 								{t('cart.remove')}
@@ -481,7 +481,7 @@
 						{:else}
 							<button
 								type="button"
-								class="rounded-lg bg-gray-900 px-4 text-sm font-semibold text-white hover:bg-gray-800"
+								class="rounded-lg bg-neutral-900 px-4 text-sm font-semibold text-white hover:bg-neutral-800"
 								onclick={applyCoupon}
 							>
 								{t('products.apply')}
@@ -495,38 +495,38 @@
 					{/if}
 				</div>
 
-				<dl class="mt-6 space-y-2 border-t border-gray-200 pt-4 text-sm">
-					<div class="flex justify-between text-gray-600">
+				<dl class="mt-6 space-y-2 border-t border-neutral-200 pt-4 text-sm">
+					<div class="flex justify-between text-neutral-600">
 						<dt>{t('order.subtotal')}</dt>
-						<dd class="font-medium text-gray-900">{money(summary?.subtotal ?? cart.subtotal, store.merchant.currency)}</dd>
+						<dd class="font-medium text-neutral-900">{money(summary?.subtotal ?? cart.subtotal, store.merchant.currency)}</dd>
 					</div>
 					{#if summary && summary.discountTotal > 0}
-						<div class="flex justify-between text-gray-600">
+						<div class="flex justify-between text-neutral-600">
 							<dt>{t('order.discount')}</dt>
 							<dd class="font-medium text-green-700">−{money(summary.discountTotal, store.merchant.currency)}</dd>
 						</div>
 					{/if}
-					<div class="flex justify-between text-gray-600">
+					<div class="flex justify-between text-neutral-600">
 						<dt>{t('order.shipping')}</dt>
-						<dd class="font-medium text-gray-900">
+						<dd class="font-medium text-neutral-900">
 							{#if summary}
 								{summary.shippingTotal === 0 ? t('order.free') : money(summary.shippingTotal, store.merchant.currency)}
 							{:else}
-								<span class="text-gray-400">{t('checkout.calculatedAtCheckout')}</span>
+								<span class="text-neutral-400">{t('checkout.calculatedAtCheckout')}</span>
 							{/if}
 						</dd>
 					</div>
-					<div class="flex justify-between text-gray-600">
+					<div class="flex justify-between text-neutral-600">
 						<dt>{t('order.tax')}</dt>
-						<dd class="font-medium text-gray-900">
+						<dd class="font-medium text-neutral-900">
 							{#if summary}
 								{money(summary.taxTotal, store.merchant.currency)}
 							{:else}
-								<span class="text-gray-400">{t('checkout.calculatedAtCheckout')}</span>
+								<span class="text-neutral-400">{t('checkout.calculatedAtCheckout')}</span>
 							{/if}
 						</dd>
 					</div>
-					<div class="flex justify-between border-t border-gray-200 pt-3 text-base font-semibold text-gray-900">
+					<div class="flex justify-between border-t border-neutral-200 pt-3 text-base font-semibold text-neutral-900">
 						<dt>{t('order.total')}</dt>
 						<dd>{money(summary?.total ?? cart.subtotal, store.merchant.currency)}</dd>
 					</div>
@@ -538,18 +538,18 @@
 
 				<button
 					type="button"
-					class="mt-6 w-full rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+					class="mt-6 w-full rounded-lg bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
 					disabled={placing}
 					onclick={placeOrder}
 				>
 					{placing ? t('common.loading') : selectedIsProvider ? t('checkout.payWith', { provider: onlineProviders.find((p) => p.id === paymentMethod)?.label ?? t('checkout.provider') }) : t('checkout.placeOrder')}
 				</button>
 				{#if !selectedIsProvider}
-					<p class="mt-3 text-center text-xs text-gray-400">
+					<p class="mt-3 text-center text-xs text-neutral-400">
 						{t('checkout.codNote')}
 					</p>
 				{:else}
-					<p class="mt-3 text-center text-xs text-gray-400">
+					<p class="mt-3 text-center text-xs text-neutral-400">
 						{t('checkout.redirectNote')}
 					</p>
 				{/if}

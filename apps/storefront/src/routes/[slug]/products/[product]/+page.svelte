@@ -243,23 +243,23 @@
 </svelte:head>
 
 <div class="mx-auto max-w-7xl px-4 py-10">
-	<nav class="text-sm text-gray-500">
-		<a href={`/${data.slug}`} class="hover:text-gray-900">{t('navigation.home')}</a>
+	<nav class="text-sm text-neutral-500">
+		<a href={`/${data.slug}`} class="hover:text-neutral-900">{t('navigation.home')}</a>
 		<span class="mx-2">/</span>
-		<a href={`/${data.slug}/products`} class="hover:text-gray-900">{t('navigation.shop')}</a>
+		<a href={`/${data.slug}/products`} class="hover:text-neutral-900">{t('navigation.shop')}</a>
 		{#if product.category}
 			<span class="mx-2">/</span>
-			<a href={`/${data.slug}/categories/${product.category.slug}`} class="hover:text-gray-900">
+			<a href={`/${data.slug}/categories/${product.category.slug}`} class="hover:text-neutral-900">
 				{product.category.name}
 			</a>
 		{/if}
 		<span class="mx-2">/</span>
-		<span class="text-gray-900">{product.name}</span>
+		<span class="text-neutral-900">{product.name}</span>
 	</nav>
 
 	<div class="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-2">
 	<div class="space-y-3">
-		<div class="aspect-square overflow-hidden rounded-2xl border border-gray-200 bg-gray-100">
+		<div class="aspect-square overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100">
 			<img src={mainImage ?? placeholderImage()} alt={product.name} class="h-full w-full object-cover" onerror={handleImageError} />
 		</div>
 		{#if gallery.length > 1}
@@ -268,7 +268,7 @@
 					<button
 						type="button"
 						class="h-16 w-16 overflow-hidden rounded-lg border-2 transition
-							{mainImage === img ? 'border-indigo-600' : 'border-gray-200 hover:border-gray-300'}"
+							{mainImage === img ? 'border-brand-600' : 'border-neutral-200 hover:border-neutral-300'}"
 						onclick={() => (activeImage = i)}
 						aria-label={t('product.viewImage', { n: i + 1 })}
 					>
@@ -280,34 +280,34 @@
 	</div>
 
 		<div class="flex flex-col gap-5">
-			<h1 class="text-3xl font-bold text-gray-900">{product.name}</h1>
+			<h1 class="text-3xl font-bold text-neutral-900">{product.name}</h1>
 
 			{#if product.rating && product.rating.count > 0}
 				<a href="#reviews" class="flex items-center gap-2 text-sm">
 					<span class="text-amber-500" aria-hidden="true">{starString(product.rating.average)}</span>
-					<span class="text-gray-500">{product.rating.average} · {product.rating.count} {product.rating.count === 1 ? t('product.review') : t('product.reviews')}</span>
+					<span class="text-neutral-500">{product.rating.average} · {product.rating.count} {product.rating.count === 1 ? t('product.review') : t('product.reviews')}</span>
 				</a>
 			{/if}
 
 			<div class="flex items-baseline gap-3">
-				<span class="text-2xl font-semibold text-gray-900">{money(price, store.merchant.currency)}</span>
+				<span class="text-2xl font-semibold text-neutral-900">{money(price, store.merchant.currency)}</span>
 				{#if compareAt && compareAt > price}
-					<span class="text-lg text-gray-400 line-through">{money(compareAt, store.merchant.currency)}</span>
+					<span class="text-lg text-neutral-400 line-through">{money(compareAt, store.merchant.currency)}</span>
 				{/if}
 			</div>
 
 			{#if optionNames.length}
 				{#each optionNames as name (name)}
 					<div>
-						<p class="text-sm font-medium text-gray-700">{name}</p>
+						<p class="text-sm font-medium text-neutral-700">{name}</p>
 						<div class="mt-2 flex flex-wrap gap-2">
 							{#each [...new Set(product.variants.map((v) => optionValues(v, name)))] as value (value)}
 								<button
 									type="button"
 									class="rounded-lg border px-4 py-2 text-sm font-medium transition
 										{selectedVariant?.optionValues?.[name] === value
-											? 'border-indigo-600 bg-indigo-600 text-white'
-											: 'border-gray-300 text-gray-700 hover:border-indigo-400'}"
+											? 'border-brand-600 bg-brand-600 text-white'
+											: 'border-neutral-300 text-neutral-700 hover:border-brand-400'}"
 									onclick={() => chooseOption(name, value)}
 								>
 									{value}
@@ -319,10 +319,10 @@
 			{/if}
 
 			<div class="flex items-center gap-4">
-				<div class="flex items-center rounded-lg border border-gray-300">
+				<div class="flex items-center rounded-lg border border-neutral-300">
 					<button
 						type="button"
-						class="min-w-11 min-h-11 px-3 py-2 text-gray-600 hover:text-gray-900"
+						class="min-w-11 min-h-11 px-3 py-2 text-neutral-600 hover:text-neutral-900"
 						onclick={() => (quantity = Math.max(1, quantity - 1))}
 						aria-label={t('product.decreaseQty')}
 					>
@@ -331,7 +331,7 @@
 					<span class="w-10 text-center text-sm font-medium">{quantity}</span>
 					<button
 						type="button"
-						class="min-w-11 min-h-11 px-3 py-2 text-gray-600 hover:text-gray-900"
+						class="min-w-11 min-h-11 px-3 py-2 text-neutral-600 hover:text-neutral-900"
 						onclick={() => (quantity = quantity + 1)}
 						aria-label={t('product.increaseQty')}
 					>
@@ -341,7 +341,7 @@
 
 				<button
 					type="button"
-					class="flex-1 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+					class="flex-1 rounded-lg bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
 					disabled={!available}
 					onclick={addToCart}
 				>
@@ -354,7 +354,7 @@
 						class="rounded-lg border px-4 py-3 text-xl leading-none transition
 							{account.isWishlisted(product.id)
 								? 'border-rose-200 bg-rose-50 text-rose-600'
-								: 'border-gray-300 text-gray-400 hover:border-rose-300 hover:text-rose-500'}
+								: 'border-neutral-300 text-neutral-400 hover:border-rose-300 hover:text-rose-500'}
 							disabled:cursor-not-allowed disabled:opacity-50"
 						disabled={wishBusy}
 						aria-pressed={account.isWishlisted(product.id)}
@@ -383,37 +383,37 @@
 			{/if}
 
 			{#if product.description}
-				<div class="border-t border-gray-200 pt-5">
-					<h2 class="mb-2 text-sm font-semibold text-gray-900">{t('product.description')}</h2>
-					<p class="whitespace-pre-line text-sm leading-relaxed text-gray-600">{product.description}</p>
+				<div class="border-t border-neutral-200 pt-5">
+					<h2 class="mb-2 text-sm font-semibold text-neutral-900">{t('product.description')}</h2>
+					<p class="whitespace-pre-line text-sm leading-relaxed text-neutral-600">{product.description}</p>
 				</div>
 			{/if}
 
 			{#if product.sku}
-				<p class="text-xs text-gray-400">SKU: {product.sku}</p>
+				<p class="text-xs text-neutral-400">SKU: {product.sku}</p>
 			{/if}
 		</div>
 	</div>
 
 	<section id="reviews" class="mt-16 scroll-mt-24">
-		<h2 class="text-2xl font-bold text-gray-900">{t('product.orders')}</h2>
+		<h2 class="text-2xl font-bold text-neutral-900">{t('product.orders')}</h2>
 
 		<div class="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-5">
 			<div class="lg:col-span-2">
-				<div class="rounded-2xl border border-gray-200 bg-white p-6">
+				<div class="rounded-2xl border border-neutral-200 bg-white p-6">
 					{#if product.rating && product.rating.count > 0}
-						<p class="text-4xl font-bold text-gray-900">{product.rating.average}</p>
+						<p class="text-4xl font-bold text-neutral-900">{product.rating.average}</p>
 						<p class="mt-1 text-amber-500" aria-hidden="true">{starString(product.rating.average)}</p>
-						<p class="mt-1 text-sm text-gray-500">
+						<p class="mt-1 text-sm text-neutral-500">
 							{t('product.basedOn', { count: product.rating.count })}
 						</p>
 					{:else}
-						<p class="text-sm text-gray-500">{t('product.noReviewsYet')}</p>
+						<p class="text-sm text-neutral-500">{t('product.noReviewsYet')}</p>
 					{/if}
 
-					<div class="mt-6 border-t border-gray-100 pt-5">
+					<div class="mt-6 border-t border-neutral-100 pt-5">
 						{#if accountReady && account.signedIn && account.customer}
-							<h3 class="text-sm font-semibold text-gray-900">{t('product.writeReview')}</h3>
+							<h3 class="text-sm font-semibold text-neutral-900">{t('product.writeReview')}</h3>
 							<form class="mt-3 space-y-3" onsubmit={submitReview}>
 								<div class="flex items-center gap-1" role="radiogroup" aria-label={t('product.yourRating')}>
 									{#each [1, 2, 3, 4, 5] as starValue (starValue)}
@@ -424,7 +424,7 @@
 											aria-label={t('product.stars', { n: starValue })}
 											class="text-2xl leading-none transition {formRating >= starValue
 												? 'text-amber-500'
-												: 'text-gray-300 hover:text-amber-400'}"
+												: 'text-neutral-300 hover:text-amber-400'}"
 											onclick={() => (formRating = starValue)}
 										>
 											★
@@ -436,13 +436,13 @@
 									bind:value={formTitle}
 									placeholder={t('product.reviewHeadline')}
 									maxlength="255"
-									class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+									class="w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 								/>
 								<textarea
 									bind:value={formBody}
 									rows="3"
 									placeholder={t('product.reviewBody')}
-									class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+									class="w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 								></textarea>
 								{#if reviewError}
 									<p class="rounded-lg bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{reviewError}</p>
@@ -450,7 +450,7 @@
 								<button
 									type="submit"
 									disabled={submittingReview}
-									class="w-full rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+									class="w-full rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
 								>
 									{submittingReview ? t('common.loading') : t('product.submitReview')}
 								</button>
@@ -458,12 +458,12 @@
 							{#if reviewNotice}
 								<p class="mt-3 rounded-lg bg-green-50 px-4 py-3 text-sm font-medium text-green-800">{reviewNotice}</p>
 							{/if}
-							<p class="mt-2 text-xs text-gray-400">
+							<p class="mt-2 text-xs text-neutral-400">
 								{t('product.reviewApproval')}
 							</p>
 						{:else if accountReady}
-							<p class="text-sm text-gray-500">
-								<a href={`/${data.slug}/account`} class="font-medium text-indigo-600 hover:text-indigo-700">{t('navigation.signIn')}</a>
+							<p class="text-sm text-neutral-500">
+								<a href={`/${data.slug}/account`} class="font-medium text-brand-600 hover:text-brand-700">{t('navigation.signIn')}</a>
 								{t('product.toWriteReview')}
 							</p>
 						{/if}
@@ -473,34 +473,34 @@
 
 			<div class="lg:col-span-3">
 				{#if reviews.length === 0}
-					<p class="rounded-2xl border border-dashed border-gray-200 px-6 py-12 text-center text-sm text-gray-400">
+					<p class="rounded-2xl border border-dashed border-neutral-200 px-6 py-12 text-center text-sm text-neutral-400">
 						{t('product.contactStore')}
 					</p>
 				{:else}
 					<ul class="space-y-4">
 						{#each reviews as review (review.id)}
-							<li class="rounded-2xl border border-gray-200 bg-white p-5">
+							<li class="rounded-2xl border border-neutral-200 bg-white p-5">
 								<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 									<span class="text-sm font-semibold text-amber-500" aria-hidden="true">{starString(review.rating)}</span>
-									<span class="text-sm font-medium text-gray-900">{review.title ?? ''}</span>
+									<span class="text-sm font-medium text-neutral-900">{review.title ?? ''}</span>
 									{#if review.verifiedPurchase}
 										<span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
 											{t('product.verifiedPurchase')}
 										</span>
 									{/if}
-									<span class="ml-auto text-xs text-gray-400">{formatDate(review.createdAt)}</span>
+									<span class="ml-auto text-xs text-neutral-400">{formatDate(review.createdAt)}</span>
 								</div>
 								{#if review.body}
-									<p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-gray-600">{review.body}</p>
+									<p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-neutral-600">{review.body}</p>
 								{/if}
-								<p class="mt-2 text-xs text-gray-400">{review.authorName}</p>
+								<p class="mt-2 text-xs text-neutral-400">{review.authorName}</p>
 							</li>
 						{/each}
 					</ul>
 					{#if reviewsPage < reviewsTotalPages}
 						<button
 							type="button"
-							class="mt-4 w-full rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+							class="mt-4 w-full rounded-lg border border-neutral-300 px-5 py-2.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:text-neutral-400"
 							disabled={loadingMore}
 							onclick={loadMoreReviews}
 						>
@@ -514,7 +514,7 @@
 
 	{#if product.related.length}
 		<section class="mt-16">
-			<h2 class="mb-6 text-2xl font-bold text-gray-900">{t('product.alsoLike')}</h2>
+			<h2 class="mb-6 text-2xl font-bold text-neutral-900">{t('product.alsoLike')}</h2>
 			<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
 				{#each product.related as related (related.id)}
 					<ProductCard product={related} storeSlug={data.slug} currency={store.merchant.currency} />

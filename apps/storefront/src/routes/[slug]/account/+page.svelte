@@ -287,14 +287,14 @@
 	{#if account.signedIn && account.customer}
 		<div class="flex flex-wrap items-center justify-between gap-4">
 			<div>
-				<h1 class="text-3xl font-bold text-gray-900">{t('account.title')}</h1>
-				<p class="mt-1 text-sm text-gray-500">
+				<h1 class="text-3xl font-bold text-neutral-900">{t('account.title')}</h1>
+				<p class="mt-1 text-sm text-neutral-500">
 					{t('account.signedInAs', { email: account.customer.email })}
 				</p>
 			</div>
 			<button
 				type="button"
-				class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+				class="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
 				onclick={() => {
 					account.logout()
 					orders = []
@@ -326,10 +326,10 @@
 
 		<section class="mt-8">
 			<div class="flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-gray-900">{t('account.orderHistory')}</h2>
+				<h2 class="text-lg font-semibold text-neutral-900">{t('account.orderHistory')}</h2>
 				<button
 					type="button"
-					class="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+					class="text-sm font-medium text-brand-600 hover:text-brand-700"
 					onclick={loadOrders}
 				>
 					{t('account.refresh')}
@@ -337,13 +337,13 @@
 			</div>
 
 			{#if ordersLoading}
-				<p class="mt-4 text-sm text-gray-400">{t('app.loadingOrders')}</p>
+				<p class="mt-4 text-sm text-neutral-400">{t('app.loadingOrders')}</p>
 			{:else if ordersError}
 				<p class="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{ordersError}</p>
 			{:else if orders.length === 0}
-				<div class="mt-4 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-					<p class="text-sm text-gray-500">{t('account.noOrders')}</p>
-					<a href={`/${slug}/products`} class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">
+				<div class="mt-4 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-neutral-300 bg-white px-6 py-12 text-center">
+					<p class="text-sm text-neutral-500">{t('account.noOrders')}</p>
+					<a href={`/${slug}/products`} class="rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">
 						{t('account.startShopping')}
 					</a>
 				</div>
@@ -353,10 +353,10 @@
 						<li>
 							<a
 								href={`/${slug}/orders/${encodeURIComponent(order.orderNumber)}`}
-								class="block rounded-xl border border-gray-200 bg-white p-5 transition hover:border-indigo-300 hover:shadow-sm"
+								class="block rounded-xl border border-neutral-200 bg-white p-5 transition hover:border-brand-300 hover:shadow-sm"
 							>
 								<div class="flex flex-wrap items-center gap-x-4 gap-y-1">
-									<span class="font-mono text-sm font-semibold text-gray-900">{order.orderNumber}</span>
+									<span class="font-mono text-sm font-semibold text-neutral-900">{order.orderNumber}</span>
 									<span
 										class="rounded-full px-2 py-0.5 text-xs font-medium
 											{order.paymentStatus === 'paid' ? 'bg-green-50 text-green-700' :
@@ -364,15 +364,15 @@
 									>
 										{statusLabel(order.paymentStatus)}
 									</span>
-									<span class="text-xs uppercase tracking-wide text-gray-400">{order.status}</span>
-									<span class="ml-auto text-xs text-gray-400">{formatDate(order.createdAt)}</span>
+									<span class="text-xs uppercase tracking-wide text-neutral-400">{order.status}</span>
+									<span class="ml-auto text-xs text-neutral-400">{formatDate(order.createdAt)}</span>
 								</div>
-								<p class="mt-2 truncate text-sm text-gray-500">
+								<p class="mt-2 truncate text-sm text-neutral-500">
 									{order.items.map((i) => `${i.quantity} × ${i.name}`).join(', ')}
 								</p>
 								<div class="mt-2 flex items-center justify-between">
-									<span class="text-xs text-gray-400">{order.itemCount} {t('order.items')}</span>
-									<span class="text-sm font-semibold text-gray-900">{money(order.total, order.currency)}</span>
+									<span class="text-xs text-neutral-400">{order.itemCount} {t('order.items')}</span>
+									<span class="text-sm font-semibold text-neutral-900">{money(order.total, order.currency)}</span>
 								</div>
 							</a>
 						</li>
@@ -381,22 +381,22 @@
 			{/if}
 		</section>
 
-		<section class="mt-8 max-w-md rounded-2xl border border-gray-200 bg-white p-6">
-			<h2 class="text-lg font-semibold text-gray-900">{t('account.password')}</h2>
+		<section class="mt-8 max-w-md rounded-2xl border border-neutral-200 bg-white p-6">
+			<h2 class="text-lg font-semibold text-neutral-900">{t('account.password')}</h2>
 			<form class="mt-4 space-y-3" onsubmit={changePassword}>
 				<div>
-					<label class="text-sm font-medium text-gray-700" for="currentPassword">{t('account.currentPassword')}</label>
+					<label class="text-sm font-medium text-neutral-700" for="currentPassword">{t('account.currentPassword')}</label>
 					<input
 						id="currentPassword"
 						type="password"
 						bind:value={currentPassword}
 						autocomplete="current-password"
 						required
-						class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium text-gray-700" for="newPassword">{t('account.newPassword')}</label>
+					<label class="text-sm font-medium text-neutral-700" for="newPassword">{t('account.newPassword')}</label>
 					<input
 						id="newPassword"
 						type="password"
@@ -404,7 +404,7 @@
 						placeholder={t('account.passwordMinLengthHint')}
 						autocomplete="new-password"
 						required
-						class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 					/>
 				</div>
 				{#if pwMessage}
@@ -418,46 +418,46 @@
 				<button
 					type="submit"
 					disabled={pwSubmitting}
-					class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+					class="rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
 				>
 					{pwSubmitting ? t('common.loading') : t('account.updatePassword')}
 				</button>
 			</form>
 		</section>
 
-		<section class="mt-8 max-w-md rounded-2xl border border-gray-200 bg-white p-6">
-			<h2 class="text-lg font-semibold text-gray-900">{t('accountProfile.title')}</h2>
+		<section class="mt-8 max-w-md rounded-2xl border border-neutral-200 bg-white p-6">
+			<h2 class="text-lg font-semibold text-neutral-900">{t('accountProfile.title')}</h2>
 			<form class="mt-4 space-y-3" onsubmit={saveProfile}>
 				<div class="grid grid-cols-2 gap-3">
 					<div>
-						<label class="text-sm font-medium text-gray-700" for="profFirstName">{t('account.firstName')}</label>
+						<label class="text-sm font-medium text-neutral-700" for="profFirstName">{t('account.firstName')}</label>
 						<input
 							id="profFirstName"
 							type="text"
 							bind:value={profFirstName}
 							autocomplete="given-name"
-							class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+							class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 						/>
 					</div>
 					<div>
-						<label class="text-sm font-medium text-gray-700" for="profLastName">{t('account.lastName')}</label>
+						<label class="text-sm font-medium text-neutral-700" for="profLastName">{t('account.lastName')}</label>
 						<input
 							id="profLastName"
 							type="text"
 							bind:value={profLastName}
 							autocomplete="family-name"
-							class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+							class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 						/>
 					</div>
 				</div>
 				<div>
-					<label class="text-sm font-medium text-gray-700" for="profPhone">{t('accountProfile.phone')}</label>
+					<label class="text-sm font-medium text-neutral-700" for="profPhone">{t('accountProfile.phone')}</label>
 					<input
 						id="profPhone"
 						type="tel"
 						bind:value={profPhone}
 						autocomplete="tel"
-						class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 					/>
 				</div>
 				{#if profMessage}
@@ -471,19 +471,19 @@
 				<button
 					type="submit"
 					disabled={profSubmitting}
-					class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+					class="rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
 				>
 					{profSubmitting ? t('common.loading') : t('accountProfile.save')}
 				</button>
 			</form>
 		</section>
 
-		<section class="mt-8 rounded-2xl border border-gray-200 bg-white p-6">
+		<section class="mt-8 rounded-2xl border border-neutral-200 bg-white p-6">
 			<div class="flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-gray-900">{t('accountAddrs.title')}</h2>
+				<h2 class="text-lg font-semibold text-neutral-900">{t('accountAddrs.title')}</h2>
 				<button
 					type="button"
-					class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+					class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
 					onclick={() => resetAddressForm(null)}
 				>
 					{t('accountAddrs.add')}
@@ -491,28 +491,28 @@
 			</div>
 
 			{#if addressesLoading}
-				<p class="mt-4 text-sm text-gray-400">{t('common.loading')}</p>
+				<p class="mt-4 text-sm text-neutral-400">{t('common.loading')}</p>
 			{:else if addresses.length === 0}
-				<p class="mt-4 text-sm text-gray-500">{t('accountAddrs.empty')}</p>
+				<p class="mt-4 text-sm text-neutral-500">{t('accountAddrs.empty')}</p>
 			{:else}
 				<ul class="mt-4 space-y-3">
 					{#each addresses as a (a.id)}
-						<li class="rounded-xl border border-gray-200 bg-white p-4">
+						<li class="rounded-xl border border-neutral-200 bg-white p-4">
 							<div class="flex items-start justify-between gap-3">
-								<div class="min-w-0 text-sm text-gray-700">
-									<div class="flex flex-wrap items-center gap-2 font-medium text-gray-900">
+								<div class="min-w-0 text-sm text-neutral-700">
+									<div class="flex flex-wrap items-center gap-2 font-medium text-neutral-900">
 										<span>{fullName(a) || a.label}</span>
-										{#if a.isDefaultShipping}<span class="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">{t('accountAddrs.defaultShipping')}</span>{/if}
-										{#if a.isDefaultBilling}<span class="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">{t('accountAddrs.defaultBilling')}</span>{/if}
+										{#if a.isDefaultShipping}<span class="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">{t('accountAddrs.defaultShipping')}</span>{/if}
+										{#if a.isDefaultBilling}<span class="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">{t('accountAddrs.defaultBilling')}</span>{/if}
 									</div>
-									<p class="mt-1 text-gray-500">{addressLines(a)}</p>
-									{#if a.phone}<p class="text-gray-400">{a.phone}</p>{/if}
+									<p class="mt-1 text-neutral-500">{addressLines(a)}</p>
+									{#if a.phone}<p class="text-neutral-400">{a.phone}</p>{/if}
 								</div>
 								<div class="flex shrink-0 flex-col items-end gap-2">
 									<div class="flex gap-2">
 										<button
 											type="button"
-											class="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+											class="text-sm font-medium text-brand-600 hover:text-brand-700"
 											onclick={() => resetAddressForm(a)}
 										>
 											{t('accountAddrs.edit')}
@@ -527,12 +527,12 @@
 									</div>
 									<div class="flex gap-2 text-xs">
 										{#if !a.isDefaultShipping}
-											<button type="button" class="text-gray-500 hover:text-indigo-600" onclick={() => setDefault(a.id, 'shipping')}>
+											<button type="button" class="text-neutral-500 hover:text-brand-600" onclick={() => setDefault(a.id, 'shipping')}>
 												{t('accountAddrs.setDefaultShipping')}
 											</button>
 										{/if}
 										{#if !a.isDefaultBilling}
-											<button type="button" class="text-gray-500 hover:text-indigo-600" onclick={() => setDefault(a.id, 'billing')}>
+											<button type="button" class="text-neutral-500 hover:text-brand-600" onclick={() => setDefault(a.id, 'billing')}>
 												{t('accountAddrs.setDefaultBilling')}
 											</button>
 										{/if}
@@ -549,100 +549,100 @@
 			{/if}
 
 			{#if showAddressForm}
-				<div class="mt-5 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
-					<h3 class="text-sm font-semibold text-gray-900">
+				<div class="mt-5 rounded-xl border border-brand-200 bg-brand-50 p-4">
+					<h3 class="text-sm font-semibold text-neutral-900">
 						{editingAddress ? t('accountAddrs.edit') : t('accountAddrs.add')}
 					</h3>
 					<form class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2" onsubmit={saveAddress}>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="addrLine1">{t('accountAddrs.line1')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="addrLine1">{t('accountAddrs.line1')}</label>
 							<input
 								id="addrLine1"
 								type="text"
 								bind:value={addr.line1}
 								required
-								class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="addrLine2">{t('accountAddrs.line2')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="addrLine2">{t('accountAddrs.line2')}</label>
 							<input
 								id="addrLine2"
 								type="text"
 								bind:value={addr.line2}
-								class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="addrName">{t('accountAddrs.name')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="addrName">{t('accountAddrs.name')}</label>
 							<input
 								id="addrName"
 								type="text"
 								bind:value={addr.name}
-								class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="addrCompany">{t('accountAddrs.company')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="addrCompany">{t('accountAddrs.company')}</label>
 							<input
 								id="addrCompany"
 								type="text"
 								bind:value={addr.company}
-								class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="addrCity">{t('accountAddrs.city')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="addrCity">{t('accountAddrs.city')}</label>
 							<input
 								id="addrCity"
 								type="text"
 								bind:value={addr.city}
-								class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="addrState">{t('accountAddrs.state')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="addrState">{t('accountAddrs.state')}</label>
 							<input
 								id="addrState"
 								type="text"
 								bind:value={addr.state}
-								class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="addrPostal">{t('accountAddrs.postalCode')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="addrPostal">{t('accountAddrs.postalCode')}</label>
 							<input
 								id="addrPostal"
 								type="text"
 								bind:value={addr.postalCode}
-								class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="addrCountry">{t('accountAddrs.country')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="addrCountry">{t('accountAddrs.country')}</label>
 							<input
 								id="addrCountry"
 								type="text"
 								bind:value={addr.country}
 								autoCapitalize="characters"
-								class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="addrPhone">{t('accountAddrs.phone')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="addrPhone">{t('accountAddrs.phone')}</label>
 							<input
 								id="addrPhone"
 								type="tel"
 								bind:value={addr.phone}
-								class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="addrType">{t('accountAddrs.type')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="addrType">{t('accountAddrs.type')}</label>
 							<select
 								id="addrType"
 								bind:value={addr.addressType}
-								class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							>
 								<option value="both">{t('accountAddrs.both')}</option>
 								<option value="shipping">{t('accountAddrs.shipping')}</option>
@@ -653,13 +653,13 @@
 							<button
 								type="submit"
 								disabled={addressSubmitting}
-								class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+								class="rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
 							>
 								{addressSubmitting ? t('common.loading') : t('accountAddrs.save')}
 							</button>
 							<button
 								type="button"
-								class="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+								class="rounded-lg border border-neutral-300 px-5 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
 								onclick={() => {
 									showAddressForm = false
 									editingAddress = null
@@ -673,11 +673,11 @@
 			{/if}
 		</section>
 	{:else}
-		<div class="mx-auto max-w-md rounded-2xl border border-gray-200 bg-white p-6 sm:p-8">
-			<div class="flex rounded-lg bg-gray-100 p-1 text-sm font-medium">
+		<div class="mx-auto max-w-md rounded-2xl border border-neutral-200 bg-white p-6 sm:p-8">
+			<div class="flex rounded-lg bg-neutral-100 p-1 text-sm font-medium">
 				<button
 					type="button"
-					class="flex-1 rounded-md px-3 py-2 transition {mode === 'login' ? 'bg-white text-gray-900 shadow' : 'text-gray-500 hover:text-gray-700'}"
+					class="flex-1 rounded-md px-3 py-2 transition {mode === 'login' ? 'bg-white text-neutral-900 shadow' : 'text-neutral-500 hover:text-neutral-700'}"
 					onclick={() => {
 						mode = 'login'
 						authError = ''
@@ -687,7 +687,7 @@
 				</button>
 				<button
 					type="button"
-					class="flex-1 rounded-md px-3 py-2 transition {mode === 'register' ? 'bg-white text-gray-900 shadow' : 'text-gray-500 hover:text-gray-700'}"
+					class="flex-1 rounded-md px-3 py-2 transition {mode === 'register' ? 'bg-white text-neutral-900 shadow' : 'text-neutral-500 hover:text-neutral-700'}"
 					onclick={() => {
 						mode = 'register'
 						authError = ''
@@ -701,61 +701,61 @@
 				{#if mode === 'register'}
 					<div class="grid grid-cols-2 gap-3">
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="firstName">{t('account.firstName')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="firstName">{t('account.firstName')}</label>
 							<input
 								id="firstName"
 								type="text"
 								bind:value={firstName}
 								autocomplete="given-name"
-								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-gray-700" for="lastName">{t('account.lastName')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="lastName">{t('account.lastName')}</label>
 							<input
 								id="lastName"
 								type="text"
 								bind:value={lastName}
 								autocomplete="family-name"
-								class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							/>
 						</div>
 					</div>
 				{/if}
 				<div>
-					<label class="text-sm font-medium text-gray-700" for="accountEmail">{t('account.email')}</label>
+					<label class="text-sm font-medium text-neutral-700" for="accountEmail">{t('account.email')}</label>
 					<input
 						id="accountEmail"
 						type="email"
 						bind:value={email}
 						placeholder="you@example.com"
 						autocomplete="email"
-						class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium text-gray-700" for="accountPassword">{t('account.password')}</label>
+					<label class="text-sm font-medium text-neutral-700" for="accountPassword">{t('account.password')}</label>
 					<input
 						id="accountPassword"
 						type="password"
 						bind:value={password}
 						placeholder={mode === 'register' ? t('account.passwordMinLengthHint') : t('account.yourPassword')}
 						autocomplete={mode === 'register' ? 'new-password' : 'current-password'}
-						class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 					/>
 				</div>
 
 				{#if mode === 'register'}
 					<div>
-						<label class="text-sm font-medium text-gray-700" for="claimOrderNumber">
-							{t('account.recentOrderNumber')} <span class="font-normal text-gray-400">{t('account.guestOnly')}</span>
+						<label class="text-sm font-medium text-neutral-700" for="claimOrderNumber">
+							{t('account.recentOrderNumber')} <span class="font-normal text-neutral-400">{t('account.guestOnly')}</span>
 						</label>
 						<input
 							id="claimOrderNumber"
 							type="text"
 							bind:value={claimOrderNumber}
 							placeholder="e.g. #WABC123XYZ"
-							class="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+							class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 						/>
 					</div>
 				{/if}
@@ -767,17 +767,17 @@
 				<button
 					type="submit"
 					disabled={submitting}
-					class="w-full rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+					class="w-full rounded-lg bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
 				>
 					{submitting ? t('common.loading') : mode === 'login' ? t('navigation.signIn') : t('account.createAccount')}
 				</button>
 				{#if mode === 'login'}
-					<a href={`/${slug}/account/forgot`} class="block text-center text-sm font-medium text-indigo-600 hover:text-indigo-700">
+					<a href={`/${slug}/account/forgot`} class="block text-center text-sm font-medium text-brand-600 hover:text-brand-700">
 						{t('account.forgot.title')}
 					</a>
 				{/if}
 				{#if mode === 'register'}
-					<p class="text-center text-xs text-gray-400">
+					<p class="text-center text-xs text-neutral-400">
 						{t('account.linkPastOrders')}
 					</p>
 				{/if}

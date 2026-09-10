@@ -19,16 +19,16 @@
 </svelte:head>
 
 <div class="mx-auto max-w-7xl px-4 py-10">
-	<nav class="text-sm text-gray-500">
-		<a href={`/${data.slug}`} class="hover:text-gray-900">{t('navigation.home')}</a>
+	<nav class="text-sm text-neutral-500">
+		<a href={`/${data.slug}`} class="hover:text-neutral-900">{t('navigation.home')}</a>
 		<span class="mx-2">/</span>
-		<a href={`/${data.slug}/products`} class="hover:text-gray-900">{t('navigation.shop')}</a>
+		<a href={`/${data.slug}/products`} class="hover:text-neutral-900">{t('navigation.shop')}</a>
 		<span class="mx-2">/</span>
-		<span class="text-gray-900">{category?.name ?? data.category}</span>
+		<span class="text-neutral-900">{category?.name ?? data.category}</span>
 	</nav>
 
-	<h1 class="mt-4 text-3xl font-bold text-gray-900">{category?.name ?? data.category}</h1>
-	<p class="mt-2 text-gray-600">{data.products.meta.total} {t('home.products')}</p>
+	<h1 class="mt-4 text-3xl font-bold text-neutral-900">{category?.name ?? data.category}</h1>
+	<p class="mt-2 text-neutral-600">{data.products.meta.total} {t('home.products')}</p>
 
 	<div class="mt-8">
 		<ProductListing

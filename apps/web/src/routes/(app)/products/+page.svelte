@@ -205,31 +205,33 @@
 				<input
 					class="field pl-9"
 					placeholder={t('products.searchPlaceholder')}
+					aria-label={t('products.searchPlaceholder')}
 					bind:value={search}
 					onkeydown={(e) => e.key === 'Enter' && applyFilters()}
 				/>
 			</div>
-			<select class="field w-auto" bind:value={status}>
+			<select class="field w-auto" bind:value={status} aria-label={t('products.allStatuses')}>
 				<option value="">{t('products.allStatuses')}</option>
 				<option value="active">{t('products.available')}</option>
-				<option value="draft">Draft</option>
+				<option value="draft">{t('products.draft')}</option>
 				<option value="archived">{t('products.archived')}</option>
 			</select>
-			<select class="field w-auto" bind:value={categoryId}>
+			<select class="field w-auto" bind:value={categoryId} aria-label={t('products.allCategories')}>
 				<option value="">{t('products.allCategories')}</option>
 				{#each categories as c (c.id)}
 					<option value={c.id}>{c.name}</option>
 				{/each}
 			</select>
-			<Button variant="secondary" size="sm" onclick={applyFilters}>Apply</Button>
+			<Button variant="secondary" size="sm" onclick={applyFilters}>{t('products.apply')}</Button>
 			{#if selected.length > 0 && canWrite()}
-				<span class="text-sm text-secondary">{selected.length} selected</span>
-				<Button variant="secondary" size="sm" onclick={() => (bulkModal = true)}>Bulk edit</Button>
+				<span class="text-sm text-secondary">{t('products.selected', { n: selected.length })}</span>
+				<Button variant="secondary" size="sm" onclick={() => (bulkModal = true)}>{t('products.bulkEdit')}</Button>
 			{/if}
 		</div>
 	</div>
 
 	<!-- Table -->
+	<h2 class="sr-only">{t('products.list')}</h2>
 	<Card padded={false}>
 		{#if loading}
 			<div class="space-y-2 p-5">
@@ -256,17 +258,17 @@
 								<span class="font-mono-label text-mono-label text-on-surface">{currency(p.price)}</span>
 								<Badge label={p.status} />
 								<span class:font-semibold={p.stock > 0} class:text-error={p.stock <= 0 && p.trackInventory} class:text-on-surface-variant={p.stock > 0}>
-									{number(p.stock)} in stock
+									{t('products.inStock', { n: p.stock })}
 								</span>
 								{#if p.variantCount > 1}
-									<span class="text-outline">({p.variantCount} variants)</span>
+									<span class="text-outline">({t('products.variants', { n: p.variantCount })})</span>
 								{/if}
 							</p>
 						</div>
 						{#if canWrite()}
 							<div class="flex shrink-0 items-center gap-1">
-								<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => { editProduct = p; editOpen = true }}>Edit</button>
-								<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => archiveProduct(p)}>Archive</button>
+								<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => { editProduct = p; editOpen = true }}>{t('common.edit')}</button>
+								<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => archiveProduct(p)}>{t('products.archive')}</button>
 							</div>
 						{/if}
 					</div>
@@ -278,17 +280,17 @@
 						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
 							{#if canWrite()}
 								<th class="w-10 px-table-cell-x py-table-cell-y font-semibold">
-									<input type="checkbox" class="field-check" checked={selected.length === items.length} onchange={toggleAll} />
+									<input type="checkbox" class="field-check" checked={selected.length === items.length} onchange={toggleAll} aria-label="Select all products" />
 								</th>
 							{/if}
 							<th class="w-12 px-table-cell-x py-table-cell-y font-semibold"></th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">Name</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">SKU</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">Price</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">Stock</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">Updated</th>
-							<th class="px-table-cell-x py-table-cell-y text-right font-semibold">Actions</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.name')}</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.sku')}</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.price')}</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.stock')}</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.status')}</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.updated')}</th>
+							<th class="px-table-cell-x py-table-cell-y text-right font-semibold">{t('common.actions')}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -296,7 +298,7 @@
 							<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
 								{#if canWrite()}
 									<td class="px-table-cell-x py-table-cell-y">
-										<input type="checkbox" class="field-check" checked={selected.includes(p.id)} onchange={() => toggle(p.id)} />
+										<input type="checkbox" class="field-check" checked={selected.includes(p.id)} onchange={() => toggle(p.id)} aria-label="Select {p.name}" />
 									</td>
 								{/if}
 								<td class="px-table-cell-x py-table-cell-y">
@@ -307,7 +309,7 @@
 											{/if}
 										</div>
 										<div>
-											<a href="/products/{p.id}" class="inline-block rounded py-1 font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{p.name}</a>
+											<a href="/products/{p.id}" class="inline-flex min-h-11 items-center rounded font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{p.name}</a>
 											{#if p.category}
 												<span class="ml-1 text-xs text-outline">· {p.category.name}</span>
 											{/if}
@@ -321,18 +323,18 @@
 										{number(p.stock)}
 									</span>
 									{#if p.variantCount > 1}
-										<span class="text-xs text-outline"> ({p.variantCount} variants)</span>
+										<span class="text-xs text-outline"> ({t('products.variants', { n: p.variantCount })})</span>
 									{/if}
 								</td>
 								<td class="px-table-cell-x py-table-cell-y"><Badge label={p.status} /></td>
 								<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTime(p.updatedAt)}</td>
 								<td class="px-table-cell-x py-table-cell-y text-right">
 									{#if canWrite()}
-										<button class="inline-block rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => { editProduct = p; editOpen = true }}>
-											Edit
+										<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => { editProduct = p; editOpen = true }}>
+											{t('common.edit')}
 										</button>
-										<button class="inline-block rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => archiveProduct(p)}>
-											Archive
+										<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => archiveProduct(p)}>
+											{t('products.archive')}
 										</button>
 									{/if}
 								</td>
@@ -362,7 +364,7 @@
 
 <!-- Bulk edit modal -->
 {#if bulkModal && canWrite()}
-	<Modal title="Bulk edit products" open={true} width="sm" onClose={() => (bulkModal = false)}>
+	<Modal title={t('products.bulkEditTitle')} open={true} width="sm" onClose={() => (bulkModal = false)}>
 		<div class="space-y-4">
 			<div>
 				<label for="bulk-action" class="field-label">Action</label>

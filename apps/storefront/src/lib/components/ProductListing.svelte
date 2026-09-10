@@ -28,27 +28,27 @@
 
 	{#if page.meta.totalPages > 1}
 		<nav class="mt-10 flex items-center justify-center gap-3">
-			{#if prevPage}
-				<a
-					href={pageUrl(prevPage)}
-					class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-				>
-					Previous
-				</a>
-			{/if}
-			<span class="px-2 text-sm text-gray-500">
-				Page {page.meta.page} of {page.meta.totalPages}
-			</span>
-			{#if nextPage}
-				<a
-					href={pageUrl(nextPage)}
-					class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-				>
-					Next
-				</a>
-			{/if}
+		{#if prevPage}
+			<a
+				href={pageUrl(prevPage)}
+				class="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+			>
+				{t('pagination.previous')}
+			</a>
+		{/if}
+		<span class="px-2 text-sm text-neutral-500">
+			{t('pagination.pageOf').replace('{page}', String(page.meta.page)).replace('{total}', String(page.meta.totalPages))}
+		</span>
+		{#if nextPage}
+			<a
+				href={pageUrl(nextPage)}
+				class="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+			>
+				{t('pagination.next')}
+			</a>
+		{/if}
 		</nav>
 	{/if}
 {:else}
-	<p class="py-16 text-center text-gray-500">{t('products.noProducts')}</p>
+	<p class="py-16 text-center text-neutral-500">{t('products.noProducts')}</p>
 {/if}

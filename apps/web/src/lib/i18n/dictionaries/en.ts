@@ -116,6 +116,16 @@ export const en: Record<string, string> = {
 	'products.archived': 'Archived',
 	'products.outOfStock': 'Out of stock',
 	'products.noProducts': 'No products found',
+	'products.list': 'Product list',
+	'products.apply': 'Apply',
+	'products.bulkEdit': 'Bulk edit',
+	'products.bulkEditTitle': 'Bulk edit products',
+	'products.draft': 'Draft',
+	'products.updated': 'Updated',
+	'products.archive': 'Archive',
+	'products.selected': '{n} selected',
+	'products.inStock': '{n} in stock',
+	'products.variants': '{n} variants',
 
 	// Orders
 	'orders.title': 'Orders',
@@ -130,6 +140,7 @@ export const en: Record<string, string> = {
 	'orders.discount': 'Discount',
 	'orders.grandTotal': 'Total',
 	'orders.noOrders': 'No orders found',
+	'orders.list': 'Order list',
 
 	// Customers
 	'customers.title': 'Customers',
