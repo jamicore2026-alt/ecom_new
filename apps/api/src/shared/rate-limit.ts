@@ -27,7 +27,8 @@ const RULES: Rule[] = [
   { test: (p) => p.endsWith('/orders') && p.includes('/checkout'), max: 30 },
   { test: (p) => p.endsWith('/sync'), max: 30 },
   { test: (p) => p.endsWith('/events'), max: 60 },
-  { test: (p) => p.startsWith('/api/webhooks/'), max: 240 }
+  { test: (p) => p.startsWith('/api/webhooks/'), max: 240 },
+  { test: (p, m) => m === 'GET' && /^\/api\/store\/[^/]+\/(products|categories|search)/.test(p), max: 60 }
 ]
 
 class MemoryCounterStore implements CounterStore {
@@ -255,6 +256,7 @@ export const getRateLimitStore = (): CounterStore => {
 
 const fallbackToMemory = (reason: string, err?: unknown) => {
   store = new MemoryCounterStore()
+  // Structured logging not imported here to avoid circular deps — use raw console for startup fallback
   console.warn(`[rate-limit] ${reason}; falling back to in-memory store.`, err ?? '')
 }
 

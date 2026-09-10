@@ -23,6 +23,8 @@ ENV NODE_ENV=production
 # Mount a persistent volume here in Coolify so uploaded images survive redeploys.
 RUN mkdir -p /app/apps/api/uploads
 
+USER bun
+
 EXPOSE 3005
 HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=6 \
   CMD wget -q --spider "http://127.0.0.1:${PORT:-3005}/health" || exit 1

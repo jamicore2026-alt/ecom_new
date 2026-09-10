@@ -3,6 +3,9 @@ import { db } from '../../database/client'
 import { carts, customers, merchants, storeSettings } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
+import { createLogger } from '../../shared/logger'
+
+const log = createLogger('carts')
 import { getMailer, renderEmail } from '../../shared/mailer'
 
 export type CartItem = {
@@ -243,7 +246,7 @@ export class CartsService {
         html
       })
     } catch (e) {
-      console.error('[carts] recovery email failed:', e)
+      log.error('recovery email failed', e)
     }
   }
 }

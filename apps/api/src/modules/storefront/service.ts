@@ -1,6 +1,9 @@
 import { and, asc, count, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import { db } from '../../database/client'
+import { createLogger } from '../../shared/logger'
+
+const log = createLogger('storefront')
 import {
   categories,
   checkoutSettings,
@@ -1016,9 +1019,11 @@ export class StorefrontService {
     opts: { paymentStatus: 'unpaid' | 'paid'; provider?: string; expiresAt?: Date | null }
   ) {
     const currency = store.merchant.currency
-    // Timestamp component keeps numbers roughly sortable; the random suffix makes
-    // them unguessable (public confirmation endpoint) and collision-free.
-    const orderNumber = `#W${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`
+    // 128-bit random order number — unguessable and collision-free.
+    // Format: #W-XXXXXXXX-XXXXXXXX (8 hex chars per segment, 16 hex = 64 bits + prefix)
+    const seg1 = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
+    const seg2 = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
+    const orderNumber = `#W-${seg1}-${seg2}`
 
     // Resolve the fulfilling warehouse: explicit override, else the merchant's
     // default active warehouse. Null when the merchant has no warehouses set up
@@ -1510,7 +1515,7 @@ export class StorefrontService {
     } catch (err) {
       // Session failed → cancel immediately and release the held stock instead of
       // waiting for the expiry sweep (the customer never reached the gateway).
-      console.error(`[payments] ${providerId} createSession failed for ${order.orderNumber}:`, err)
+      log.error(`${providerId} createSession failed for ${order.orderNumber}`, err)
       await this.cancelPendingOrder(order)
       throw badRequest(
         'PROVIDER_SESSION_FAILED',
@@ -1632,7 +1637,7 @@ export class StorefrontService {
         const done = await this.cancelPendingOrder(order)
         if (done) cancelled++
       } catch (err) {
-        console.error(`[payments] failed to expire order ${order.orderNumber}:`, err)
+        log.error(`failed to expire order ${order.orderNumber}`, err)
       }
     }
     return cancelled

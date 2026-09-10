@@ -54,6 +54,10 @@ const corsOrigins = (process.env.CORS_ORIGINS ?? '')
 
 const devOrigins = [/^http:\/\/(localhost|127\.0\.0\.1):(5478|5479)$/]
 
+if (corsOrigins.length === 0 && process.env.NODE_ENV !== 'production') {
+  console.warn('[cors] CORS_ORIGINS not set — falling back to dev origins (localhost:5478/5479). Set CORS_ORIGINS in production.')
+}
+
 export const app = new Elysia({
   // Cap request bodies (uploads are separately limited to 5MB by the upload model).
   serve: { maxRequestBodySize: 8 * 1024 * 1024 }

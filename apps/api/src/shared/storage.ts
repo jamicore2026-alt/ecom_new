@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { createId } from '@paralleldrive/cuid2'
+import { badRequest } from './errors'
 
 export const UPLOAD_URL_PREFIX = '/uploads'
 const MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -62,9 +63,9 @@ class S3Storage implements StorageAdapter {
   async save(merchantId: string, file: File): Promise<StoredFile> {
     const type = file.type || 'application/octet-stream'
     const ext = extFromType(type)
-    if (!ext) throw new Error(`Unsupported image type: ${type}`)
-    if (file.size > MAX_FILE_BYTES) throw new Error('Image exceeds the 5MB limit')
-    if (file.size === 0) throw new Error('Image is empty')
+    if (!ext) throw badRequest('INVALID_TYPE', `Unsupported image type: ${type}`)
+    if (file.size > MAX_FILE_BYTES) throw badRequest('FILE_TOO_LARGE', 'Image exceeds the 5MB limit')
+    if (file.size === 0) throw badRequest('EMPTY_FILE', 'Image is empty')
 
     const name = `${createId()}.${ext}`
     const key = `${merchantId}/${name}`
@@ -101,9 +102,9 @@ class LocalDiskStorage implements StorageAdapter {
   async save(merchantId: string, file: File): Promise<StoredFile> {
     const type = file.type || 'application/octet-stream'
     const ext = extFromType(type)
-    if (!ext) throw new Error(`Unsupported image type: ${type}`)
-    if (file.size > MAX_FILE_BYTES) throw new Error('Image exceeds the 5MB limit')
-    if (file.size === 0) throw new Error('Image is empty')
+    if (!ext) throw badRequest('INVALID_TYPE', `Unsupported image type: ${type}`)
+    if (file.size > MAX_FILE_BYTES) throw badRequest('FILE_TOO_LARGE', 'Image exceeds the 5MB limit')
+    if (file.size === 0) throw badRequest('EMPTY_FILE', 'Image is empty')
 
     const name = `${createId()}.${ext}`
     const key = `${merchantId}/${name}`
@@ -131,6 +132,9 @@ class LocalDiskStorage implements StorageAdapter {
 
 const useS3 = process.env.STORAGE_DRIVER === 's3'
 export const storage: StorageAdapter = useS3 ? new S3Storage() : new LocalDiskStorage()
-console.log(
-  `[storage] driver: ${useS3 ? `s3 (bucket: ${process.env.S3_BUCKET ?? 'jamicore-uploads'})` : 'local-disk'}`
-)
+
+export const logStorageDriver = () => {
+  console.log(
+    `[storage] driver: ${useS3 ? `s3 (bucket: ${process.env.S3_BUCKET ?? 'jamicore-uploads'})` : 'local-disk'}`
+  )
+}

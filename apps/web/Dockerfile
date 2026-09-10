@@ -18,6 +18,8 @@ ENV API_ORIGIN=$API_ORIGIN
 
 RUN bun run build
 
+USER bun
+
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=6 \
   CMD wget -q --spider "http://127.0.0.1:${PORT:-3000}/health" || exit 1

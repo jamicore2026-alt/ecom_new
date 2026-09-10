@@ -5,6 +5,11 @@ import { OrdersService } from './modules/orders/service'
 import { runJobWorker } from './shared/jobs-worker'
 import { CartsService } from './modules/carts/service'
 import { closeRateLimitStore } from './shared/rate-limit'
+import { connection } from './database/client'
+import { logStorageDriver } from './shared/storage'
+import { createLogger } from './shared/logger'
+
+const log = createLogger('startup')
 
 const port = Number(process.env.PORT ?? 3005)
 
@@ -13,36 +18,37 @@ const SWEEPER_INTERVAL_MS = 60 * 1000
 
 const sweepExpiredOrders = () =>
   StorefrontService.sweepExpiredOrders().catch((err) =>
-    console.error('[payments] expiry sweep failed:', err)
+    log.error('expiry sweep failed', err)
   )
 
 const pruneRevokedTokens = () =>
-  pruneBlacklist().catch((err) => console.error('[auth] blacklist prune failed:', err))
+  pruneBlacklist().catch((err) => log.error('blacklist prune failed', err))
 
 // Release refund reservations whose process died between the gateway call and
 // the resolution transaction (crash safety — see OrdersService.retryRefund).
 const reconcileRefunds = () =>
   OrdersService.reconcileStaleRefunds().catch((err) =>
-    console.error('[refunds] reconciliation failed:', err)
+    log.error('reconciliation failed', err)
   )
 
 // Outbound webhook deliveries + durable background job workers.
 const runWorkers = () =>
   runJobWorker().catch((err) => {
-    console.error('[jobs] worker failed:', err)
+    log.error('worker failed', err)
   })
 
 // Abandoned carts: after 24h of inactivity, mark + send a recovery email.
 const ABANDON_AFTER_MS = 24 * 60 * 60 * 1000
 const sweepAbandonedCarts = () =>
   CartsService.sweepAbandonedCarts(ABANDON_AFTER_MS).catch((err) =>
-    console.error('[carts] abandoned-cart sweep failed:', err)
+    log.error('abandoned-cart sweep failed', err)
   )
 
 app.listen(port, () => {
-  console.log(`🦊 Merchant Dashboard API running at http://localhost:${port}`)
+  logStorageDriver()
+  log.info(`Merchant Dashboard API running at http://localhost:${port}`)
   if (process.env.NODE_ENV !== 'production') {
-    console.log(`📚 Swagger docs at http://localhost:${port}/docs`)
+    log.info(`Swagger docs at http://localhost:${port}/docs`)
   }
   setInterval(sweepExpiredOrders, EXPIRY_SWEEP_INTERVAL_MS).unref()
   setInterval(pruneRevokedTokens, EXPIRY_SWEEP_INTERVAL_MS).unref()
@@ -58,6 +64,7 @@ app.listen(port, () => {
 // hot-reloads / Coolify redeploys don't leave dangling connections behind.
 const shutdown = async () => {
   await closeRateLimitStore()
+  await connection.end()
   process.exit(0)
 }
 process.once('SIGTERM', shutdown)

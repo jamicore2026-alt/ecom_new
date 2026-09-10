@@ -1,6 +1,11 @@
 import { browser } from '$app/environment'
 import type { ApiErrorBody, AuthResponse, MeResponse } from './types'
 
+// NOTE: Access tokens are stored in localStorage for SPA convenience.
+// This means any XSS vulnerability in the dashboard would expose the token.
+// The refresh token is httpOnly+SameSite=Lax cookie (set by the API), so
+// session hijacking via XSS is limited to the access token lifetime (1 hour).
+// TODO: Consider migrating to httpOnly cookie-based auth for defense-in-depth.
 const ACCESS_KEY = 'md.access'
 const OUTLET_KEY = 'md.outlet'
 

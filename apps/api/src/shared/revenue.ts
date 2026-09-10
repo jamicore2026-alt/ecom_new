@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray, lte, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, sql } from 'drizzle-orm'
 import { db } from '../database/client'
 import { orders, refunds } from '../database/schema'
 import { branchOrderCondition } from './outlet-scope'
@@ -72,29 +72,4 @@ export async function netRevenueByDay(
     .where(inWindow(merchantId, since, branchIds))
     .groupBy(dayCol)
   return new Map(rows.map((r) => [r.day, Number(r.revenue ?? 0)]))
-}
-
-/** Count of orders whose payment was actually collected, in a window. */
-export async function countPaidOrders(merchantId: string, since: Date): Promise<number> {
-  const [row] = await db
-    .select({ n: count() })
-    .from(orders)
-    .where(inWindow(merchantId, since))
-  return Number(row?.n ?? 0)
-}
-
-/** Completed refunds issued in a window (by refund date). */
-export async function refundsInRange(merchantId: string, since: Date, until: Date): Promise<number> {
-  const [row] = await db
-    .select({ total: sql<number>`coalesce(sum(${refunds.amount}), 0)` })
-    .from(refunds)
-    .where(
-      and(
-        eq(refunds.merchantId, merchantId),
-        eq(refunds.status, 'completed'),
-        gte(refunds.createdAt, since),
-        lte(refunds.createdAt, until)
-      )
-    )
-  return Number(row?.total ?? 0)
 }

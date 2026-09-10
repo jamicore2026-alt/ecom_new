@@ -3,7 +3,7 @@ import jwt from '@elysiajs/jwt'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../database/client'
 import { customers, merchants } from '../../database/schema'
-import { ACCESS_SECRET } from '../../plugins/auth'
+import { resolveSecret } from '../../plugins/auth'
 import { unauthorized } from '../../shared/errors'
 import { CustomerAuthService, type ShopperContext } from './service'
 import {
@@ -26,7 +26,8 @@ import {
 /** Shopper sessions are long-lived but bounded; configurable for deployments. */
 export const SHOPPER_TOKEN_TTL = Number(process.env.SHOPPER_TOKEN_TTL ?? 60 * 60 * 24 * 7)
 
-export const shopperJwt = jwt({ name: 'shopperJwt', secret: ACCESS_SECRET })
+const SHOPPER_SECRET = resolveSecret('SHOPPER_ACCESS_SECRET', 'dev-shopper-secret-change-me')
+export const shopperJwt = jwt({ name: 'shopperJwt', secret: SHOPPER_SECRET })
 
 /** Verifies the shopper bearer token and loads the live customer row.
  *  Scoped derive — only guards routes registered after `.use(shopperGuard)`. */

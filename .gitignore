@@ -18,3 +18,5 @@ build/
 apps/api/uploads/
 
 .opencode/
+.skylos/
+graphify-out/

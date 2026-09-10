@@ -1,4 +1,5 @@
 import { badRequest } from '../shared/errors'
+import { buildOutboundUrl } from '../shared/outbound-url'
 import type {
   CallbackResult,
   CallbackVerifyInput,
@@ -46,12 +47,16 @@ async function request<T>(
 
   let res: Response
   try {
-    res = await fetch(`${baseUrl(config)}${path}`, {
+    const target = buildOutboundUrl(`${baseUrl(config)}${path}`, {
+      allowHostnames: ['myfatoorah.com']
+    })
+    res = await fetch(target, {
       method: body === undefined ? 'GET' : 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
+      redirect: 'manual',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       ...(body === undefined ? {} : { body: JSON.stringify(body) })
     })

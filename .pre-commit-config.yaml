@@ -1,0 +1,11 @@
+repos:
+  - repo: local
+    hooks:
+      - id: skylos-gate
+        name: Skylos static analysis gate
+        entry: env SKYLOS_GREP_BUDGET=300 skylos . -a --gate
+        language: system
+        pass_filenames: false
+        verbose: true
+        # SKYLOS_GREP_BUDGET must exceed the default 30s or the scan reports
+        # "analysis incomplete" and the gate fails even with no threshold breach.

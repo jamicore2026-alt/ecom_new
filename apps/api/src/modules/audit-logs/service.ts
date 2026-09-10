@@ -3,6 +3,9 @@ import { db } from '../../database/client'
 import { auditLogs } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
+import { createLogger } from '../../shared/logger'
+
+const log = createLogger('audit')
 import { makeMeta, parsePagination } from '../../shared/pagination'
 
 export interface AuditLogInput {
@@ -31,7 +34,7 @@ export class AuditService {
         ipAddress: input.ipAddress ?? null
       })
     } catch (err) {
-      console.error('[audit] failed to record action', err)
+      log.error('failed to record action', err)
     }
   }
 

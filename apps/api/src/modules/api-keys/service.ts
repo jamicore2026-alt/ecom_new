@@ -5,6 +5,7 @@ import { apiKeys } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
 import { makeMeta, parsePagination } from '../../shared/pagination'
+import { constantTimeEqual } from '../../shared/crypto'
 
 const SK_PREFIX = 'ecom_'
 
@@ -78,7 +79,7 @@ export class ApiKeysService {
       .select()
       .from(apiKeys)
       .where(eq(apiKeys.keyPrefix, prefix))
-    if (!row || row.status !== 'active' || row.secretHash !== secretHash) return null
+    if (!row || row.status !== 'active' || !constantTimeEqual(row.secretHash, secretHash)) return null
     if (row.expiresAt && row.expiresAt < new Date()) return null
 
     // Touch lastUsedAt (async, don't block request).

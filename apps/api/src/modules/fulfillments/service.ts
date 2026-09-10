@@ -1,5 +1,8 @@
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../database/client'
+import { createLogger } from '../../shared/logger'
+
+const log = createLogger('fulfillments')
 import {
   customers,
   fulfillments,
@@ -264,7 +267,7 @@ export class FulfillmentsService {
         void orderMerchant
       }
     } catch (e) {
-      console.error('[fulfillments] shipped email failed:', e)
+      log.error('shipped email failed', e)
     }
   }
 

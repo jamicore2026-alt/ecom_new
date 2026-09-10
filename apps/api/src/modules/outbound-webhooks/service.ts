@@ -3,6 +3,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../../database/client'
 import { backgroundJobs, webhookDeliveries, webhookEndpoints } from '../../database/schema'
 import { badRequest, notFound } from '../../shared/errors'
+import { encryptJson, decryptJson, maskSecret } from '../../shared/crypto'
 
 const WEBHOOK_EVENTS = [
   'order.created',
@@ -31,13 +32,18 @@ export class OutboundWebhooksService {
     events: Type.Array(Type.Union(WEBHOOK_EVENTS.map((e) => Type.Literal(e)) as any))
   })
 
+  private static maskEndpoint = (row: typeof webhookEndpoints.$inferSelect) => ({
+    ...row,
+    secret: maskSecret(row.secret)
+  })
+
   static listEndpoints = async (merchantId: string) => {
     const rows = await db
       .select()
       .from(webhookEndpoints)
       .where(eq(webhookEndpoints.merchantId, merchantId))
       .orderBy(desc(webhookEndpoints.createdAt))
-    return rows
+    return rows.map(this.maskEndpoint)
   }
 
   static getEndpoint = async (merchantId: string, id: string) => {
@@ -46,7 +52,17 @@ export class OutboundWebhooksService {
       .from(webhookEndpoints)
       .where(and(eq(webhookEndpoints.id, id), eq(webhookEndpoints.merchantId, merchantId)))
     if (!row) throw notFound('ENDPOINT_NOT_FOUND', 'Webhook endpoint not found')
-    return row
+    return this.maskEndpoint(row)
+  }
+
+  /** Returns the raw (decrypted) endpoint for internal use only (webhook delivery). */
+  static getEndpointRaw = async (merchantId: string, id: string) => {
+    const [row] = await db
+      .select()
+      .from(webhookEndpoints)
+      .where(and(eq(webhookEndpoints.id, id), eq(webhookEndpoints.merchantId, merchantId)))
+    if (!row) throw notFound('ENDPOINT_NOT_FOUND', 'Webhook endpoint not found')
+    return { ...row, secret: decryptJson<{ secret: string }>(row.secret).secret }
   }
 
   static createEndpoint = async (
@@ -59,13 +75,14 @@ export class OutboundWebhooksService {
       events: (typeof WEBHOOK_EVENTS)[number][]
     }
   ) => {
+    const encryptedSecret = encryptJson({ secret: input.secret })
     const [row] = await db
       .insert(webhookEndpoints)
       .values({
         merchantId,
         name: input.name,
         url: input.url,
-        secret: input.secret,
+        secret: encryptedSecret,
         enabled: input.enabled ?? true,
         events: input.events,
         status: 'active',
@@ -73,7 +90,7 @@ export class OutboundWebhooksService {
         updatedAt: new Date()
       })
       .returning()
-    return row
+    return this.maskEndpoint(row)
   }
 
   static updateEndpoint = async (
@@ -93,14 +110,14 @@ export class OutboundWebhooksService {
       .set({
         ...(input.name !== undefined && { name: input.name }),
         ...(input.url !== undefined && { url: input.url }),
-        ...(input.secret !== undefined && { secret: input.secret }),
+        ...(typeof input.secret === 'string' && { secret: encryptJson({ secret: input.secret }) }),
         ...(input.enabled !== undefined && { enabled: input.enabled }),
         ...(input.events !== undefined && { events: input.events }),
         updatedAt: new Date()
       })
       .where(and(eq(webhookEndpoints.id, id), eq(webhookEndpoints.merchantId, merchantId)))
       .returning()
-    return row
+    return this.maskEndpoint(row)
   }
 
   static deleteEndpoint = async (merchantId: string, id: string) => {

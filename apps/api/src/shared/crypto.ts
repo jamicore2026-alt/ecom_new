@@ -1,11 +1,31 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+  timingSafeEqual
+} from 'node:crypto'
 
 const ALGO = 'aes-256-gcm'
+
+const DEV_ENCRYPTION_KEY = 'dev-encryption-key-change-me'
+
+/** Constant-time string equality (sha256 digests) — resists timing side-channels. */
+export const constantTimeEqual = (a: string, b: string): boolean => {
+  const aDigest = createHash('sha256').update(a).digest()
+  const bDigest = createHash('sha256').update(b).digest()
+  return timingSafeEqual(aDigest, bDigest)
+}
 
 const getKey = () => {
   const secret = process.env.ENCRYPTION_KEY
   if (!secret) {
     throw new Error('ENCRYPTION_KEY is not set — payment credentials cannot be stored securely')
+  }
+  if (process.env.NODE_ENV === 'production' && constantTimeEqual(secret, DEV_ENCRYPTION_KEY)) {
+    throw new Error(
+      'ENCRYPTION_KEY must be changed from the default in production — payment credentials would be insecure'
+    )
   }
   return createHash('sha256').update(secret).digest()
 }

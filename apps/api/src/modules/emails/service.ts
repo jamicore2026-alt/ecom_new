@@ -1,5 +1,8 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../../database/client'
+import { createLogger } from '../../shared/logger'
+
+const log = createLogger('emails')
 import {
   customers,
   emailLogs,
@@ -94,7 +97,7 @@ export class EmailsService {
         html: input.html
       })
     } catch (e) {
-      console.error('[emails] queue failed:', e)
+      log.error('queue failed', e)
     }
   }
 
@@ -113,7 +116,7 @@ export class EmailsService {
         )
         .where(eq(emailLogs.id, logId))
     } catch (e) {
-      console.error('[emails] deliver failed:', e)
+      log.error('deliver failed', e)
       await db
         .update(emailLogs)
         .set({ status: 'failed', error: e instanceof Error ? e.message : 'Delivery crashed' })
@@ -215,7 +218,7 @@ export class EmailsService {
         })
       })
     } catch (e) {
-      console.error('[emails] orderPlaced failed:', e)
+      log.error('orderPlaced failed', e)
     }
   }
 
@@ -243,7 +246,7 @@ export class EmailsService {
         })
       })
     } catch (e) {
-      console.error('[emails] orderPaid failed:', e)
+      log.error('orderPaid failed', e)
     }
   }
 
@@ -271,7 +274,7 @@ export class EmailsService {
         })
       })
     } catch (e) {
-      console.error('[emails] refundProcessed failed:', e)
+      log.error('refundProcessed failed', e)
     }
   }
 }

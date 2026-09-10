@@ -2,6 +2,9 @@ import { and, count, desc, eq, gte, ilike, lte, ne, or, sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
 import { db } from '../../database/client'
 import { toCsv } from '../../shared/csv'
+import { createLogger } from '../../shared/logger'
+
+const log = createLogger('orders')
 import {
   assertOrderInBranchScope,
   branchOrderCondition
@@ -942,13 +945,13 @@ export class OrdersService {
         result.amount !== undefined &&
         result.amount + 0.005 < expected
       ) {
-        console.error(
-          `[payments] underpaid ${result.providerRef}: captured ${result.amount} < expected ${expected} — leaving order unpaid`
+        log.error(
+          `underpaid ${result.providerRef}: captured ${result.amount} < expected ${expected} — leaving order unpaid`
         )
         status = 'pending'
       } else if (result.currency && txn.currency && result.currency !== txn.currency) {
-        console.error(
-          `[payments] currency mismatch for ${result.providerRef}: ${result.currency} != ${txn.currency} — leaving order unpaid`
+        log.error(
+          `currency mismatch for ${result.providerRef}: ${result.currency} != ${txn.currency} — leaving order unpaid`
         )
         status = 'pending'
       }
@@ -1007,7 +1010,7 @@ export class OrdersService {
       .where(and(eq(refunds.status, 'pending'), lte(refunds.createdAt, cutoff)))
       .returning({ id: refunds.id })
     if (released.length > 0) {
-      console.log(`[refunds] reconciliation released ${released.length} stale pending refund(s)`)
+      log.info(`reconciliation released ${released.length} stale pending refund(s)`)
     }
   }
 

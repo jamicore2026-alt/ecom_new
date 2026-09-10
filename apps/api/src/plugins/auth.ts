@@ -4,17 +4,21 @@ import { and, eq, lt } from 'drizzle-orm'
 import { db } from '../database/client'
 import { merchants, roles, tokenBlacklist, users } from '../database/schema'
 import { unauthorized, forbidden } from '../shared/errors'
-import type { UserRole, Permission } from '../shared/types'
+import type { Permission } from '../shared/types'
 import { resolvePermissions } from '../shared/types'
+import { constantTimeEqual } from '../shared/crypto'
 import type { Merchant, Role, User } from '../database/schema'
 
 const DEV_ACCESS_SECRET = 'dev-access-secret-change-me'
 const DEV_REFRESH_SECRET = 'dev-refresh-secret-change-me'
 
 /** Fail fast in production when JWT secrets are missing or still the public dev defaults. */
-const resolveSecret = (name: string, fallback: string) => {
+export const resolveSecret = (name: string, fallback: string) => {
   const value = process.env[name] ?? fallback
-  if (process.env.NODE_ENV === 'production' && (!process.env[name] || value === fallback)) {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    (!process.env[name] || constantTimeEqual(value, fallback))
+  ) {
     throw new Error(`${name} must be set to a strong secret in production`)
   }
   return value
@@ -45,9 +49,6 @@ export interface AuthIdentity {
 
 export const isAdmin = (auth: AuthContext): boolean =>
   auth.user.role === 'owner' || auth.user.role === 'admin'
-
-export const hasRole = (auth: AuthContext, ...roles: UserRole[]): boolean =>
-  roles.includes(auth.user.role as UserRole)
 
 export const hasPermission = (auth: AuthContext, ...perms: Permission[]): boolean => {
   if (isAdmin(auth)) return true

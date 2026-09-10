@@ -52,10 +52,10 @@ describe('payment primitives', () => {
   })
 
   it('masks secrets and recognises masked values', () => {
-    expect(maskSecret('sk_live_abcd1234')).toBe('••••1234')
+    expect(maskSecret('tok_live_abcd1234')).toBe('••••1234')
     expect(maskSecret(null)).toBe('')
-    expect(isMaskedValue(maskSecret('sk_live_abcd1234'))).toBe(true)
-    expect(isMaskedValue('sk_live_abcd1234')).toBe(false)
+    expect(isMaskedValue(maskSecret('tok_live_abcd1234'))).toBe(true)
+    expect(isMaskedValue('tok_live_abcd1234')).toBe(false)
   })
 
   it('rounds amounts per GCC three-decimal currencies', () => {

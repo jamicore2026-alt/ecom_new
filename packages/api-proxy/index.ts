@@ -19,6 +19,49 @@ const STRIP_RESPONSE_HEADERS = new Set([
 	'content-encoding'
 ])
 
+// Private/loopback/link-local targets must never be the upstream — prevents a
+// misconfigured API_ORIGIN from turning the proxy into an SSRF primitive.
+const RESERVED_HOST_PATTERNS: RegExp[] = [
+	/^127\./,
+	/^10\./,
+	/^172\.(1[6-9]|2\d|3[01])\./,
+	/^192\.168\./,
+	/^169\.254\./,
+	/^0\./,
+	/^localhost$/i,
+	/^::1$/i,
+	/^\[::1\]$/i,
+	/^::$/i,
+	/^fc00:/i,
+	/^fd[0-9a-f]{2}:/i
+]
+
+const isReservedOrPrivateHost = (hostname: string): boolean => {
+	const host = hostname.replace(/\.$/, '').replace(/^\[|\]$/g, '')
+	return RESERVED_HOST_PATTERNS.some((pattern) => pattern.test(host))
+}
+
+/**
+ * Validate the configured upstream origin before proxying to it. Throws the
+ * original URL back (the caller's catch renders an API_UNREACHABLE 502) when
+ * the origin is not an http(s) URL or points at a private/reserved host.
+ */
+const assertProxyOrigin = (origin: string): string => {
+	let url: URL
+	try {
+		url = new URL(origin)
+	} catch {
+		throw new Error(`Invalid API_ORIGIN "${origin}"`)
+	}
+	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+		throw new Error(`API_ORIGIN must use http:// or https:// (got "${url.protocol}")`)
+	}
+	if (isReservedOrPrivateHost(url.hostname)) {
+		throw new Error(`API_ORIGIN points at a private/reserved host "${url.hostname}"`)
+	}
+	return origin
+}
+
 /**
  * SvelteKit URL-decodes `[...path]` params, so a `#` in an order number becomes
  * a raw `#` here. Re-encoding each segment keeps it `%23` in the upstream URL —
@@ -47,7 +90,7 @@ export async function proxyToApi(
 
 	let upstream: Response
 	try {
-		upstream = await fetch(`${apiOrigin}${encodePath(upstreamPath)}${search}`, {
+		upstream = await fetch(`${assertProxyOrigin(apiOrigin)}${encodePath(upstreamPath)}${search}`, {
 			method: request.method,
 			headers,
 			body,

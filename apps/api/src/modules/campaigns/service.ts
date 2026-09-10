@@ -3,6 +3,9 @@ import { db } from '../../database/client'
 import { campaigns, customers, merchants } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
+import { createLogger } from '../../shared/logger'
+
+const log = createLogger('campaigns')
 import { getMailer, renderEmail } from '../../shared/mailer'
 
 export class CampaignsService {
@@ -86,7 +89,7 @@ export class CampaignsService {
         })
         sent++
       } catch (e) {
-        console.error('[campaigns] send failed for', email, e)
+        log.error('send failed', { email, error: e })
       }
     }
 

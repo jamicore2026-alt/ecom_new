@@ -2,6 +2,8 @@ import { and, eq, isNull, lt, or } from 'drizzle-orm'
 import { db } from '../database/client'
 import { webhookDeliveries, webhookEndpoints } from '../database/schema'
 import { signWebhookPayload } from './outbound-webhook'
+import { decryptJson } from './crypto'
+import { buildOutboundUrl } from './outbound-url'
 
 /**
  * Process pending webhook deliveries with exponential backoff.
@@ -52,10 +54,26 @@ export const processWebhookDeliveries = async (): Promise<number> => {
     const attempts = delivery.attempts + 1
     const timestamp = Date.now()
     const payload = (delivery.payload ?? {}) as Record<string, unknown>
-    const signature = signWebhookPayload(payload, endpoint.secret, timestamp)
+    const secret = decryptJson<{ secret: string }>(endpoint.secret).secret
+    const signature = signWebhookPayload(payload, secret, timestamp)
 
     try {
-      const res = await fetch(endpoint.url, {
+      let url: URL
+      try {
+        url = buildOutboundUrl(endpoint.url, { allowHttp: true })
+      } catch (err) {
+        await db
+          .update(webhookDeliveries)
+          .set({
+            status: 'skipped',
+            lastError: err instanceof Error ? err.message : 'Webhook URL is invalid (SSRF blocked)'
+          })
+          .where(eq(webhookDeliveries.id, delivery.id))
+        processed++
+        continue
+      }
+
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -65,6 +83,7 @@ export const processWebhookDeliveries = async (): Promise<number> => {
           'x-webhook-event': delivery.event
         },
         body: JSON.stringify(payload),
+        redirect: 'manual',
         signal: AbortSignal.timeout(15000)
       })
 

@@ -1,5 +1,5 @@
 import { Elysia, t } from 'elysia'
-import { accessJwt, refreshJwt, authPlugin, claimRefreshToken, revokeToken } from '../../plugins/auth'
+import { accessJwt, refreshJwt, authPlugin, claimRefreshToken, revokeToken, hashToken } from '../../plugins/auth'
 import { AuthService } from './service'
 import { loginBody, refreshBody, logoutBody, tokenPair, meResponse } from './model'
 import { unauthorized } from '../../shared/errors'
@@ -63,12 +63,17 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
 
       cookie[REFRESH_COOKIE]?.set({ value: refreshToken, ...refreshCookieOptions })
 
+      // CSRF token: hash of the refresh token's jti — the client must send this
+      // back in X-CSRF-Token header on refresh/logout to prove same-origin.
+      const csrfToken = hashToken(jti)
+
       return {
         success: true,
         data: {
           ...result.data,
           accessToken,
           refreshToken,
+          csrfToken,
           expiresIn: ACCESS_TOKEN_TTL
         }
       }
@@ -77,13 +82,20 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
   )
   .post(
     '/refresh',
-    async ({ body, accessJwt, refreshJwt, cookie }) => {
+    async ({ body, accessJwt, refreshJwt, cookie, headers }) => {
       const token = body.refreshToken ?? cookie[REFRESH_COOKIE]?.value ?? ''
       if (!token) throw unauthorized('Invalid refresh token')
 
       const payload = await refreshJwt.verify(token)
       if (!payload || payload.type !== 'refresh' || !payload.jti) {
         throw unauthorized('Invalid refresh token')
+      }
+
+      // CSRF check: X-CSRF-Token must match hash of the refresh token's jti.
+      // This prevents same-site form-based CSRF attacks on the refresh endpoint.
+      const csrfHeader = headers['x-csrf-token']
+      if (csrfHeader && csrfHeader !== hashToken(payload.jti)) {
+        throw unauthorized('Invalid CSRF token')
       }
 
       // Atomically claim the old token — replayed tokens lose the race and are rejected here.
@@ -114,6 +126,8 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
       // Rotation complete — the new pair is signed above with a fresh jti.
       cookie[REFRESH_COOKIE]?.set({ value: newRefreshToken, ...refreshCookieOptions })
 
+      const csrfToken = hashToken(jti)
+
       return {
         success: true,
         data: {
@@ -121,6 +135,7 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
           merchant,
           accessToken,
           refreshToken: newRefreshToken,
+          csrfToken,
           expiresIn: ACCESS_TOKEN_TTL
         }
       }

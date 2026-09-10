@@ -1,5 +1,8 @@
 import { HttpError } from '../shared/errors'
 import { err } from '../shared/response'
+import { createLogger } from '../shared/logger'
+
+const log = createLogger('http')
 
 type ErrorContext = {
   code: number | string
@@ -38,7 +41,7 @@ export const errorHandler = ({ code, error, set }: ErrorContext) => {
     return err('NOT_FOUND', 'Route not found')
   }
 
-  console.error('[error]', error)
+  log.error('unhandled error', error)
   set.status = 500
   return err('INTERNAL_ERROR', 'Something went wrong')
 }
