@@ -41,7 +41,7 @@
 </script>
 
 <svelte:head>
-	<title>Invoices — Merchant OS</title>
+	<title>Invoices — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

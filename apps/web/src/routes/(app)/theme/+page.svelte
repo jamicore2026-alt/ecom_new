@@ -120,7 +120,7 @@
 </script>
 
 <svelte:head>
-	<title>Theme — Merchant OS</title>
+	<title>Theme — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-5">

@@ -69,7 +69,7 @@
 </script>
 
 <svelte:head>
-	<title>Analytics — Merchant OS</title>
+	<title>Analytics — JamiCore</title>
 </svelte:head>
 
 {#if !canRead()}

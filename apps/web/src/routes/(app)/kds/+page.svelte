@@ -100,7 +100,7 @@
 	})
 </script>
 
-<svelte:head><title>Kitchen Display — Merchant OS</title></svelte:head>
+<svelte:head><title>Kitchen Display — JamiCore</title></svelte:head>
 
 <div class="space-y-4">
 	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">

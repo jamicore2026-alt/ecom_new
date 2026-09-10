@@ -239,7 +239,7 @@
 	})
 </script>
 
-<svelte:head><title>{t('pos.title')} — Merchant OS</title></svelte:head>
+<svelte:head><title>{t('pos.title')} — JamiCore</title></svelte:head>
 
 <div class="space-y-6">
 	<div class="mb-4 flex flex-col justify-between gap-4 md:flex-row md:items-center">

@@ -50,7 +50,7 @@
 </script>
 
 <svelte:head>
-	<title>{customer?.firstName ?? ''} {customer?.lastName ?? ''} — Merchant OS</title>
+	<title>{customer?.firstName ?? ''} {customer?.lastName ?? ''} — JamiCore</title>
 </svelte:head>
 
 {#if loading}

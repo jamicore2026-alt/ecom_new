@@ -102,7 +102,7 @@
 </script>
 
 <svelte:head>
-	<title>Tiers — Merchant OS</title>
+	<title>Tiers — JamiCore</title>
 </svelte:head>
 
 <div class="mb-6 flex flex-wrap gap-1 rounded border border-outline-variant bg-surface-container-lowest p-1">

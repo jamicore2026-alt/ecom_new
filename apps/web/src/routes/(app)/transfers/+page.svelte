@@ -110,7 +110,7 @@
 </script>
 
 <svelte:head>
-	<title>Transfers — Merchant OS</title>
+	<title>Transfers — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

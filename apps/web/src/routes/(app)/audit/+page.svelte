@@ -69,7 +69,7 @@
 </script>
 
 <svelte:head>
-	<title>Audit Log — Merchant OS</title>
+	<title>Audit Log — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

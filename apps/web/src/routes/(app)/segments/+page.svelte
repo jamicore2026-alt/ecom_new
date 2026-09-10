@@ -127,7 +127,7 @@
 </script>
 
 <svelte:head>
-	<title>Customer Segments — Merchant OS</title>
+	<title>Customer Segments — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

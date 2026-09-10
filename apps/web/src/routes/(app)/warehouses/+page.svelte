@@ -114,7 +114,7 @@
 </script>
 
 <svelte:head>
-	<title>Warehouses — Merchant OS</title>
+	<title>Warehouses — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

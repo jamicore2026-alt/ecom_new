@@ -275,7 +275,7 @@
 </script>
 
 <svelte:head>
-	<title>Discounts — Merchant OS</title>
+	<title>Discounts — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

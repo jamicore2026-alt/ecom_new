@@ -196,7 +196,7 @@
 	onMount(loadAll)
 </script>
 
-<svelte:head><title>Delivery — Merchant OS</title></svelte:head>
+<svelte:head><title>Delivery — JamiCore</title></svelte:head>
 
 <div class="space-y-6">
 	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">

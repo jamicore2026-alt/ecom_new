@@ -47,7 +47,7 @@
 </script>
 
 <svelte:head>
-	<title>Profit &amp; Loss — Merchant OS</title>
+	<title>Profit &amp; Loss — JamiCore</title>
 </svelte:head>
 
 {#if !canRead()}

@@ -54,7 +54,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('orders.title')} — Merchant OS</title>
+	<title>{t('orders.title')} — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

@@ -232,7 +232,7 @@
 </script>
 
 <svelte:head>
-	<title>Fulfillments — Merchant OS</title>
+	<title>Fulfillments — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

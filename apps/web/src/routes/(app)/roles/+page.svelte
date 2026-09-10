@@ -121,7 +121,7 @@
 </script>
 
 <svelte:head>
-	<title>Roles &amp; Permissions — Merchant OS</title>
+	<title>Roles &amp; Permissions — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

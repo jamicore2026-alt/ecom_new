@@ -123,7 +123,7 @@
 </script>
 
 <svelte:head>
-	<title>Earning Rules — Merchant OS</title>
+	<title>Earning Rules — JamiCore</title>
 </svelte:head>
 
 <div class="mb-6 flex flex-wrap gap-1 rounded border border-outline-variant bg-surface-container-lowest p-1">

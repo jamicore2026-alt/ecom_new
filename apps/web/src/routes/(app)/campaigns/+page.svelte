@@ -63,7 +63,7 @@
 </script>
 
 <svelte:head>
-	<title>Campaigns — Merchant OS</title>
+	<title>Campaigns — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

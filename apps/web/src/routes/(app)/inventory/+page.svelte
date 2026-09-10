@@ -102,7 +102,7 @@
 </script>
 
 <svelte:head>
-	<title>Inventory — Merchant OS</title>
+	<title>Inventory — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

@@ -47,7 +47,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('auth.loginTitle')} — Merchant OS</title>
+	<title>{t('auth.loginTitle')} — JamiCore</title>
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center bg-surface px-4">
@@ -74,7 +74,7 @@
 			<div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded bg-primary-container text-on-primary-container">
 				<Icon name="storefront" size="text-[24px]" />
 			</div>
-			<h1 class="text-headline-sm font-bold tracking-tight text-on-surface">Merchant OS</h1>
+			<h1 class="text-headline-sm font-bold tracking-tight text-on-surface">JamiCore</h1>
 			<p class="mt-1 text-sm text-secondary">{t('auth.loginTitle')}</p>
 		</div>
 

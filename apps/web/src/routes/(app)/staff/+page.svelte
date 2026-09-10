@@ -105,7 +105,7 @@
 </script>
 
 <svelte:head>
-	<title>Staff Directory — Merchant OS</title>
+	<title>Staff Directory — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

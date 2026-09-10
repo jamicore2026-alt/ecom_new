@@ -4,7 +4,7 @@
 </script>
 
 <svelte:head>
-	<title>New campaign — Merchant OS</title>
+	<title>New campaign — JamiCore</title>
 </svelte:head>
 
 <div class="mx-auto max-w-3xl space-y-6">

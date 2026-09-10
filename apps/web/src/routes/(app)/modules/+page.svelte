@@ -68,7 +68,7 @@
 </script>
 
 <svelte:head>
-	<title>Modules &mdash; Merchant OS</title>
+	<title>Modules &mdash; JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

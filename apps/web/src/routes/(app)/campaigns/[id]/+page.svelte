@@ -49,7 +49,7 @@
 </script>
 
 <svelte:head>
-	<title>{campaign ? `${campaign.name} — Merchant OS` : 'Campaign — Merchant OS'}</title>
+	<title>{campaign ? `${campaign.name} — JamiCore` : 'Campaign — JamiCore'}</title>
 </svelte:head>
 
 <div class="space-y-6">

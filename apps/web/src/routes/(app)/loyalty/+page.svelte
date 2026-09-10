@@ -33,7 +33,7 @@
 </script>
 
 <svelte:head>
-	<title>Loyalty &amp; Rewards — Merchant OS</title>
+	<title>Loyalty &amp; Rewards — JamiCore</title>
 </svelte:head>
 
 {#if !canRead()}

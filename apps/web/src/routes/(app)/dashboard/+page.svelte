@@ -78,7 +78,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('dash.overview')} — Merchant OS</title>
+	<title>{t('dash.overview')} — JamiCore</title>
 </svelte:head>
 
 {#if loading}

@@ -120,7 +120,7 @@
 </script>
 
 <svelte:head>
-	<title>Affiliates — Merchant OS</title>
+	<title>Affiliates — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

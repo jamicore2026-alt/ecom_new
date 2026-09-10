@@ -193,7 +193,7 @@
 </script>
 
 <svelte:head>
-	<title>Order #{page.params.id} — Merchant OS</title>
+	<title>Order #{page.params.id} — JamiCore</title>
 </svelte:head>
 
 {#if loading}

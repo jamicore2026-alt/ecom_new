@@ -356,7 +356,7 @@
 	]
 </script>
 
-<svelte:head><title>{t('settings.title')} — Merchant OS</title></svelte:head>
+<svelte:head><title>{t('settings.title')} — JamiCore</title></svelte:head>
 
 {#if !isAdmin()}
 	<div class="rounded-xl border border-warning/30 bg-warning/10 p-6 text-sm text-warning">

@@ -145,7 +145,7 @@
 </script>
 
 <svelte:head>
-	<title>Content Pages — Merchant OS</title>
+	<title>Content Pages — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

@@ -161,7 +161,7 @@
 </script>
 
 <svelte:head>
-	<title>API &amp; Webhooks — Merchant OS</title>
+	<title>API &amp; Webhooks — JamiCore</title>
 </svelte:head>
 
 <div class="space-y-6">

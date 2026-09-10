@@ -78,7 +78,7 @@
 	const stars = (value: number) => '★★★★★'.slice(0, value) + '☆☆☆☆☆'.slice(0, 5 - value)
 </script>
 
-<svelte:head><title>Reviews — Merchant OS</title></svelte:head>
+<svelte:head><title>Reviews — JamiCore</title></svelte:head>
 
 <div class="space-y-5">
 	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">

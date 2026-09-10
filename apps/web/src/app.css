@@ -3,7 +3,7 @@
 @plugin '@tailwindcss/typography';
 
 @theme {
-	/* Stitch Merchant OS — Material 3 light tokens (reference pack) */
+	/* JamiCore M3 — Material 3 light tokens (reference pack) */
 	--color-primary: #004ac6;
 	--color-on-primary: #ffffff;
 	--color-primary-container: #2563eb;

@@ -87,7 +87,7 @@
 					/>
 					<div class="min-w-0">
 						<p class="truncate text-sm font-semibold tracking-tight text-on-surface">{merchant?.name}</p>
-						<p class="truncate text-xs text-secondary">Merchant OS</p>
+						<p class="truncate text-xs text-secondary">JamiCore</p>
 					</div>
 				</div>
 
