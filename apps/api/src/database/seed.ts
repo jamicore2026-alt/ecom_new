@@ -221,7 +221,7 @@ export async function seed() {
   const [merchant] = await db
     .insert(merchants)
     .values({
-      name: 'JamiCore Store',
+      name: 'JamiCore',
       slug: 'jamicore-store',
       email: 'owner@jamicore.com',
       phone: '+1 555-0100',
@@ -249,7 +249,7 @@ export async function seed() {
       merchantId: merchant.id,
       name: 'Main Outlet',
       code: 'MAIN',
-      address: { name: 'JamiCore Store', country: 'US', city: 'New York' },
+      address: { name: 'JamiCore', country: 'US', city: 'New York' },
       status: 'active'
     })
     .returning()
@@ -448,7 +448,7 @@ export async function seed() {
         sku: def.sku,
         name: def.name,
         slug: `${def.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-        description: `High-quality ${def.name.toLowerCase()} — a bestseller at JamiCore Store.`,
+        description: `High-quality ${def.name.toLowerCase()} — a bestseller at JamiCore.`,
         price: def.price,
         compareAtPrice: def.compareAt ?? null,
         cost: def.cost ?? 0,
@@ -732,7 +732,7 @@ export async function seed() {
   /* settings */
   await db.insert(storeSettings).values({
     merchantId: merchant.id,
-    name: 'JamiCore Store',
+    name: 'JamiCore',
     logo: null,
     address: { line1: '100 Market St', city: 'New York', state: 'NY', postalCode: '10001', country: 'USA' },
     currency: 'USD',
@@ -795,7 +795,7 @@ export async function seed() {
 
   console.log('✅ Seed complete')
   console.log('───────────────────────────────────────────')
-  console.log('   Store:        JamiCore Store')
+  console.log('   Store:        JamiCore')
   console.log('   Merchant:     jamicore-store')
   console.log('   Admin login:  admin@jamicore.com')
   console.log('   Password:     password123')

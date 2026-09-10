@@ -112,7 +112,7 @@ describe('Merchant Dashboard API smoke test', () => {
   it('returns store settings for admin', async () => {
     const res = await call('/api/settings/store', { headers: auth })
     expect(res.status).toBe(200)
-    expect(res.body.data.name).toBe('JamiCore Store')
+    expect(res.body.data.name).toBe('JamiCore')
   })
 
   it('creates and validates a coupon', async () => {

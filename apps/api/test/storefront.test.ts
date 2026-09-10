@@ -13,7 +13,7 @@ describe('Storefront public API (no auth)', () => {
     expect(res.status).toBe(200)
     expect(res.body.success).toBe(true)
     expect(res.body.data.merchant.slug).toBe('jamicore-store')
-    expect(res.body.data.settings.name).toBe('JamiCore Store')
+    expect(res.body.data.settings.name).toBe('JamiCore')
     expect(res.body.data.shipping.freeShippingThreshold).toBeNumber()
   })
 
