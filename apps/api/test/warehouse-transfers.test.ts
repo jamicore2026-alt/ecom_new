@@ -28,7 +28,7 @@ const apiPut = (headers: Record<string, string>, body: unknown) => ({
   body: JSON.stringify(body)
 })
 
-const auth = async (email = 'admin@acme.com') => {
+const auth = async (email = 'admin@jamicore.com') => {
   const res = await call('/api/auth/login', json({ email, password: 'password123' }))
   return { authorization: `Bearer ${res.body.data.accessToken}` }
 }
@@ -41,12 +41,12 @@ let transferId: string
 
 describe('Warehouse transfers — list & detail enrichment', () => {
   beforeAll(async () => {
-    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     merchantId = merchant.id
 
-    const list = await call('/api/store/acme-store/products?limit=100')
+    const list = await call('/api/store/jamicore-store/products?limit=100')
     const product = list.body.data.items.find((i: any) => i.stock >= 20)
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+    const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
     variantId = detail.body.data.variants[0].id
 
     const headers = await auth()

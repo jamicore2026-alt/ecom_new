@@ -94,7 +94,7 @@
 						required
 						bind:value={email}
 						class="w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface placeholder:text-secondary focus:outline-2 focus:outline-primary"
-						placeholder="owner@acme.com"
+						placeholder="owner@jamicore.com"
 					/>
 					{#if fieldErrors.email}
 						<p class="mt-1 text-xs text-error">{fieldErrors.email}</p>
@@ -125,7 +125,7 @@
 						type="text"
 						bind:value={merchantSlug}
 						class="w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface placeholder:text-secondary focus:outline-2 focus:outline-primary"
-						placeholder="acme-store"
+						placeholder="jamicore-store"
 						aria-describedby="merchantSlug-hint"
 					/>
 					<p id="merchantSlug-hint" class="mt-1 text-xs text-secondary">
@@ -142,6 +142,6 @@
 			</Button>
 		</form>
 
-		<p class="mt-6 text-center text-xs text-secondary">Demo: admin@acme.com / password123</p>
+		<p class="mt-6 text-center text-xs text-secondary">Demo: admin@jamicore.com / password123</p>
 	</div>
 </div>

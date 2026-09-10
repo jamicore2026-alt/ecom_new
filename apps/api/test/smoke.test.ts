@@ -23,7 +23,7 @@ describe('Merchant Dashboard API smoke test', () => {
     const res = await call('/api/auth/login', {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ email: 'admin@acme.com', password: 'wrong-password' })
+      body: JSON.stringify({ email: 'admin@jamicore.com', password: 'wrong-password' })
     })
     expect(res.status).toBe(401)
   })
@@ -32,7 +32,7 @@ describe('Merchant Dashboard API smoke test', () => {
     const res = await call('/api/auth/login', {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ email: 'admin@acme.com', password: 'password123' })
+      body: JSON.stringify({ email: 'admin@jamicore.com', password: 'password123' })
     })
     expect(res.status).toBe(200)
     expect(res.body.success).toBe(true)
@@ -44,8 +44,8 @@ describe('Merchant Dashboard API smoke test', () => {
   it('returns the current session', async () => {
     const res = await call('/api/auth/me', { headers: auth })
     expect(res.status).toBe(200)
-    expect(res.body.data.user.email).toBe('admin@acme.com')
-    expect(res.body.data.merchant.slug).toBe('acme-store')
+    expect(res.body.data.user.email).toBe('admin@jamicore.com')
+    expect(res.body.data.merchant.slug).toBe('jamicore-store')
   })
 
   it('returns overview KPIs + 30-day chart', async () => {
@@ -112,7 +112,7 @@ describe('Merchant Dashboard API smoke test', () => {
   it('returns store settings for admin', async () => {
     const res = await call('/api/settings/store', { headers: auth })
     expect(res.status).toBe(200)
-    expect(res.body.data.name).toBe('Acme Store')
+    expect(res.body.data.name).toBe('JamiCore Store')
   })
 
   it('creates and validates a coupon', async () => {
@@ -140,7 +140,7 @@ describe('Merchant Dashboard API smoke test', () => {
     const login = await call('/api/auth/login', {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ email: 'admin@acme.com', password: 'password123' })
+      body: JSON.stringify({ email: 'admin@jamicore.com', password: 'password123' })
     })
     const oldRefresh = login.body.data.refreshToken
 
@@ -187,7 +187,7 @@ describe('Merchant Dashboard API smoke test', () => {
     const login = await call('/api/auth/login', {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ email: 'staff@acme.com', password: 'password123' })
+      body: JSON.stringify({ email: 'staff@jamicore.com', password: 'password123' })
     })
     const staffAuth = { authorization: `Bearer ${login.body.data.accessToken}` }
     const res = await call('/api/settings/store', { headers: staffAuth })

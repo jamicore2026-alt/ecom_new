@@ -54,8 +54,8 @@ async function getTicket(id: string) {
 
 describe('Phase 6: kitchen + KOT + KDS', () => {
   beforeAll(async () => {
-    admin = await loginAs('admin@acme.com')
-    staff = await loginAs('staff@acme.com')
+    admin = await loginAs('admin@jamicore.com')
+    staff = await loginAs('staff@jamicore.com')
     const outlets = await call('/api/outlets', { headers: admin })
     resOutletId = outlets.body.data.find((o: { code: string }) => o.code === 'MAIN').id
 

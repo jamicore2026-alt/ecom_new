@@ -14,7 +14,7 @@ WORKDIR /app/apps/storefront
 # Frontends proxy /api and /uploads to the API at runtime via API_ORIGIN.
 # PUBLIC_* vars are baked in at build time — pass them as build args.
 ARG PUBLIC_API_URL=http://localhost:3005
-ARG PUBLIC_DEFAULT_STORE=acme-store
+ARG PUBLIC_DEFAULT_STORE=jamicore-store
 ARG PUBLIC_STOREFRONT_URL=http://localhost:5479
 ENV PUBLIC_API_URL=$PUBLIC_API_URL \
     PUBLIC_DEFAULT_STORE=$PUBLIC_DEFAULT_STORE \

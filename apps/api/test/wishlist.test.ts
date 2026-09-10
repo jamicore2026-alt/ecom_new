@@ -36,30 +36,30 @@ describe('Shopper wishlist', () => {
       .returning({ id: merchants.id })
     otherStoreId = inserted[0]?.id ?? ''
 
-    const login = await call('/api/auth/login', json({ email: 'admin@acme.com', password: 'password123' }))
+    const login = await call('/api/auth/login', json({ email: 'admin@jamicore.com', password: 'password123' }))
     expect(login.status).toBe(200)
     adminToken = login.body.data.accessToken
 
-    const list = await call('/api/store/acme-store/products?limit=100')
+    const list = await call('/api/store/jamicore-store/products?limit=100')
     product = list.body.data.items.find((i: any) => i.stock >= 20)
 
     const reg = await call(
-      '/api/store/acme-store/auth/register',
+      '/api/store/jamicore-store/auth/register',
       json({ email: SHOPPER, password: 'sup3rsecret', firstName: 'Wish', lastName: 'Ful' })
     )
     if (reg.status !== 200) throw new Error(`register failed: ${JSON.stringify(reg.body)}`)
-    const lg = await call('/api/store/acme-store/auth/login', json({ email: SHOPPER, password: 'sup3rsecret' }))
+    const lg = await call('/api/store/jamicore-store/auth/login', json({ email: SHOPPER, password: 'sup3rsecret' }))
     token = lg.body.data.token
   })
 
   it('requires a shopper session', async () => {
     const noToken = await call(
-      '/api/store/acme-store/auth/wishlist',
+      '/api/store/jamicore-store/auth/wishlist',
       json({ productId: product.id })
     )
     expect(noToken.status).toBe(401)
 
-    const emptyList = await call('/api/store/acme-store/auth/wishlist', {
+    const emptyList = await call('/api/store/jamicore-store/auth/wishlist', {
       headers: { authorization: `Bearer ${token}` }
     })
     expect(emptyList.status).toBe(200)
@@ -67,11 +67,11 @@ describe('Shopper wishlist', () => {
   })
 
   it('adds a product and returns card data', async () => {
-    const res = await call('/api/store/acme-store/auth/wishlist', json({ productId: product.id }, token))
+    const res = await call('/api/store/jamicore-store/auth/wishlist', json({ productId: product.id }, token))
     expect(res.status).toBe(200)
     expect(res.body.data.saved).toBe(true)
 
-    const list = await call('/api/store/acme-store/auth/wishlist', {
+    const list = await call('/api/store/jamicore-store/auth/wishlist', {
       headers: { authorization: `Bearer ${token}` }
     })
     expect(list.status).toBe(200)
@@ -86,8 +86,8 @@ describe('Shopper wishlist', () => {
   })
 
   it('is idempotent on duplicates', async () => {
-    await call('/api/store/acme-store/auth/wishlist', json({ productId: product.id }, token))
-    const list = await call('/api/store/acme-store/auth/wishlist', {
+    await call('/api/store/jamicore-store/auth/wishlist', json({ productId: product.id }, token))
+    const list = await call('/api/store/jamicore-store/auth/wishlist', {
       headers: { authorization: `Bearer ${token}` }
     })
     expect(list.body.data.items).toHaveLength(1)
@@ -95,7 +95,7 @@ describe('Shopper wishlist', () => {
 
   it('rejects unknown and non-active products', async () => {
     const missing = await call(
-      '/api/store/acme-store/auth/wishlist',
+      '/api/store/jamicore-store/auth/wishlist',
       json({ productId: 'does-not-exist' }, token)
     )
     expect(missing.status).toBe(404)
@@ -110,7 +110,7 @@ describe('Shopper wishlist', () => {
     draftProductId = created.body.data.id
     expect(draftProductId).toBeTruthy()
 
-    const draft = await call('/api/store/acme-store/auth/wishlist', json({ productId: draftProductId }, token))
+    const draft = await call('/api/store/jamicore-store/auth/wishlist', json({ productId: draftProductId }, token))
     expect(draft.status).toBe(404)
     expect(draft.body.error.code).toBe('PRODUCT_NOT_FOUND')
   })
@@ -124,19 +124,19 @@ describe('Shopper wishlist', () => {
   })
 
   it('removes items and tolerates removing again', async () => {
-    const del = await call(`/api/store/acme-store/auth/wishlist/${product.id}`, {
+    const del = await call(`/api/store/jamicore-store/auth/wishlist/${product.id}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${token}` }
     })
     expect(del.status).toBe(200)
     expect(del.body.data.removed).toBe(true)
 
-    const list = await call('/api/store/acme-store/auth/wishlist', {
+    const list = await call('/api/store/jamicore-store/auth/wishlist', {
       headers: { authorization: `Bearer ${token}` }
     })
     expect(list.body.data.items).toHaveLength(0)
 
-    const again = await call(`/api/store/acme-store/auth/wishlist/${product.id}`, {
+    const again = await call(`/api/store/jamicore-store/auth/wishlist/${product.id}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${token}` }
     })
@@ -145,7 +145,7 @@ describe('Shopper wishlist', () => {
   })
 
   afterAll(async () => {
-    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     if (!merchant) return
     const [customer] = await db
       .select({ id: customers.id })

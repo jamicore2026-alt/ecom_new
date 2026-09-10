@@ -63,9 +63,9 @@ describe('commerce order-derived outlet isolation (invoices/fulfillments/analyti
     })
 
   beforeAll(async () => {
-    admin = await loginAs('admin@acme.com')
+    admin = await loginAs('admin@jamicore.com')
 
-    const [merchant] = await db.select().from(users).where(eq(users.email, 'admin@acme.com'))
+    const [merchant] = await db.select().from(users).where(eq(users.email, 'admin@jamicore.com'))
     merchantId = merchant.merchantId
 
     const outs = await call('/api/outlets', { headers: admin })
@@ -85,7 +85,7 @@ describe('commerce order-derived outlet isolation (invoices/fulfillments/analyti
       headers: { ...admin, ...jh },
       body: JSON.stringify({
         name: 'Outlet L Staff',
-        email: 'outlet-commerce-l@acme.com',
+        email: 'outlet-commerce-l@jamicore.com',
         password: 'scope-pass-123456',
         role: 'staff',
         permissions: ['orders.read', 'orders.create', 'orders.update', 'orders.cancel', 'reports.read']
@@ -101,7 +101,7 @@ describe('commerce order-derived outlet isolation (invoices/fulfillments/analyti
     })
     expect(assigned.status).toBe(200)
 
-    scopeB = await loginAs('outlet-commerce-l@acme.com', 'scope-pass-123456')
+    scopeB = await loginAs('outlet-commerce-l@jamicore.com', 'scope-pass-123456')
 
     const menu = await call('/api/menu', { headers: admin })
     menuItemId = menu.body.data.items.find((i: { available: boolean; status: string }) => i.available && i.status === 'active').id
@@ -382,7 +382,7 @@ describe('commerce order-derived outlet isolation (invoices/fulfillments/analyti
     expect(outRole.status).toBe(200)
     const outletRoleId = outRole.body.data.id
 
-    const mEmail = `scope-m-${stamp}@acme.com`
+    const mEmail = `scope-m-${stamp}@jamicore.com`
     const mStaff = await call('/api/settings/staff', {
       method: 'POST',
       headers: { ...admin, ...jh },
@@ -392,7 +392,7 @@ describe('commerce order-derived outlet isolation (invoices/fulfillments/analyti
     // no user_outlets assignment — MERCHANT scope must still be merchant-wide
     const mAuth = await loginAs(mEmail, 'scope-pass-123456')
 
-    const oEmail = `scope-o-${stamp}@acme.com`
+    const oEmail = `scope-o-${stamp}@jamicore.com`
     const oStaff = await call('/api/settings/staff', {
       method: 'POST',
       headers: { ...admin, ...jh },

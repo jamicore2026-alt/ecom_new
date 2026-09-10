@@ -26,7 +26,7 @@ const json = (body: unknown) => ({
   body: JSON.stringify(body)
 })
 
-const auth = async (email = 'admin@acme.com') => {
+const auth = async (email = 'admin@jamicore.com') => {
   const res = await call('/api/auth/login', json({ email, password: 'password123' }))
   return { authorization: `Bearer ${res.body.data.accessToken}` }
 }
@@ -55,23 +55,23 @@ let outputBaseline = 0
 
 describe('Production: BOMs and production orders (merchant-wide)', () => {
   beforeAll(async () => {
-    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     merchantId = merchant.id
 
     // Discover two stocked variants: one to consume, one to produce.
     const headers = await auth()
     warehouseId = (await call('/api/warehouses', apiJson(headers, { name: 'Prod Wh', code: 'PRODWH', isDefault: true }))).body.data.id
 
-    const list = await call('/api/store/acme-store/products?limit=100')
+    const list = await call('/api/store/jamicore-store/products?limit=100')
     const productsArr = list.body.data.items as Array<{ slug: string; stock: number }>
     const compProduct = productsArr.find((i: any) => i.stock >= 10)
     if (!compProduct) throw new Error('no stocked product found')
-    const compDetail = await call(`/api/store/acme-store/products/${compProduct.slug}`)
+    const compDetail = await call(`/api/store/jamicore-store/products/${compProduct.slug}`)
     componentVariantId = compDetail.body.data.variants[0].id
 
     const outProduct = productsArr.find((i: any) => i.slug !== compProduct.slug)
     if (!outProduct) throw new Error('no second product found')
-    const outDetail = await call(`/api/store/acme-store/products/${outProduct.slug}`)
+    const outDetail = await call(`/api/store/jamicore-store/products/${outProduct.slug}`)
     outputVariantId = outDetail.body.data.variants[0].id
 
     const [c] = await db.select({ inventory: productVariants.inventory }).from(productVariants).where(eq(productVariants.id, componentVariantId))
@@ -135,7 +135,7 @@ describe('Production: BOMs and production orders (merchant-wide)', () => {
   })
 
   it('rejects BOM creation without inventory permissions (403)', async () => {
-    const headers = await auth('riley@acme.com')
+    const headers = await auth('riley@jamicore.com')
     const res = await call('/api/boms', apiJson(headers, { name: 'Nope', outputVariantId, items: [{ variantId: componentVariantId, quantity: 1 }] }))
     expect(res.status).toBe(403)
   })

@@ -26,7 +26,7 @@ describe('product image uploads', () => {
     const login = await call('/api/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'admin@acme.com', password: 'password123' })
+      body: JSON.stringify({ email: 'admin@jamicore.com', password: 'password123' })
     })
     auth = { authorization: `Bearer ${login.body.data.accessToken}` }
   })
@@ -106,7 +106,7 @@ describe('product image uploads', () => {
 
   it('storefront listing uses the gallery primary image', async () => {
     const res = await call(
-      `/api/store/acme-store/products?search=${encodeURIComponent('Upload Test Product')}&limit=5`
+      `/api/store/jamicore-store/products?search=${encodeURIComponent('Upload Test Product')}&limit=5`
     )
     expect(res.status).toBe(200)
     const item = res.body.data.items.find((p: { id: string }) => p.id === productId)
@@ -115,7 +115,7 @@ describe('product image uploads', () => {
   })
 
   it('storefront product detail returns the gallery array', async () => {
-    const res = await call(`/api/store/acme-store/products/${productSlug}`)
+    const res = await call(`/api/store/jamicore-store/products/${productSlug}`)
     expect(res.status).toBe(200)
     expect(res.body.data.images).toEqual(['/uploads/test/c.webp'])
     expect(res.body.data.image).toBe('/uploads/test/c.webp')

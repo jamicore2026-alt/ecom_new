@@ -71,7 +71,7 @@ describe('P0 closure — promotions, cancellation routing, refund idempotency', 
     const email = opts.email ?? `promo-${createId().slice(0, 8)}@test.local`
     emails.add(email)
     return call(
-      '/api/store/acme-store/checkout',
+      '/api/store/jamicore-store/checkout',
       json({
         items: [{ productId, variantId, quantity: 1 }],
         email,
@@ -85,11 +85,11 @@ describe('P0 closure — promotions, cancellation routing, refund idempotency', 
   beforeAll(async () => {
     const login = await call(
       '/api/auth/login',
-      json({ email: 'admin@acme.com', password: 'password123' })
+      json({ email: 'admin@jamicore.com', password: 'password123' })
     )
     adminToken = login.body.data.accessToken
 
-    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     merchantId = merchant.id
 
     // Category-scoped fixture needs a real category
@@ -160,7 +160,7 @@ describe('P0 closure — promotions, cancellation routing, refund idempotency', 
       .returning()
     promoIds.push(promo.id)
 
-    const preview = await call('/api/store/acme-store/checkout/preview', {
+    const preview = await call('/api/store/jamicore-store/checkout/preview', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ items: [{ productId, variantId, quantity: 1 }] })
@@ -206,7 +206,7 @@ describe('P0 closure — promotions, cancellation routing, refund idempotency', 
       .returning()
     promoIds.push(expired.id, future.id, disabled.id)
 
-    const preview = await call('/api/store/acme-store/checkout/preview', {
+    const preview = await call('/api/store/jamicore-store/checkout/preview', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ items: [{ productId, variantId, quantity: 1 }] })
@@ -250,7 +250,7 @@ describe('P0 closure — promotions, cancellation routing, refund idempotency', 
     promoIds.push(productScoped.id, categoryScoped.id)
 
     // Best single promotion wins: 25% of 100 = 25 beats category 15.
-    const preview = await call('/api/store/acme-store/checkout/preview', {
+    const preview = await call('/api/store/jamicore-store/checkout/preview', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -280,7 +280,7 @@ describe('P0 closure — promotions, cancellation routing, refund idempotency', 
       .returning()
     promoIds.push(buyXGety.id)
 
-    const b2g1 = await call('/api/store/acme-store/checkout/preview', {
+    const b2g1 = await call('/api/store/jamicore-store/checkout/preview', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ items: [{ productId, variantId, quantity: 3 }] })
@@ -291,7 +291,7 @@ describe('P0 closure — promotions, cancellation routing, refund idempotency', 
   })
 
   it('never applies a cross-merchant promotion', async () => {
-    const preview = await call('/api/store/acme-store/checkout/preview', {
+    const preview = await call('/api/store/jamicore-store/checkout/preview', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ items: [{ productId, variantId, quantity: 1 }] })
@@ -302,7 +302,7 @@ describe('P0 closure — promotions, cancellation routing, refund idempotency', 
   })
 
   it('enforces promotion usage limits under concurrency', async () => {
-    // Disable every OTHER active acme promo first, then insert the limited one
+    // Disable every OTHER active jamicore promo first, then insert the limited one
     // so it is the only match (the disable below must not touch it).
     await db
       .update(promotions)

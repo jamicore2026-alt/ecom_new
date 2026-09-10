@@ -58,7 +58,7 @@ describe('Order/checkout state machine hardening', () => {
 
   const placeOrder = async (paymentMethod: 'cod' | 'card', couponCode?: string) => {
     const res = await call(
-      '/api/store/acme-store/checkout',
+      '/api/store/jamicore-store/checkout',
       json({
         items: [{ productId: fixtureProductId, variantId: fixtureVariantId, quantity: 1 }],
         email: 'statemachine@example.com',
@@ -83,11 +83,11 @@ describe('Order/checkout state machine hardening', () => {
   beforeAll(async () => {
     const login = await call(
       '/api/auth/login',
-      json({ email: 'admin@acme.com', password: 'password123' })
+      json({ email: 'admin@jamicore.com', password: 'password123' })
     )
     adminToken = login.body.data.accessToken
 
-    // Fixture product owned by acme with tracked stock
+    // Fixture product owned by jamicore with tracked stock
     const created = await call(
       '/api/products',
       json(
@@ -106,7 +106,7 @@ describe('Order/checkout state machine hardening', () => {
     fixtureProductId = created.body.data.id
     fixtureVariantId = created.body.data.variants[0].id
 
-    // Rival tenant: another merchant + an active product we must NOT be able to buy via acme.
+    // Rival tenant: another merchant + an active product we must NOT be able to buy via jamicore.
     const [rival] = await db
       .insert(merchants)
       .values({
@@ -141,8 +141,8 @@ describe('Order/checkout state machine hardening', () => {
     })
   })
 
-  it('rejects a checkout mixing another merchant product into acme checkout', async () => {
-    const preview = await call('/api/store/acme-store/checkout/preview', {
+  it('rejects a checkout mixing another merchant product into jamicore checkout', async () => {
+    const preview = await call('/api/store/jamicore-store/checkout/preview', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -155,7 +155,7 @@ describe('Order/checkout state machine hardening', () => {
     expect(preview.status).toBe(400)
     expect(preview.body.error.code).toBe('PRODUCT_NOT_FOUND')
 
-    const checkout = await call('/api/store/acme-store/checkout', {
+    const checkout = await call('/api/store/jamicore-store/checkout', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -178,7 +178,7 @@ describe('Order/checkout state machine hardening', () => {
   })
 
   it('cancels a pending unpaid order and restores its coupon quota', async () => {
-    const [acmeCouponBefore] = await db.select().from(coupons).where(eq(coupons.code, 'WELCOME15'))
+    const [couponBefore] = await db.select().from(coupons).where(eq(coupons.code, 'WELCOME15'))
     const order = await placeOrder('cod', 'WELCOME15')
     expect(order.paymentStatus).toBe('unpaid')
     const id = await orderIdFor(order.orderNumber)
@@ -188,8 +188,8 @@ describe('Order/checkout state machine hardening', () => {
     expect(cancelRes.body.data.status).toBe('cancelled')
     expect(cancelRes.body.data.paymentStatus).toBe('failed')
 
-    const [acmeCouponAfter] = await db.select().from(coupons).where(eq(coupons.code, 'WELCOME15'))
-    expect(Number(acmeCouponAfter.usedCount)).toBe(Number(acmeCouponBefore.usedCount))
+    const [couponAfter] = await db.select().from(coupons).where(eq(coupons.code, 'WELCOME15'))
+    expect(Number(couponAfter.usedCount)).toBe(Number(couponBefore.usedCount))
 
     const [variant] = await db
       .select()
@@ -328,7 +328,7 @@ describe('Order/checkout state machine hardening', () => {
     // Remove the fixture product and everything hanging off the test orders.
     if (fixtureProductId) await db.delete(products).where(eq(products.id, fixtureProductId))
 
-    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     if (merchant) {
       const testOrders = await db
         .select({ id: orders.id })

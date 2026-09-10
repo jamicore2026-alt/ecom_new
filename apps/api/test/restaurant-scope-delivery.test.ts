@@ -32,7 +32,7 @@ describe('restaurant-era outlet reads default-deny (delivery + menu)', () => {
   let menuItemId = ''
   let mainDel: string | null = null
   const stamp = Date.now()
-  const email = `dl-scope-${stamp}@acme.com`
+  const email = `dl-scope-${stamp}@jamicore.com`
   let mainZoneName = ''
   let branchZoneId = ''
   const cleanup = { zones: [] as string[], deliveries: [] as string[], orders: [] as string[], drivers: [] as string[] }
@@ -45,8 +45,8 @@ describe('restaurant-era outlet reads default-deny (delivery + menu)', () => {
     })
 
   beforeAll(async () => {
-    admin = await loginAs('admin@acme.com')
-    const [merchant] = await db.select().from(users).where(eq(users.email, 'admin@acme.com'))
+    admin = await loginAs('admin@jamicore.com')
+    const [merchant] = await db.select().from(users).where(eq(users.email, 'admin@jamicore.com'))
     adminUserId = merchant.id
 
     const outs = await call('/api/outlets', { headers: admin })
@@ -181,13 +181,13 @@ describe('restaurant-era outlet reads default-deny (delivery + menu)', () => {
     expect(driversRes.status).toBe(200)
     expect(driversRes.body.data.items.length).toBeGreaterThan(0)
 
-    const [adminUser] = await db.select().from(users).where(eq(users.email, 'admin@acme.com'))
+    const [adminUser] = await db.select().from(users).where(eq(users.email, 'admin@jamicore.com'))
     const [user] = await db
       .insert(users)
       .values({
         merchantId: adminUser.merchantId,
         name: 'Leak Driver',
-        email: `dl-driver-${stamp}@acme.com`,
+        email: `dl-driver-${stamp}@jamicore.com`,
         passwordHash: await hash('password123', 10),
         role: 'driver',
         permissions: [],

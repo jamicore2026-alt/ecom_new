@@ -39,18 +39,18 @@ describe('Product reviews', () => {
         .returning({ id: merchants.id })
       otherStoreId = inserted[0]?.id ?? ''
 
-      const login = await call('/api/auth/login', json({ email: 'admin@acme.com', password: 'password123' }))
+      const login = await call('/api/auth/login', json({ email: 'admin@jamicore.com', password: 'password123' }))
       expect(login.status).toBe(200)
       adminToken = login.body.data.accessToken
 
-      const list = await call('/api/store/acme-store/products?limit=100')
+      const list = await call('/api/store/jamicore-store/products?limit=100')
       product = list.body.data.items.find((i: any) => i.stock >= 20)
-      const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+      const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
       variantId = detail.body.data.variants[0].id
 
       // Reviewer buys first so their review can be flagged as a verified purchase
       const placed = await call(
-        '/api/store/acme-store/checkout',
+        '/api/store/jamicore-store/checkout',
         json({
           items: [{ productId: product.id, variantId, quantity: 1 }],
           email: REVIEWER,
@@ -63,7 +63,7 @@ describe('Product reviews', () => {
 
       for (const email of [REVIEWER, PLAIN]) {
         const reg = await call(
-          '/api/store/acme-store/auth/register',
+          '/api/store/jamicore-store/auth/register',
           json({
             email,
             password: 'sup3rsecret',
@@ -75,8 +75,8 @@ describe('Product reviews', () => {
         )
         expect(reg.status).toBe(200)
       }
-      const rLogin = await call('/api/store/acme-store/auth/login', json({ email: REVIEWER, password: 'sup3rsecret' }))
-      const pLogin = await call('/api/store/acme-store/auth/login', json({ email: PLAIN, password: 'sup3rsecret' }))
+      const rLogin = await call('/api/store/jamicore-store/auth/login', json({ email: REVIEWER, password: 'sup3rsecret' }))
+      const pLogin = await call('/api/store/jamicore-store/auth/login', json({ email: PLAIN, password: 'sup3rsecret' }))
       reviewerToken = rLogin.body.data.token
       plainToken = pLogin.body.data.token
     },
@@ -85,7 +85,7 @@ describe('Product reviews', () => {
 
   it('lets a signed-in shopper submit a review that starts pending', async () => {
     const res = await call(
-      '/api/store/acme-store/auth/reviews',
+      '/api/store/jamicore-store/auth/reviews',
       json({ productId: product.id, rating: 5, title: 'Great buy', body: 'Exceeded expectations.' }, reviewerToken)
     )
     expect(res.status).toBe(200)
@@ -94,11 +94,11 @@ describe('Product reviews', () => {
 
   it('upserts: a second submission replaces the first and returns to pending', async () => {
     await call(
-      '/api/store/acme-store/auth/reviews',
+      '/api/store/jamicore-store/auth/reviews',
       json({ productId: product.id, rating: 5, title: 'Great buy', body: 'v1' }, reviewerToken)
     )
     const res = await call(
-      '/api/store/acme-store/auth/reviews',
+      '/api/store/jamicore-store/auth/reviews',
       json({ productId: product.id, rating: 4, title: 'Still great', body: 'v2' }, reviewerToken)
     )
     expect(res.status).toBe(200)
@@ -114,36 +114,36 @@ describe('Product reviews', () => {
 
     // Second shopper (no purchase history) also reviews
     const plainRes = await call(
-      '/api/store/acme-store/auth/reviews',
+      '/api/store/jamicore-store/auth/reviews',
       json({ productId: product.id, rating: 5, title: 'Nice', body: 'Happy with it.' }, plainToken)
     )
     expect(plainRes.status).toBe(200)
   })
 
   it('hides unapproved reviews from the public PDP payload', async () => {
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+    const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
     expect(detail.body.data.rating).toBeNull()
 
-    const list = await call(`/api/store/acme-store/products/${product.slug}/reviews`)
+    const list = await call(`/api/store/jamicore-store/products/${product.slug}/reviews`)
     expect(list.status).toBe(200)
     expect(list.body.data.items).toHaveLength(0)
   })
 
   it('rejects invalid ratings and non-shopper tokens', async () => {
     const badRating = await call(
-      '/api/store/acme-store/auth/reviews',
+      '/api/store/jamicore-store/auth/reviews',
       json({ productId: product.id, rating: 6 }, reviewerToken)
     )
     expect(badRating.status).toBeGreaterThanOrEqual(400)
 
     const noToken = await call(
-      '/api/store/acme-store/auth/reviews',
+      '/api/store/jamicore-store/auth/reviews',
       json({ productId: product.id, rating: 5 })
     )
     expect(noToken.status).toBe(401)
 
     const unknownProduct = await call(
-      '/api/store/acme-store/auth/reviews',
+      '/api/store/jamicore-store/auth/reviews',
       json({ productId: 'does-not-exist', rating: 5 }, reviewerToken)
     )
     expect(unknownProduct.status).toBe(404)
@@ -180,7 +180,7 @@ describe('Product reviews', () => {
   })
 
   it('public list shows approved reviews with correct verified flags', async () => {
-    const list = await call(`/api/store/acme-store/products/${product.slug}/reviews`)
+    const list = await call(`/api/store/jamicore-store/products/${product.slug}/reviews`)
     expect(list.body.data.items).toHaveLength(2)
     const byAuthor = new Map<string, any>(list.body.data.items.map((r: any) => [r.authorName, r]))
     const verified = byAuthor.get('Rev Shopper')
@@ -188,22 +188,22 @@ describe('Product reviews', () => {
     expect(verified?.verifiedPurchase).toBe(true)
     expect(plain?.verifiedPurchase).toBe(false)
 
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+    const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
     expect(detail.body.data.rating.count).toBe(2)
     expect(detail.body.data.rating.average).toBeCloseTo((5 + 4) / 2, 1)
   })
 
   it('re-submitting an approved review pulls it back into moderation', async () => {
     await call(
-      '/api/store/acme-store/auth/reviews',
+      '/api/store/jamicore-store/auth/reviews',
       json({ productId: product.id, rating: 3, title: 'Changed my mind', body: 'v3' }, reviewerToken)
     )
 
-    const list = await call(`/api/store/acme-store/products/${product.slug}/reviews`)
+    const list = await call(`/api/store/jamicore-store/products/${product.slug}/reviews`)
     expect(list.body.data.items).toHaveLength(1)
     expect(list.body.data.items[0].authorName).toBe('Plain Shopper')
 
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+    const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
     expect(detail.body.data.rating.count).toBe(1)
   })
 
@@ -231,7 +231,7 @@ describe('Product reviews', () => {
   })
 
   afterAll(async () => {
-    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     if (!merchant) return
     await db.delete(customers).where(and(eq(customers.merchantId, merchant.id), inArray(customers.email, [REVIEWER, PLAIN])))
     await db.delete(reviews).where(and(eq(reviews.merchantId, merchant.id), eq(reviews.productId, product.id)))

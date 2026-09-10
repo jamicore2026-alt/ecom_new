@@ -51,7 +51,7 @@ async function freeTables() {
 
 describe('Phase 5: dine-in tables + QR', () => {
   beforeAll(async () => {
-    admin = await loginAs('admin@acme.com')
+    admin = await loginAs('admin@jamicore.com')
     const outlets = await call('/api/outlets', { headers: admin })
     resOutletId = outlets.body.data.find((o: { code: string }) => o.code === 'MAIN').id
 
@@ -237,7 +237,7 @@ describe('Phase 5: dine-in tables + QR', () => {
   })
 
   it('denies table management to staff without tables.manage', async () => {
-    const staff = await loginAs('staff@acme.com')
+    const staff = await loginAs('staff@jamicore.com')
     const res = await call('/api/tables', {
       method: 'POST',
       headers: { ...staff, ...jsonHeaders },

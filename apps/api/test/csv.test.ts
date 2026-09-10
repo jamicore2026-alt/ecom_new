@@ -41,9 +41,9 @@ describe('Products CSV export/import', () => {
   let alphaId = ''
 
   beforeAll(async () => {
-    const login = await call('/api/auth/login', json({ email: 'admin@acme.com', password: 'password123' }))
+    const login = await call('/api/auth/login', json({ email: 'admin@jamicore.com', password: 'password123' }))
     adminToken = login.body.data.accessToken
-    const staffLogin = await call('/api/auth/login', json({ email: 'riley@acme.com', password: 'password123' }))
+    const staffLogin = await call('/api/auth/login', json({ email: 'riley@jamicore.com', password: 'password123' }))
     staffToken = staffLogin.body.data.accessToken
 
     const alpha = await call(

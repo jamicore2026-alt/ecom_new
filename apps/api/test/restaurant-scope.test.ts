@@ -39,7 +39,7 @@ describe('restaurant-era outlet reads default-deny (tables + kitchen)', () => {
   let branchOrderId = ''
   let branchTicketId = ''
   const stamp = Date.now()
-  const email = `rt-scope-${stamp}@acme.com`
+  const email = `rt-scope-${stamp}@jamicore.com`
 
   const createFoodOrder = (headers: Record<string, string>, outletId: string) =>
     call('/api/food-orders', {
@@ -49,8 +49,8 @@ describe('restaurant-era outlet reads default-deny (tables + kitchen)', () => {
     })
 
   beforeAll(async () => {
-    admin = await loginAs('admin@acme.com')
-    const [merchant] = await db.select().from(users).where(eq(users.email, 'admin@acme.com'))
+    admin = await loginAs('admin@jamicore.com')
+    const [merchant] = await db.select().from(users).where(eq(users.email, 'admin@jamicore.com'))
     adminUserId = merchant.id
 
     const outs = await call('/api/outlets', { headers: admin })

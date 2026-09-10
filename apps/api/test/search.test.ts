@@ -42,7 +42,7 @@ describe('Product full-text search', () => {
       .returning({ id: merchants.id })
     otherStoreId = inserted[0]?.id ?? ''
 
-    const login = await call('/api/auth/login', json({ email: 'admin@acme.com', password: 'password123' }))
+    const login = await call('/api/auth/login', json({ email: 'admin@jamicore.com', password: 'password123' }))
     expect(login.status).toBe(200)
     adminToken = login.body.data.accessToken
 
@@ -54,17 +54,17 @@ describe('Product full-text search', () => {
   })
 
   it('matches words in any order (tsvector, not substring)', async () => {
-    const fwd = await call('/api/store/acme-store/search?search=flux+quantum')
+    const fwd = await call('/api/store/jamicore-store/search?search=flux+quantum')
     expect(fwd.status).toBe(200)
     expect(fwd.body.data.meta.total).toBeGreaterThanOrEqual(1)
     expect(fwd.body.data.items.some((i: any) => i.name === 'Quantum Flux Capacitor')).toBe(true)
 
-    const rev = await call('/api/store/acme-store/search?search=quantum+flux')
+    const rev = await call('/api/store/jamicore-store/search?search=quantum+flux')
     expect(rev.body.data.meta.total).toBe(fwd.body.data.meta.total)
   })
 
   it('ranks multi-lexeme matches above single-lexeme ones', async () => {
-    const res = await call('/api/store/acme-store/search?search=flux+quantum')
+    const res = await call('/api/store/jamicore-store/search?search=flux+quantum')
     expect(res.body.data.items[0].name).toBe('Quantum Flux Capacitor')
 
     const merchantList = await call('/api/products?search=flux+quantum', {
@@ -75,7 +75,7 @@ describe('Product full-text search', () => {
   })
 
   it('falls back to prefix matching when FTS misses', async () => {
-    const res = await call('/api/store/acme-store/search?search=capac')
+    const res = await call('/api/store/jamicore-store/search?search=capac')
     expect(res.status).toBe(200)
     expect(res.body.data.items.some((i: any) => i.name === 'Quantum Flux Capacitor')).toBe(true)
   })
@@ -88,13 +88,13 @@ describe('Product full-text search', () => {
     expect(draft.status).toBe(200)
     createdIds.push(draft.body.data.id)
 
-    const res = await call('/api/store/acme-store/search?search=secret+quantum')
+    const res = await call('/api/store/jamicore-store/search?search=secret+quantum')
     expect(res.body.data.items.find((i: any) => i.name === 'Secret Quantum Prototype')).toBeUndefined()
 
     const other = await call('/api/store/other-store/search?search=quantum')
     expect(other.body.data.items).toHaveLength(0)
 
-    const merchantScoped = await call('/api/store/acme-store/search?search=pebble')
+    const merchantScoped = await call('/api/store/jamicore-store/search?search=pebble')
     expect(merchantScoped.body.data.items[0]?.name).toBe('Boring Pebble')
   })
 

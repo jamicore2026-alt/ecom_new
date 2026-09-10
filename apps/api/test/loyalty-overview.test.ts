@@ -16,7 +16,7 @@ const json = (body: unknown) => ({
   body: JSON.stringify(body)
 })
 
-const auth = async (email = 'admin@acme.com') => {
+const auth = async (email = 'admin@jamicore.com') => {
   const res = await call('/api/auth/login', json({ email, password: 'password123' }))
   return { authorization: `Bearer ${res.body.data.accessToken}` }
 }
@@ -26,7 +26,7 @@ let customerId: string
 
 describe('Loyalty — merchant-wide overview', () => {
   beforeAll(async () => {
-    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     merchantId = merchant.id
 
     const headers = await auth()

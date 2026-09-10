@@ -30,7 +30,7 @@ describe('Phase 1: outlets, modules, roles, user-outlets', () => {
   let admin: Record<string, string>
 
   it('loads merchant context from /me', async () => {
-    admin = await loginAs('admin@acme.com')
+    admin = await loginAs('admin@jamicore.com')
     adminToken = admin.authorization
     const res = await call('/api/auth/me', { headers: admin })
     expect(res.status).toBe(200)
@@ -158,7 +158,7 @@ describe('Phase 1: outlets, modules, roles, user-outlets', () => {
   it('admin assigns outlets to a user and lists them', async () => {
     const outlets = await call('/api/outlets', { headers: admin })
     const main = outlets.body.data.find((o: { code: string }) => o.code === 'MAIN')
-    const staffLogin = await loginAs('staff@acme.com')
+    const staffLogin = await loginAs('staff@jamicore.com')
     const staffId = (await call('/api/auth/me', { headers: staffLogin })).body.data.user.id
 
     const assign = await call(`/api/user-outlets/${staffId}`, {
@@ -182,7 +182,7 @@ describe('Phase 1: outlets, modules, roles, user-outlets', () => {
   })
 
   it('enforces module + permission guards for staff', async () => {
-    const staff = await loginAs('staff@acme.com')
+    const staff = await loginAs('staff@jamicore.com')
     const createOutlet = await call('/api/outlets', {
       method: 'POST',
       headers: { ...staff, ...jsonHeaders },
@@ -207,7 +207,7 @@ describe('Phase 1: outlets, modules, roles, user-outlets', () => {
 })
 
 afterAll(async () => {
-  const admin = adminToken ? { authorization: adminToken } : await loginAs('admin@acme.com')
+  const admin = adminToken ? { authorization: adminToken } : await loginAs('admin@jamicore.com')
   if (createdRoleId) {
     await call(`/api/roles/${createdRoleId}`, { method: 'DELETE', headers: admin })
   }

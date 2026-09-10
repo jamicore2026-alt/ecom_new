@@ -54,20 +54,20 @@ describe('transactional emails', () => {
   const createdOrderIds: string[] = []
 
   beforeAll(async () => {
-    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     merchantId = merchant.id
 
-    const list = await call('/api/store/acme-store/products?limit=100')
+    const list = await call('/api/store/jamicore-store/products?limit=100')
     const items = list.body.data.items as Array<{ id: string; slug: string; stock: number }>
     const product = items.reduce((a, b) => (b.stock > a.stock ? b : a))
     productId = product.id
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+    const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
     variantId = detail.body.data.variants[0].id
 
     const login = await call('/api/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'admin@acme.com', password: 'password123' })
+      body: JSON.stringify({ email: 'admin@jamicore.com', password: 'password123' })
     })
     adminAuth = { authorization: `Bearer ${login.body.data.accessToken}` }
   })
@@ -108,7 +108,7 @@ describe('transactional emails', () => {
 
   const placeCardOrder = async (email: string) => {
     const res = await call(
-      '/api/store/acme-store/checkout',
+      '/api/store/jamicore-store/checkout',
       json({
         items: [{ productId, variantId, quantity: 1 }],
         email,
@@ -145,7 +145,7 @@ describe('transactional emails', () => {
 
   it('sends a payment-received email on the unpaid → paid transition', async () => {
     const codRes = await call(
-      '/api/store/acme-store/checkout',
+      '/api/store/jamicore-store/checkout',
       json({
         items: [{ productId, variantId, quantity: 1 }],
         email: 'mail-cod@example.com',

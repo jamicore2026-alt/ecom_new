@@ -27,7 +27,7 @@ describe('Phase 3: food menu', () => {
   let productId = ''
 
   it('loads admin context with restaurant module enabled', async () => {
-    admin = await loginAs('admin@acme.com')
+    admin = await loginAs('admin@jamicore.com')
     adminToken = admin.authorization
     const me = await call('/api/auth/me', { headers: admin })
     expect(me.status).toBe(200)
@@ -123,7 +123,7 @@ describe('Phase 3: food menu', () => {
   })
 
   it('denies staff writes and non-menu staff reads without permissions', async () => {
-    const staff = await loginAs('staff@acme.com')
+    const staff = await loginAs('staff@jamicore.com')
     const createItem = await call('/api/menu', {
       method: 'POST',
       headers: { ...staff, ...jsonHeaders },
@@ -141,7 +141,7 @@ describe('Phase 3: food menu', () => {
 })
 
 afterAll(async () => {
-  const admin = adminToken ? { authorization: adminToken } : await loginAs('admin@acme.com')
+  const admin = adminToken ? { authorization: adminToken } : await loginAs('admin@jamicore.com')
   if (createdMenuItemId) {
     await call(`/api/menu/${createdMenuItemId}`, { method: 'DELETE', headers: admin })
   }

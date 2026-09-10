@@ -45,9 +45,9 @@ describe('commerce order outlet isolation (P2)', () => {
     })
 
   beforeAll(async () => {
-    admin = await loginAs('admin@acme.com')
+    admin = await loginAs('admin@jamicore.com')
 
-    const [merchant] = await db.select().from(users).where(eq(users.email, 'admin@acme.com'))
+    const [merchant] = await db.select().from(users).where(eq(users.email, 'admin@jamicore.com'))
     merchantId = merchant.merchantId
 
     const outs = await call('/api/outlets', { headers: admin })
@@ -67,7 +67,7 @@ describe('commerce order outlet isolation (P2)', () => {
       headers: { ...admin, ...jh },
       body: JSON.stringify({
         name: 'Scoped C',
-        email: 'scope-c@acme.com',
+        email: 'scope-c@jamicore.com',
         password: 'scope-pass-123456',
         role: 'staff',
         permissions: ['orders.read', 'orders.create', 'orders.update', 'orders.cancel']
@@ -83,7 +83,7 @@ describe('commerce order outlet isolation (P2)', () => {
     })
     expect(assigned.status).toBe(200)
 
-    scopeB = await loginAs('scope-c@acme.com', 'scope-pass-123456')
+    scopeB = await loginAs('scope-c@jamicore.com', 'scope-pass-123456')
 
     const menu = await call('/api/menu', { headers: admin })
     menuItemId = menu.body.data.items.find((i: { available: boolean; status: string }) => i.available && i.status === 'active').id
@@ -181,7 +181,7 @@ describe('commerce order outlet isolation (P2)', () => {
   })
 
   afterAll(async () => {
-    const [merchant] = await db.select().from(users).where(eq(users.email, 'scope-c@acme.com'))
+    const [merchant] = await db.select().from(users).where(eq(users.email, 'scope-c@jamicore.com'))
     if (merchant) {
       await db.delete(userOutlets).where(eq(userOutlets.userId, merchant.id))
       await db.delete(users).where(eq(users.id, merchant.id))

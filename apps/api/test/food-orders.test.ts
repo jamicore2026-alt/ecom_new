@@ -28,7 +28,7 @@ describe('Phase 4: unified food orders', () => {
   let addOnModifier: { id: string; priceAdjustment: number }
 
   it('loads admin + outlet + a menu item with a modifier', async () => {
-    admin = await loginAs('admin@acme.com')
+    admin = await loginAs('admin@jamicore.com')
     adminToken = admin.authorization
 
     const outlets = await call('/api/outlets', { headers: admin })
@@ -162,7 +162,7 @@ describe('Phase 4: unified food orders', () => {
   })
 
   it('denies non-restaurant staff writes', async () => {
-    const staff = await loginAs('staff@acme.com')
+    const staff = await loginAs('staff@jamicore.com')
     const res = await call('/api/food-orders', {
       method: 'POST',
       headers: { ...staff, ...jsonHeaders },

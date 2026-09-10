@@ -16,7 +16,7 @@ const json = (body: unknown) => ({
   body: JSON.stringify(body)
 })
 
-const auth = async (email = 'admin@acme.com') => {
+const auth = async (email = 'admin@jamicore.com') => {
   const res = await call('/api/auth/login', json({ email, password: 'password123' }))
   return { authorization: `Bearer ${res.body.data.accessToken}` }
 }
@@ -30,18 +30,18 @@ describe('Abandoned carts pipeline (storefront persistence → conversion)', () 
   const createdOrderNumbers: string[] = []
 
   beforeAll(async () => {
-    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     merchantId = merchant.id
 
-    const list = await call('/api/store/acme-store/products?limit=100')
+    const list = await call('/api/store/jamicore-store/products?limit=100')
     product = list.body.data.items.find((i: any) => i.stock >= 20)
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+    const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
     variantId = detail.body.data.variants[0].id
   })
 
   it('persists a guest cart and returns a stable server-side id', async () => {
     const res = await call(
-      '/api/store/acme-store/cart',
+      '/api/store/jamicore-store/cart',
       json({
         items: [{ variantId, productId: product.id, name: product.name, price: 10, quantity: 2 }]
       })
@@ -52,7 +52,7 @@ describe('Abandoned carts pipeline (storefront persistence → conversion)', () 
 
     // Saving again with the same cartId must update (not duplicate).
     const res2 = await call(
-      '/api/store/acme-store/cart',
+      '/api/store/jamicore-store/cart',
       json({
         cartId,
         items: [{ variantId, productId: product.id, name: product.name, price: 10, quantity: 3 }]
@@ -69,7 +69,7 @@ describe('Abandoned carts pipeline (storefront persistence → conversion)', () 
   })
 
   it('save with a bogus cartId does not error and creates a fresh cart', async () => {
-    const res = await call('/api/store/acme-store/cart', json({ cartId: 'nonexistent-id-xyz', items: [] }))
+    const res = await call('/api/store/jamicore-store/cart', json({ cartId: 'nonexistent-id-xyz', items: [] }))
     expect(res.status).toBe(200)
     expect(res.body.data.cart.id).toBeTruthy()
 
@@ -85,7 +85,7 @@ describe('Abandoned carts pipeline (storefront persistence → conversion)', () 
       .where(and(eq(carts.id, cartId), eq(carts.merchantId, merchantId)))
 
     const [row] = await db.select().from(carts).where(eq(carts.id, cartId))
-    const res = await call(`/api/store/acme-store/cart/recover/${row.recoveryCode}`)
+    const res = await call(`/api/store/jamicore-store/cart/recover/${row.recoveryCode}`)
     expect(res.status).toBe(200)
     expect(res.body.data.restored).toBe(true)
     expect(res.body.data.cartId).toBe(cartId)
@@ -95,7 +95,7 @@ describe('Abandoned carts pipeline (storefront persistence → conversion)', () 
 
   it('marks the cart converted when a checkout includes its cartId', async () => {
     const res = await call(
-      '/api/store/acme-store/checkout',
+      '/api/store/jamicore-store/checkout',
       json({
         items: [{ productId: product.id, variantId, quantity: 1 }],
         email: 'carts-buyer@example.com',
@@ -118,7 +118,7 @@ describe('Abandoned carts pipeline (storefront persistence → conversion)', () 
   it('checkout without a cartId leaves existing carts untouched', async () => {
     const [before] = await db.select().from(carts).where(eq(carts.id, cartId))
     const res = await call(
-      '/api/store/acme-store/checkout',
+      '/api/store/jamicore-store/checkout',
       json({
         items: [{ productId: product.id, variantId, quantity: 1 }],
         email: 'carts-nocart@example.com',

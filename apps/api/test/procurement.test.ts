@@ -27,7 +27,7 @@ const json = (body: unknown) => ({
   body: JSON.stringify(body)
 })
 
-const auth = async (email = 'admin@acme.com') => {
+const auth = async (email = 'admin@jamicore.com') => {
   const res = await call('/api/auth/login', json({ email, password: 'password123' }))
   return { authorization: `Bearer ${res.body.data.accessToken}` }
 }
@@ -56,7 +56,7 @@ const supplierIds: string[] = []
 
 describe('Procurement: suppliers, purchase orders and goods receipts (merchant-wide)', () => {
   beforeAll(async () => {
-    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     merchantId = merchant.id
 
     const headers = await auth()
@@ -69,9 +69,9 @@ describe('Procurement: suppliers, purchase orders and goods receipts (merchant-w
     supplierId = supplier.id
 
     // A stocked variant to receive against.
-    const list = await call('/api/store/acme-store/products?limit=100')
+    const list = await call('/api/store/jamicore-store/products?limit=100')
     const product = list.body.data.items.find((i: any) => i.stock >= 10)
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+    const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
     variantId = detail.body.data.variants[0].id
     const [variant] = await db
       .select({ inventory: productVariants.inventory })
@@ -119,7 +119,7 @@ describe('Procurement: suppliers, purchase orders and goods receipts (merchant-w
   })
 
   it('rejects supplier creation without inventory permissions (403)', async () => {
-    const headers = await auth('riley@acme.com')
+    const headers = await auth('riley@jamicore.com')
     const res = await call('/api/suppliers', apiJson(headers, { name: 'Nope Inc' }))
     expect(res.status).toBe(403)
   })

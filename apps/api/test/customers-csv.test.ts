@@ -66,8 +66,8 @@ const ORDER_HEADERS = [
   'created_at'
 ]
 
-const NEW_EMAIL = 'csvcust-new@acme.com'
-const ERR_EMAIL = 'csvcust-err@acme.com'
+const NEW_EMAIL = 'csvcust-new@jamicore.com'
+const ERR_EMAIL = 'csvcust-err@jamicore.com'
 const createdEmails: string[] = []
 
 describe('Customers + Orders CSV export/import', () => {
@@ -75,9 +75,9 @@ describe('Customers + Orders CSV export/import', () => {
   let staffToken = ''
 
   beforeAll(async () => {
-    const login = await call('/api/auth/login', json({ email: 'admin@acme.com', password: 'password123' }))
+    const login = await call('/api/auth/login', json({ email: 'admin@jamicore.com', password: 'password123' }))
     adminToken = login.body.data.accessToken
-    const staffLogin = await call('/api/auth/login', json({ email: 'riley@acme.com', password: 'password123' }))
+    const staffLogin = await call('/api/auth/login', json({ email: 'riley@jamicore.com', password: 'password123' }))
     staffToken = staffLogin.body.data.accessToken
   })
 
@@ -87,7 +87,7 @@ describe('Customers + Orders CSV export/import', () => {
     })
     expect(res.status).toBe(200)
     expect(res.res.headers.get('content-type')).toContain('text/csv')
-    expect(res.res.headers.get('content-disposition')).toContain('customers-acme-store-')
+    expect(res.res.headers.get('content-disposition')).toContain('customers-jamicore-store-')
     const rows = parseCsv(await res.res.text())
     expect(rows[0]).toEqual(CUSTOMER_HEADERS)
     expect(rows.length).toBeGreaterThan(1)
@@ -110,7 +110,7 @@ describe('Customers + Orders CSV export/import', () => {
     })
     expect(res.status).toBe(200)
     expect(res.res.headers.get('content-type')).toContain('text/csv')
-    expect(res.res.headers.get('content-disposition')).toContain('orders-acme-store-')
+    expect(res.res.headers.get('content-disposition')).toContain('orders-jamicore-store-')
     const rows = parseCsv(await res.res.text())
     expect(rows[0]).toEqual(ORDER_HEADERS)
     expect(rows.length).toBeGreaterThan(1)

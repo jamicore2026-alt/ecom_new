@@ -221,9 +221,9 @@ export async function seed() {
   const [merchant] = await db
     .insert(merchants)
     .values({
-      name: 'Acme Store',
-      slug: 'acme-store',
-      email: 'owner@acme.com',
+      name: 'JamiCore Store',
+      slug: 'jamicore-store',
+      email: 'owner@jamicore.com',
       phone: '+1 555-0100',
       currency: 'USD',
       timezone: 'America/New_York',
@@ -234,11 +234,11 @@ export async function seed() {
   await db
     .insert(users)
     .values([
-      { merchantId: merchant.id, name: 'Alex Owner', email: 'owner@acme.com', passwordHash, role: 'owner', permissions: [] },
-      { merchantId: merchant.id, name: 'Sam Admin', email: 'admin@acme.com', passwordHash, role: 'admin', permissions: [] },
-      { merchantId: merchant.id, name: 'Jordan Staff', email: 'staff@acme.com', passwordHash, role: 'staff', permissions: ['products.create', 'products.update', 'products.delete', 'orders.create', 'orders.update', 'orders.cancel', 'inventory.adjust', 'inventory.manage'] },
-      { merchantId: merchant.id, name: 'Riley Staff', email: 'riley@acme.com', passwordHash, role: 'staff', permissions: ['reports.read'] },
-      { merchantId: merchant.id, name: 'Dana Driver', email: 'driver@acme.com', passwordHash, role: 'driver', permissions: [] }
+      { merchantId: merchant.id, name: 'Alex Owner', email: 'owner@jamicore.com', passwordHash, role: 'owner', permissions: [] },
+      { merchantId: merchant.id, name: 'Sam Admin', email: 'admin@jamicore.com', passwordHash, role: 'admin', permissions: [] },
+      { merchantId: merchant.id, name: 'Jordan Staff', email: 'staff@jamicore.com', passwordHash, role: 'staff', permissions: ['products.create', 'products.update', 'products.delete', 'orders.create', 'orders.update', 'orders.cancel', 'inventory.adjust', 'inventory.manage'] },
+      { merchantId: merchant.id, name: 'Riley Staff', email: 'riley@jamicore.com', passwordHash, role: 'staff', permissions: ['reports.read'] },
+      { merchantId: merchant.id, name: 'Dana Driver', email: 'driver@jamicore.com', passwordHash, role: 'driver', permissions: [] }
     ])
     .returning()
 
@@ -249,7 +249,7 @@ export async function seed() {
       merchantId: merchant.id,
       name: 'Main Outlet',
       code: 'MAIN',
-      address: { name: 'Acme Store', country: 'US', city: 'New York' },
+      address: { name: 'JamiCore Store', country: 'US', city: 'New York' },
       status: 'active'
     })
     .returning()
@@ -274,8 +274,8 @@ export async function seed() {
     .returning()
 
   // Admin (Sam) scoped to the default outlet; owner implicitly covers all.
-  const [ownerUser] = await db.select().from(users).where(eq(users.email, 'owner@acme.com'))
-  const [adminUser] = await db.select().from(users).where(eq(users.email, 'admin@acme.com'))
+  const [ownerUser] = await db.select().from(users).where(eq(users.email, 'owner@jamicore.com'))
+  const [adminUser] = await db.select().from(users).where(eq(users.email, 'admin@jamicore.com'))
   await db.insert(userOutlets).values([
     { userId: ownerUser.id, outletId: defaultOutlet.id },
     { userId: adminUser.id, outletId: defaultOutlet.id }
@@ -356,7 +356,7 @@ export async function seed() {
   console.log(`   Seeded ${stationDefs.length} kitchen stations`)
 
   /* delivery zone + driver */
-  const [driverUser] = await db.select().from(users).where(eq(users.email, 'driver@acme.com'))
+  const [driverUser] = await db.select().from(users).where(eq(users.email, 'driver@jamicore.com'))
   const existingZone = await db
     .select()
     .from(deliveryZones)
@@ -386,7 +386,7 @@ export async function seed() {
       userId: driverUser.id,
       name: driverUser.name,
       phone: '+1 555-0142',
-      email: 'driver@acme.com',
+      email: 'driver@jamicore.com',
       vehicleType: 'motorcycle',
       vehiclePlate: 'NYC-8421',
       status: 'ONLINE',
@@ -448,7 +448,7 @@ export async function seed() {
         sku: def.sku,
         name: def.name,
         slug: `${def.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-        description: `High-quality ${def.name.toLowerCase()} — a bestseller at Acme Store.`,
+        description: `High-quality ${def.name.toLowerCase()} — a bestseller at JamiCore Store.`,
         price: def.price,
         compareAtPrice: def.compareAt ?? null,
         cost: def.cost ?? 0,
@@ -732,7 +732,7 @@ export async function seed() {
   /* settings */
   await db.insert(storeSettings).values({
     merchantId: merchant.id,
-    name: 'Acme Store',
+    name: 'JamiCore Store',
     logo: null,
     address: { line1: '100 Market St', city: 'New York', state: 'NY', postalCode: '10001', country: 'USA' },
     currency: 'USD',
@@ -795,9 +795,9 @@ export async function seed() {
 
   console.log('✅ Seed complete')
   console.log('───────────────────────────────────────────')
-  console.log('   Store:        Acme Store')
-  console.log('   Merchant:     acme-store')
-  console.log('   Admin login:  admin@acme.com')
+  console.log('   Store:        JamiCore Store')
+  console.log('   Merchant:     jamicore-store')
+  console.log('   Admin login:  admin@jamicore.com')
   console.log('   Password:     password123')
   console.log('   Products:     20')
   console.log(`   Orders:       ${orderIds.length}`)

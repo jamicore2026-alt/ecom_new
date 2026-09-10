@@ -39,7 +39,7 @@ describe('permission convergence (P2-2)', () => {
   const stamp = Date.now()
 
   beforeAll(async () => {
-    staff = await loginAs('staff@acme.com')
+    staff = await loginAs('staff@jamicore.com')
   })
 
   afterAll(async () => {
@@ -86,7 +86,7 @@ describe('permission convergence (P2-2)', () => {
     const [row] = await db
       .select()
       .from(users)
-      .where(and(eq(users.email, 'staff@acme.com'), eq(users.status, 'active')))
+      .where(and(eq(users.email, 'staff@jamicore.com'), eq(users.status, 'active')))
     expect(row).toBeDefined()
     expect(row.permissions).toEqual(
       expect.arrayContaining([
@@ -104,7 +104,7 @@ describe('permission convergence (P2-2)', () => {
   })
 
   it('riley (reports.read) can still reach analytics + overview', async () => {
-    const riley = await loginAs('riley@acme.com')
+    const riley = await loginAs('riley@jamicore.com')
     const overview = await call('/api/overview', { headers: riley })
     expect(overview.status).toBe(200)
     const sales = await call('/api/analytics/sales?interval=week', { headers: riley })
@@ -133,14 +133,14 @@ describe('permission convergence (P2-2)', () => {
     const [rileyRow] = await db
       .select()
       .from(users)
-      .where(and(eq(users.email, 'riley@acme.com'), eq(users.status, 'active')))
+      .where(and(eq(users.email, 'riley@jamicore.com'), eq(users.status, 'active')))
     const prior = rileyRow.permissions
     await db
       .update(users)
       .set({ permissions: [...prior, 'settings:write'] as never })
       .where(eq(users.id, rileyRow.id))
 
-    const riley = await loginAs('riley@acme.com')
+    const riley = await loginAs('riley@jamicore.com')
     const theme = await call('/api/theme', {
       method: 'PUT',
       headers: { ...riley, ...jh },
@@ -156,8 +156,8 @@ describe('permission convergence (P2-2)', () => {
     const [adminRow] = await db
       .select()
       .from(users)
-      .where(and(eq(users.email, 'admin@acme.com'), eq(users.status, 'active')))
-    const email = `norm-${stamp}@acme.com`
+      .where(and(eq(users.email, 'admin@jamicore.com'), eq(users.status, 'active')))
+    const email = `norm-${stamp}@jamicore.com`
 
     const created = await SettingsService.createStaff(adminRow.merchantId, {
       name: 'Norm Conv',

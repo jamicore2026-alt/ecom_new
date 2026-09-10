@@ -23,11 +23,11 @@ describe('Storefront checkout', () => {
   let lowStockVariantId: string
 
   it('fetches products to use for checkout', async () => {
-    const list = await call('/api/store/acme-store/products?limit=100')
+    const list = await call('/api/store/jamicore-store/products?limit=100')
     const items = list.body.data.items
     product = items.find((i: any) => i.stock >= 20)
     expect(product).toBeDefined()
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+    const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
     expect(detail.status).toBe(200)
     variantId = detail.body.data.variants[0].id
     expect(variantId).toBeDefined()
@@ -35,13 +35,13 @@ describe('Storefront checkout', () => {
     const low = items.find((i: any) => i.trackInventory && i.stock > 0 && i.stock < 10)
     expect(low).toBeDefined()
     lowStockProduct = low
-    const lowDetail = await call(`/api/store/acme-store/products/${low.slug}`)
+    const lowDetail = await call(`/api/store/jamicore-store/products/${low.slug}`)
     lowStockVariantId = lowDetail.body.data.variants[0].id
   })
 
   it('previews a cart with validated line items and totals', async () => {
     const res = await call(
-      '/api/store/acme-store/checkout/preview',
+      '/api/store/jamicore-store/checkout/preview',
       json({ items: [{ productId: product.id, variantId, quantity: 2 }] })
     )
     expect(res.status).toBe(200)
@@ -58,7 +58,7 @@ describe('Storefront checkout', () => {
 
   it('applies a valid coupon to the preview', async () => {
     const res = await call(
-      '/api/store/acme-store/checkout/preview',
+      '/api/store/jamicore-store/checkout/preview',
       json({ items: [{ productId: product.id, variantId, quantity: 2 }], couponCode: 'welcome15' })
     )
     expect(res.status).toBe(200)
@@ -72,7 +72,7 @@ describe('Storefront checkout', () => {
 
   it('rejects an unknown coupon', async () => {
     const res = await call(
-      '/api/store/acme-store/checkout/preview',
+      '/api/store/jamicore-store/checkout/preview',
       json({ items: [{ productId: product.id, variantId, quantity: 1 }], couponCode: 'NOPE' })
     )
     expect(res.status).toBe(404)
@@ -81,7 +81,7 @@ describe('Storefront checkout', () => {
 
   it('rejects a cart over the available stock', async () => {
     const res = await call(
-      '/api/store/acme-store/checkout/preview',
+      '/api/store/jamicore-store/checkout/preview',
       json({ items: [{ productId: lowStockProduct.id, variantId: lowStockVariantId, quantity: lowStockProduct.stock + 1 }] })
     )
     expect(res.status).toBe(400)
@@ -89,12 +89,12 @@ describe('Storefront checkout', () => {
   })
 
   it('rejects a variant that does not belong to the product', async () => {
-    const other = await call('/api/store/acme-store/products?limit=100')
+    const other = await call('/api/store/jamicore-store/products?limit=100')
     const otherProduct = other.body.data.items.find((i: any) => i.id !== product.id)
-    const otherDetail = await call(`/api/store/acme-store/products/${otherProduct.slug}`)
+    const otherDetail = await call(`/api/store/jamicore-store/products/${otherProduct.slug}`)
     const foreignVariant = otherDetail.body.data.variants[0].id
     const res = await call(
-      '/api/store/acme-store/checkout/preview',
+      '/api/store/jamicore-store/checkout/preview',
       json({ items: [{ productId: product.id, variantId: foreignVariant, quantity: 1 }] })
     )
     expect(res.status).toBe(400)
@@ -103,7 +103,7 @@ describe('Storefront checkout', () => {
 
   it('places an order and returns a confirmation', async () => {
     const res = await call(
-      '/api/store/acme-store/checkout',
+      '/api/store/jamicore-store/checkout',
       json({
         items: [{ productId: product.id, variantId, quantity: 1 }],
         couponCode: 'WELCOME15',
@@ -124,7 +124,7 @@ describe('Storefront checkout', () => {
 
   it('fetches an order by its order number', async () => {
     const placed = await call(
-      '/api/store/acme-store/checkout',
+      '/api/store/jamicore-store/checkout',
       json({
         items: [{ productId: product.id, variantId, quantity: 1 }],
         email: 'confirm@example.com',
@@ -135,7 +135,7 @@ describe('Storefront checkout', () => {
     expect(placed.status).toBe(200)
     const orderNumber = placed.body.data.orderNumber
 
-    const res = await call(`/api/store/acme-store/orders/${orderNumber}`)
+    const res = await call(`/api/store/jamicore-store/orders/${orderNumber}`)
     expect(res.status).toBe(200)
     expect(res.body.data.orderNumber).toBe(orderNumber)
     expect(res.body.data.items.length).toBe(1)
@@ -143,7 +143,7 @@ describe('Storefront checkout', () => {
   })
 
   it('returns 404 for an unknown order number', async () => {
-    const res = await call('/api/store/acme-store/orders/does-not-exist')
+    const res = await call('/api/store/jamicore-store/orders/does-not-exist')
     expect(res.status).toBe(404)
     expect(res.body.error.code).toBe('ORDER_NOT_FOUND')
   })
@@ -152,7 +152,7 @@ describe('Storefront checkout', () => {
     const [merchant] = await db
       .select()
       .from(merchants)
-      .where(eq(merchants.slug, 'acme-store'))
+      .where(eq(merchants.slug, 'jamicore-store'))
     if (!merchant) return
     await db
       .delete(customers)

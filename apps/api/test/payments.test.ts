@@ -89,7 +89,7 @@ describe('storefront payments integration', () => {
 
   const codCheckout = async (email: string) =>
     call(
-      '/api/store/acme-store/checkout',
+      '/api/store/jamicore-store/checkout',
       json({
         items: [{ productId, variantId, quantity: 1 }],
         email,
@@ -106,7 +106,7 @@ describe('storefront payments integration', () => {
     )
 
   beforeAll(async () => {
-    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     merchantId = merchant.id
 
     await db.insert(paymentProviderConfigs).values({
@@ -122,15 +122,15 @@ describe('storefront payments integration', () => {
       })
     })
 
-    const list = await call('/api/store/acme-store/products?limit=100')
+    const list = await call('/api/store/jamicore-store/products?limit=100')
     const product = list.body.data.items.find((i: any) => i.stock >= 20)
     productId = product.id
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+    const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
     variantId = detail.body.data.variants[0].id
   })
 
   it('exposes enabled providers on the public store payload', async () => {
-    const res = await call('/api/store/acme-store/store')
+    const res = await call('/api/store/jamicore-store/store')
     expect(res.status).toBe(200)
     const providers = res.body.data.payments.providers
     expect(providers).toContainEqual({ id: 'tamara', label: 'Tamara — Pay in 4' })
@@ -138,7 +138,7 @@ describe('storefront payments integration', () => {
 
   it('redirects online provider methods away from the plain checkout', async () => {
     const res = await call(
-      '/api/store/acme-store/checkout',
+      '/api/store/jamicore-store/checkout',
       json({
         items: [{ productId, variantId, quantity: 1 }],
         email: 'provider@example.com',
@@ -152,7 +152,7 @@ describe('storefront payments integration', () => {
 
   it('rejects unavailable payment methods', async () => {
     const res = await call(
-      '/api/store/acme-store/checkout',
+      '/api/store/jamicore-store/checkout',
       json({
         items: [{ productId, variantId, quantity: 1 }],
         email: 'provider@example.com',
@@ -165,7 +165,7 @@ describe('storefront payments integration', () => {
   })
 
   it('rejects Tamara webhooks without a valid signed token', async () => {
-    const res = await call('/api/webhooks/tamara/acme-store', json({ orderId: 'nope' }))
+    const res = await call('/api/webhooks/tamara/jamicore-store', json({ orderId: 'nope' }))
     expect(res.status).toBe(400)
   })
 

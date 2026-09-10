@@ -24,7 +24,7 @@ const json = (body: unknown) => ({
   body: JSON.stringify(body)
 })
 
-const auth = async (email = 'admin@acme.com') => {
+const auth = async (email = 'admin@jamicore.com') => {
   const res = await call('/api/auth/login', json({ email, password: 'password123' }))
   return { authorization: `Bearer ${res.body.data.accessToken}` }
 }
@@ -67,12 +67,12 @@ const createdCustomerEmails: string[] = []
 
 describe('Multi-warehouse checkout allocation', () => {
   beforeAll(async () => {
-    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     merchantId = merchant.id
 
-    const list = await call('/api/store/acme-store/products?limit=100')
+    const list = await call('/api/store/jamicore-store/products?limit=100')
     product = list.body.data.items.find((i: any) => i.stock >= 20)
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+    const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
     variantId = detail.body.data.variants[0].id
 
     const [variant] = await db.select({ inventory: productVariants.inventory }).from(productVariants).where(eq(productVariants.id, variantId))
@@ -88,7 +88,7 @@ describe('Multi-warehouse checkout allocation', () => {
   })
 
   it('records the default warehouse on the order and decrements its stock when none is specified', async () => {
-    const res = await call('/api/store/acme-store/checkout', json(checkoutPayload('wh-default@example.com')))
+    const res = await call('/api/store/jamicore-store/checkout', json(checkoutPayload('wh-default@example.com')))
     expect(res.status).toBe(200)
     createdOrderNumbers.push(res.body.data.orderNumber)
     createdCustomerEmails.push('wh-default@example.com')
@@ -101,7 +101,7 @@ describe('Multi-warehouse checkout allocation', () => {
   })
 
   it('uses the explicit fulfillment warehouse when provided, leaving the default untouched', async () => {
-    const res = await call('/api/store/acme-store/checkout', json(checkoutPayload('wh-other@example.com', { fulfillmentWarehouseId: otherWh.id })))
+    const res = await call('/api/store/jamicore-store/checkout', json(checkoutPayload('wh-other@example.com', { fulfillmentWarehouseId: otherWh.id })))
     expect(res.status).toBe(200)
     createdOrderNumbers.push(res.body.data.orderNumber)
     createdCustomerEmails.push('wh-other@example.com')
@@ -118,7 +118,7 @@ describe('Multi-warehouse checkout allocation', () => {
 
   it('still succeeds when a variant is not stocked in the warehouse (legacy global inventory path)', async () => {
     const emptyWh = (await call('/api/warehouses', apiJson(await auth(), { name: 'Wh Empty', code: 'WHEMT', isDefault: false }))).body.data
-    const res = await call('/api/store/acme-store/checkout', json(checkoutPayload('wh-empty@example.com', { fulfillmentWarehouseId: emptyWh.id })))
+    const res = await call('/api/store/jamicore-store/checkout', json(checkoutPayload('wh-empty@example.com', { fulfillmentWarehouseId: emptyWh.id })))
     expect(res.status).toBe(200)
     createdOrderNumbers.push(res.body.data.orderNumber)
     createdCustomerEmails.push('wh-empty@example.com')

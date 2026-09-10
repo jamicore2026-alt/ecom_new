@@ -13,7 +13,7 @@ Method: Playwright 1.62.1 · 3 breakpoints (375 / 768 / 1440) · full-page scree
 | Flow | Result |
 |---|---|
 | Login bad creds → validation message | Pass |
-| Login admin@acme.com → /dashboard | Pass |
+| Login admin@jamicore.com → /dashboard | Pass |
 | All 41 dashboard routes render (200, no error states) | Pass |
 | Dashboard at 375/768/1440 — 33/41 routes have zero overflow | Pass |
 | Mobile sidebar drawer opens/closes; all 10 items incl. Settings reachable, no clipping | Pass |

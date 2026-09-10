@@ -25,7 +25,7 @@ describe('storefront funnel events', () => {
   let merchantId = ''
 
   beforeAll(async () => {
-    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     merchantId = merchant.id
     await db
       .delete(visits)
@@ -47,7 +47,7 @@ describe('storefront funnel events', () => {
   }
 
   it('rejects unknown event types', async () => {
-    const res = await call('/api/store/acme-store/events', json({ type: 'purchase' }))
+    const res = await call('/api/store/jamicore-store/events', json({ type: 'purchase' }))
     expect(res.status).toBe(400)
   })
 
@@ -55,11 +55,11 @@ describe('storefront funnel events', () => {
     expect(await rowFor()).toBeUndefined()
 
     for (let i = 0; i < 3; i++) {
-      const res = await call('/api/store/acme-store/events', json({ type: 'view' }))
+      const res = await call('/api/store/jamicore-store/events', json({ type: 'view' }))
       expect(res.status).toBe(200)
     }
-    await call('/api/store/acme-store/events', json({ type: 'cart_add' }))
-    await call('/api/store/acme-store/events', json({ type: 'checkout_start' }))
+    await call('/api/store/jamicore-store/events', json({ type: 'cart_add' }))
+    await call('/api/store/jamicore-store/events', json({ type: 'checkout_start' }))
 
     const row = await rowFor()
     expect(row).toBeDefined()
@@ -70,7 +70,7 @@ describe('storefront funnel events', () => {
 
   it('separates channels', async () => {
     const res = await call(
-      '/api/store/acme-store/events',
+      '/api/store/jamicore-store/events',
       json({ type: 'view', channel: 'email' })
     )
     expect(res.status).toBe(200)

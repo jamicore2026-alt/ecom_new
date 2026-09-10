@@ -46,7 +46,7 @@ describe('roles authoritative via users.role_id (P2-3)', () => {
   }
 
   beforeAll(async () => {
-    admin = await loginAs('admin@acme.com')
+    admin = await loginAs('admin@jamicore.com')
     const list = await call('/api/orders', { headers: admin })
     orderId = list.body.data.items.find((o: { status: string }) => o.status === 'pending').id
     specRole.id = await createSpecRole()
@@ -59,7 +59,7 @@ describe('roles authoritative via users.role_id (P2-3)', () => {
   })
 
   const createRoleStaff = async (roleId: string, permissions: string[] = []) => {
-    const email = `role-${seq++}-${stamp}@acme.com`
+    const email = `role-${seq++}-${stamp}@jamicore.com`
     const res = await call('/api/settings/staff', {
       method: 'POST',
       headers: { ...admin, ...jh },
@@ -149,7 +149,7 @@ describe('roles authoritative via users.role_id (P2-3)', () => {
       headers: { ...admin, ...jh },
       body: JSON.stringify({
         name: 'Bogus Role',
-        email: `bogus-role-${stamp}@acme.com`,
+        email: `bogus-role-${stamp}@jamicore.com`,
         password: 'password123',
         role: 'staff',
         roleId: 'nonexistent-role-id' 
@@ -165,7 +165,7 @@ describe('roles authoritative via users.role_id (P2-3)', () => {
       body: JSON.stringify({ name: `Me-${stamp}`, permissions: ['orders.read'], scope: 'MERCHANT' })
     })
     const meRoleId = role.body.data.id
-    const email = `me-role-${stamp}@acme.com`
+    const email = `me-role-${stamp}@jamicore.com`
     await call('/api/settings/staff', {
       method: 'POST',
       headers: { ...admin, ...jh },

@@ -9,11 +9,11 @@ const call = async (path: string, init?: RequestInit) => {
 
 describe('Storefront public API (no auth)', () => {
   it('returns store identity for a seeded store', async () => {
-    const res = await call('/api/store/acme-store/store')
+    const res = await call('/api/store/jamicore-store/store')
     expect(res.status).toBe(200)
     expect(res.body.success).toBe(true)
-    expect(res.body.data.merchant.slug).toBe('acme-store')
-    expect(res.body.data.settings.name).toBe('Acme Store')
+    expect(res.body.data.merchant.slug).toBe('jamicore-store')
+    expect(res.body.data.settings.name).toBe('JamiCore Store')
     expect(res.body.data.shipping.freeShippingThreshold).toBeNumber()
   })
 
@@ -24,7 +24,7 @@ describe('Storefront public API (no auth)', () => {
   })
 
   it('returns the active category tree', async () => {
-    const res = await call('/api/store/acme-store/categories')
+    const res = await call('/api/store/jamicore-store/categories')
     expect(res.status).toBe(200)
     expect(res.body.data.items.length).toBeGreaterThanOrEqual(8)
     const clothing = res.body.data.items.find((c: any) => c.slug === 'clothing')
@@ -34,7 +34,7 @@ describe('Storefront public API (no auth)', () => {
   })
 
   it('lists all active products with enriched fields', async () => {
-    const res = await call('/api/store/acme-store/products')
+    const res = await call('/api/store/jamicore-store/products')
     expect(res.status).toBe(200)
     expect(res.body.data.meta.total).toBe(20)
     const item = res.body.data.items[0]
@@ -46,7 +46,7 @@ describe('Storefront public API (no auth)', () => {
   })
 
   it('filters products by category slug', async () => {
-    const res = await call('/api/store/acme-store/products?category=clothing')
+    const res = await call('/api/store/jamicore-store/products?category=clothing')
     expect(res.status).toBe(200)
     expect(res.body.data.meta.total).toBeGreaterThan(0)
     for (const item of res.body.data.items) {
@@ -55,7 +55,7 @@ describe('Storefront public API (no auth)', () => {
   })
 
   it('filters products by price range', async () => {
-    const res = await call('/api/store/acme-store/products?minPrice=40&maxPrice=100')
+    const res = await call('/api/store/jamicore-store/products?minPrice=40&maxPrice=100')
     expect(res.status).toBe(200)
     expect(res.body.data.meta.total).toBeGreaterThan(0)
     for (const item of res.body.data.items) {
@@ -65,20 +65,20 @@ describe('Storefront public API (no auth)', () => {
   })
 
   it('sorts products by price ascending', async () => {
-    const res = await call('/api/store/acme-store/products?sort=price_asc&limit=100')
+    const res = await call('/api/store/jamicore-store/products?sort=price_asc&limit=100')
     expect(res.status).toBe(200)
     const prices = res.body.data.items.map((i: any) => i.price)
     expect(prices).toEqual([...prices].sort((a, b) => a - b))
   })
 
   it('returns 404 for an unknown category slug', async () => {
-    const res = await call('/api/store/acme-store/products?category=nope')
+    const res = await call('/api/store/jamicore-store/products?category=nope')
     expect(res.status).toBe(404)
     expect(res.body.error.code).toBe('CATEGORY_NOT_FOUND')
   })
 
   it('returns product detail with variants and related products', async () => {
-    const res = await call('/api/store/acme-store/products/classic-cotton-tee')
+    const res = await call('/api/store/jamicore-store/products/classic-cotton-tee')
     expect(res.status).toBe(200)
     expect(res.body.data.name).toBe('Classic Cotton Tee')
     expect(res.body.data.variants.length).toBe(3)
@@ -88,13 +88,13 @@ describe('Storefront public API (no auth)', () => {
   })
 
   it('returns 404 for an unknown product slug', async () => {
-    const res = await call('/api/store/acme-store/products/not-a-product')
+    const res = await call('/api/store/jamicore-store/products/not-a-product')
     expect(res.status).toBe(404)
     expect(res.body.error.code).toBe('PRODUCT_NOT_FOUND')
   })
 
   it('searches products by name', async () => {
-    const res = await call('/api/store/acme-store/search?search=dress')
+    const res = await call('/api/store/jamicore-store/search?search=dress')
     expect(res.status).toBe(200)
     expect(res.body.data.meta.total).toBeGreaterThan(0)
     for (const item of res.body.data.items) {
@@ -103,8 +103,8 @@ describe('Storefront public API (no auth)', () => {
   })
 
   it('paginates results', async () => {
-    const page1 = await call('/api/store/acme-store/products?page=1&limit=5')
-    const page2 = await call('/api/store/acme-store/products?page=2&limit=5')
+    const page1 = await call('/api/store/jamicore-store/products?page=1&limit=5')
+    const page2 = await call('/api/store/jamicore-store/products?page=2&limit=5')
     expect(page1.body.data.items).toHaveLength(5)
     expect(page2.body.data.items).toHaveLength(5)
     expect(page1.body.data.items[0].id).not.toBe(page2.body.data.items[0].id)

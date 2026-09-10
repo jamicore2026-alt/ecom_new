@@ -31,7 +31,7 @@ async function adminHeaders(): Promise<Record<string, string>> {
   const res = await call('/api/auth/login', {
     method: 'POST',
     headers: jsonHeaders,
-    body: JSON.stringify({ email: 'admin@acme.com', password: 'password123' })
+    body: JSON.stringify({ email: 'admin@jamicore.com', password: 'password123' })
   })
   return { authorization: `Bearer ${res.body.data.accessToken}` }
 }
@@ -59,18 +59,18 @@ let merchantCurrency: string
 
 describe('P1 financial invariants', () => {
   beforeAll(async () => {
-    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     merchantId = merchant.id
     merchantCurrency = merchant.currency
 
-    const list = await call('/api/store/acme-store/products?limit=100')
+    const list = await call('/api/store/jamicore-store/products?limit=100')
     product = list.body.data.items.find((i: any) => i.stock >= 20)
-    const detail = await call(`/api/store/acme-store/products/${product.slug}`)
+    const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
     variantId = detail.body.data.variants[0].id
   })
 
   it('records a payment transaction + customer spend for a card checkout', async () => {
-    const res = await call('/api/store/acme-store/checkout', cardCheckout('spend@example.com'))
+    const res = await call('/api/store/jamicore-store/checkout', cardCheckout('spend@example.com'))
     expect(res.status).toBe(200)
     const order = res.body.data
     expect(order.paymentStatus).toBe('paid')
@@ -102,9 +102,9 @@ describe('P1 financial invariants', () => {
     const key = crypto.randomUUID()
     const payload = cardCheckout('replay@example.com', key, 2)
 
-    const first = await call('/api/store/acme-store/checkout', payload)
+    const first = await call('/api/store/jamicore-store/checkout', payload)
     expect(first.status).toBe(200)
-    const second = await call('/api/store/acme-store/checkout', payload)
+    const second = await call('/api/store/jamicore-store/checkout', payload)
     expect(second.status).toBe(200)
     expect(second.body.data.id).toBe(first.body.data.id)
 
@@ -122,7 +122,7 @@ describe('P1 financial invariants', () => {
   })
 
   it('returns the original refund on a completed idempotent replay', async () => {
-    const placed = await call('/api/store/acme-store/checkout', cardCheckout('refund@example.com'))
+    const placed = await call('/api/store/jamicore-store/checkout', cardCheckout('refund@example.com'))
     expect(placed.status).toBe(200)
     const orderId = placed.body.data.id
 
@@ -146,7 +146,7 @@ describe('P1 financial invariants', () => {
   })
 
   it('reuses the failed refund row when retried with the same key', async () => {
-    const placed = await call('/api/store/acme-store/checkout', cardCheckout('retry@example.com'))
+    const placed = await call('/api/store/jamicore-store/checkout', cardCheckout('retry@example.com'))
     const orderId = placed.body.data.id
 
     const key = crypto.randomUUID()
@@ -180,7 +180,7 @@ describe('P1 financial invariants', () => {
 
   it('captures POS cash payments into a payment transaction with change', async () => {
     const admin = await adminHeaders()
-    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'acme-store'))
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
 
     const outlets = await call('/api/outlets', { headers: admin })
     const outletId = outlets.body.data.find((o: { code: string }) => o.code === 'MAIN').id
