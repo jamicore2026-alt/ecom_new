@@ -4,14 +4,18 @@ import { connection } from '../src/database/client'
 
 /**
  * Ensure the RLS environment exists so the suite is self-provisioning on any
- * database. The app applies these via manually-run migrations
+ * database. The app applies this via manually-run migrations
  * (drizzle/0029_manual_role_setup.sql + 0029_enable_rls.sql); a database that
- * has tables but not yet that migration would otherwise fail every RLS test.
+ * has tables but not yet those migrations would otherwise fail every RLS test.
  *
- * Runs once per process:
+ * Runs ONCE per process and provisions unconditionally (row-level security
+ * must be FORCED, both roles must have the right BYPASSRLS flags, and the
+ * tenant role must hold explicit table privileges — any one of those being
+ * off, e.g. a DB where the tenant role owns tables or grants were never
+ * applied, silently breaks isolation):
  *  - repairs/creates `app_runtime` (NO BYPASSRLS) and `app_admin` (BYPASSRLS),
  *  - grants schema/table/sequence privileges,
- *  - enables RLS + per-table policies (migration 0029, idempotent).
+ *  - enables + FORCES RLS with per-table policies (migration 0029, idempotent).
  */
 let ready: Promise<void> | null = null
 
@@ -25,27 +29,6 @@ const migrationPath = (): string => {
 }
 
 const provision = async (): Promise<void> => {
-  const [state] = await connection.unsafe<{
-    rls_enabled: boolean
-    app_runtime_no_bypass: boolean
-    app_admin_bypass: boolean
-  }[]>(`
-    SELECT
-      coalesce(
-        (SELECT c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-         WHERE n.nspname = 'public' AND c.relname = 'orders'), false
-      ) AS rls_enabled,
-      coalesce(
-        (SELECT NOT rolbypassrls FROM pg_roles WHERE rolname = 'app_runtime'), false
-      ) AS app_runtime_no_bypass,
-      coalesce(
-        (SELECT rolbypassrls FROM pg_roles WHERE rolname = 'app_admin'), false
-      ) AS app_admin_bypass
-  `)
-  if (state?.rls_enabled && state.app_runtime_no_bypass && state.app_admin_bypass) {
-    return
-  }
-
   // Create (or repair) the tenant roles. ALTER ROLE forces the right flags even
   // when a prior setup created one of them with wrong attributes.
   await connection.unsafe(`
@@ -76,9 +59,12 @@ const provision = async (): Promise<void> => {
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_admin;
   `)
 
-  // Enable RLS + policies from migration 0029. `--> statement-breakpoint` lines
-  // are tooling markers; running the statements as one script is fine and the
-  // whole file is idempotent (policies are guarded by IF NOT EXISTS).
+  // Enable + FORCE RLS and create per-table policies from migration 0029.
+  // Enabling alone is not enough: RLS must be FORCED, otherwise the table owner
+  // (e.g. app_runtime when it created the schema) still bypasses row-level
+  // security. `--> statement-breakpoint` lines are tooling markers; running the
+  // statements as one script is fine and the whole file is idempotent
+  // (policies are guarded by IF NOT EXISTS).
   const script = readFileSync(migrationPath(), 'utf8')
     .split('\n')
     .filter((line) => !/^\s*--> statement-breakpoint\s*$/.test(line))
