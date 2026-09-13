@@ -23,7 +23,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
   )
   .get(
     '/:slug/store',
-    ({ params }) => StorefrontService.store(params.slug),
+    async ({ params }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.store(db, params.slug)
+      } finally {
+        await end()
+      }
+    },
     {
       params: storeParams,
       detail: { tags: ['Storefront'], summary: 'Public store identity' }
@@ -66,7 +74,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .post(
     '/:slug/events',
-    ({ params, body }) => StorefrontService.trackEvent(params.slug, body),
+    async ({ params, body }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.trackEvent(db, params.slug, body)
+      } finally {
+        await end()
+      }
+    },
     {
       params: storeParams,
       body: trackEventBody,
@@ -204,7 +220,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .get(
     '/:slug/orders/:orderNumber',
-    ({ params }) => StorefrontService.order(params.slug, params.orderNumber),
+    async ({ params }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.order(db, params.slug, params.orderNumber)
+      } finally {
+        await end()
+      }
+    },
     {
       params: orderParams,
       detail: { tags: ['Storefront'], summary: 'Public order confirmation' }
@@ -213,7 +237,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .post(
     '/:slug/orders/:orderNumber/sync',
-    ({ params, body }) => StorefrontService.syncOrder(params.slug, params.orderNumber, body),
+    async ({ params, body }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.syncOrder(db, params.slug, params.orderNumber, body)
+      } finally {
+        await end()
+      }
+    },
     {
       params: orderParams,
       body: syncOrderBody,

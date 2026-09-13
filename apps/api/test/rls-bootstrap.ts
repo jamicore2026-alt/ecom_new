@@ -69,7 +69,7 @@ const provision = async (): Promise<void> => {
   // with a different password is the classic cause of instant auth failures.
   const runtimeUrl = process.env.APP_RUNTIME_DATABASE_URL
   if (runtimeUrl) {
-    let password = ''
+    let password: string
     try {
       password = decodeURIComponent(new URL(runtimeUrl).password ?? '')
     } catch {

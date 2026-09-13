@@ -302,8 +302,8 @@ export class StorefrontService {
     }
   }
 
-  static async store(slug: string) {
-    return ok(await this.resolveStore(slug))
+  static async store(db: DB, slug: string) {
+    return ok(await this.resolveStore(db, slug))
   }
 
   static async listStores() {
@@ -335,10 +335,11 @@ export class StorefrontService {
   /* ------------------------------ funnel events ---------------------------- */
 
   static async trackEvent(
+    db: DB,
     slug: string,
     body: { type: 'view' | 'cart_add' | 'checkout_start'; channel?: string }
   ) {
-    const store = await this.resolveStore(slug)
+    const store = await this.resolveStore(db, slug)
     // Allowlist channels — arbitrary client strings would mint unbounded visits rows.
     const FUNNEL_CHANNELS = new Set(['direct', 'organic', 'social', 'paid', 'email', 'referral'])
     const channel = body.channel && FUNNEL_CHANNELS.has(body.channel) ? body.channel : 'direct'
@@ -1601,8 +1602,8 @@ export class StorefrontService {
   }
 
   /** Server-side re-verification used by the storefront return page. */
-  static async syncOrder(slug: string, orderNumber: string, payload?: { paymentId?: string }) {
-    const store = await this.resolveStore(slug)
+  static async syncOrder(db: DB, slug: string, orderNumber: string, payload?: { paymentId?: string }) {
+    const store = await this.resolveStore(db, slug)
     const [order] = await db
       .select()
       .from(orders)
@@ -1691,8 +1692,8 @@ export class StorefrontService {
     return cancelled
   }
 
-  static async order(slug: string, orderNumber: string) {
-    const store = await this.resolveStore(slug)
+  static async order(db: DB, slug: string, orderNumber: string) {
+    const store = await this.resolveStore(db, slug)
     const [order] = await db
       .select()
       .from(orders)
