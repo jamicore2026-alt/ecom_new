@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
-import { db } from '../../database/client'
+import { db, db as platformDb, type DB } from '../../database/client'
 import { PUBLIC_STATUSES } from '../../shared/merchant-lifecycle'
 import { createLogger } from '../../shared/logger'
 
@@ -83,6 +83,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
  * warehouse is a no-op (legacy global-inventory behavior) rather than an error.
  */
 async function resolveFulfillingWarehouse(
+  db: DB,
   merchantId: string,
   overrideId?: string
 ): Promise<string | null> {
@@ -212,7 +213,31 @@ interface PublicProduct {
 export class StorefrontService {
   /* ------------------------------- store info ------------------------------ */
 
-  static async resolveStore(slug: string) {
+  /**
+   * Pre-tenant lookup only — runs on the admin connection (merchant isn't
+   * known yet). Callers open a tenant connection with the returned id before
+   * touching anything else.
+   */
+  static async resolveMerchantId(slug: string) {
+    const [merchant] = await db
+      .select({ id: merchants.id })
+      .from(merchants)
+      .where(and(eq(merchants.slug, slug), inArray(merchants.status, PUBLIC_STATUSES)))
+    if (!merchant) throw notFound('STORE_NOT_FOUND', 'Store not found')
+    return merchant.id
+  }
+
+  /**
+   * Admin-only (read-only catalog callers) and tenant-scoped (checkout chain)
+   * share one implementation: the single-arg overload resolves the merchant on
+   * the platform admin connection; the two-arg overload routes the merchant
+   * lookup through the caller's tenant connection (RLS-enforced).
+   */
+  static async resolveStore(slug: string): Promise<StorePayload>
+  static async resolveStore(db: DB, slug: string): Promise<StorePayload>
+  static async resolveStore(dbOrSlug: DB | string, maybeSlug?: string): Promise<StorePayload> {
+    const db = typeof dbOrSlug === 'string' ? platformDb : dbOrSlug
+    const slug = typeof dbOrSlug === 'string' ? dbOrSlug : (maybeSlug as string)
     const [merchant] = await db
       .select()
       .from(merchants)
@@ -716,6 +741,7 @@ export class StorefrontService {
   /* -------------------------------- checkout ------------------------------- */
 
   private static async resolveItems(
+    db: DB,
     merchantId: string,
     items: CheckoutItemInput[],
     currency: string
@@ -810,12 +836,14 @@ export class StorefrontService {
   }
 
   private static async buildSummary(
+    db: DB,
     slug: string,
     body: CheckoutPreviewInput,
     country?: string
-  ) {    const store = await this.resolveStore(slug)
+  ) {
+    const store = await this.resolveStore(db, slug)
     const currency = store.merchant.currency
-    const items = await this.resolveItems(store.merchant.id, body.items, currency)
+    const items = await this.resolveItems(db, store.merchant.id, body.items, currency)
     const subtotal = roundForCurrency(items.reduce((sum, i) => sum + i.total, 0), currency)
 
     let coupon: {
@@ -827,6 +855,9 @@ export class StorefrontService {
     } | null = null
     let discountTotal = 0
     if (body.couponCode?.trim()) {
+      // `db` here is the tenant connection threaded through buildSummary — the
+      // discounted rows (coupons) are merchant-scoped and must not fall back
+      // to the BYPASSRLS admin singleton.
       const { data } = await DiscountsService.validateCoupon(db, 
         store.merchant.id,
         body.couponCode,
@@ -845,6 +876,7 @@ export class StorefrontService {
 
     // Server-side promotion resolution (P0-05) — the best active promotion is
     // applied automatically, before coupons, and never trusts client totals.
+    // (`db` = the tenant connection threaded through buildSummary.)
     const promo = await DiscountsService.resolvePromotion(db, 
       store.merchant.id,
       currency,
@@ -893,8 +925,8 @@ export class StorefrontService {
     }
   }
 
-  static async preview(slug: string, body: CheckoutPreviewInput) {
-    const summary = await this.buildSummary(slug, body, body.shippingAddress?.country)
+  static async preview(db: DB, slug: string, body: CheckoutPreviewInput) {
+    const summary = await this.buildSummary(db, slug, body, body.shippingAddress?.country)
     return ok({
       items: summary.items,
       subtotal: summary.subtotal,
@@ -911,7 +943,7 @@ export class StorefrontService {
 
   /* ------------------------------ payments --------------------------------- */
 
-  private static async assertPaymentMethodAvailable(merchantId: string, method: string) {
+  private static async assertPaymentMethodAvailable(db: DB, merchantId: string, method: string) {
     const [payments] = await db
       .select()
       .from(paymentSettings)
@@ -939,6 +971,7 @@ export class StorefrontService {
    * method is a manual COD method. Non-COD methods pass through untouched.
    */
   private static async assertCodAvailable(
+    db: DB,
     merchantId: string,
     method: string,
     total: number,
@@ -1005,6 +1038,7 @@ export class StorefrontService {
 
   /** Shared order-creation transaction used by COD checkout and provider checkout/pay. */
   private static async createOrderTx(
+    db: DB,
     store: Awaited<ReturnType<typeof StorefrontService.resolveStore>>,
     body: CheckoutInput,
     summary: {
@@ -1030,6 +1064,7 @@ export class StorefrontService {
     // default active warehouse. Null when the merchant has no warehouses set up
     // (legacy single-location behavior — no warehouse accounting happens).
     const fulfillingWarehouseId = await resolveFulfillingWarehouse(
+      db,
       store.merchant.id,
       body.fulfillmentWarehouseId
     )
@@ -1260,7 +1295,7 @@ export class StorefrontService {
   }
 
   /** Find an order for this merchant+key (idempotent replay path). */
-  private static async findByIdempotencyKey(merchantId: string, key: string) {
+  private static async findByIdempotencyKey(db: DB, merchantId: string, key: string) {
     const [existing] = await db
       .select()
       .from(orders)
@@ -1270,9 +1305,9 @@ export class StorefrontService {
     return existing ?? null
   }
 
-  static async checkout(slug: string, body: CheckoutInput) {
-    const store = await this.resolveStore(slug)
-    const kind = await this.assertPaymentMethodAvailable(store.merchant.id, body.paymentMethod)
+  static async checkout(db: DB, slug: string, body: CheckoutInput) {
+    const store = await this.resolveStore(db, slug)
+    const kind = await this.assertPaymentMethodAvailable(db, store.merchant.id, body.paymentMethod)
     if (kind.kind === 'provider') {
       throw badRequest(
         'PAYMENT_REQUIRES_REDIRECT',
@@ -1282,7 +1317,7 @@ export class StorefrontService {
 
     let summary: Awaited<ReturnType<typeof this.buildSummary>>
     if (body.idempotencyKey) {
-      const existing = await this.findByIdempotencyKey(store.merchant.id, body.idempotencyKey)
+      const existing = await this.findByIdempotencyKey(db, store.merchant.id, body.idempotencyKey)
       if (existing) {
         return ok({
           ...this.confirmationFor(existing),
@@ -1290,9 +1325,10 @@ export class StorefrontService {
           createdAt: existing.createdAt
         })
       }
-      summary = await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
+      summary = await this.buildSummary(db, slug, body, body.shippingAddress.country as string | undefined)
 
       await this.assertCodAvailable(
+        db,
         summary.store.merchant.id,
         body.paymentMethod,
         summary.total,
@@ -1303,7 +1339,7 @@ export class StorefrontService {
       const paymentStatus = body.paymentMethod === 'card' ? 'paid' : 'unpaid'
       let result
       try {
-        result = await this.createOrderTx(summary.store, body, {
+        result = await this.createOrderTx(db, summary.store, body, {
           items: summary.items,
           subtotal: summary.subtotal,
           discountTotal: summary.discountTotal,
@@ -1317,7 +1353,7 @@ export class StorefrontService {
         // Concurrent duplicate raced past the pre-check — the unique
         // (merchant_id, idempotency_key) index wins; return the winner.
         if (body.idempotencyKey && (err as { code?: string }).code === '23505') {
-          const existing = await this.findByIdempotencyKey(store.merchant.id, body.idempotencyKey)
+          const existing = await this.findByIdempotencyKey(db, store.merchant.id, body.idempotencyKey)
           if (existing) {
             return ok({
               ...this.confirmationFor(existing),
@@ -1329,7 +1365,9 @@ export class StorefrontService {
         throw err
       }
 
-      void EmailsService.orderPlaced(db, result)
+      // Fire-and-forget follow-ups run on the platform admin connection — the
+      // request-scoped tenant connection is closed once this handler returns.
+      void EmailsService.orderPlaced(platformDb, result)
       emit(summary.store.merchant.id, 'order.created', {
         orderId: result.id,
         orderNumber: result.orderNumber,
@@ -1339,7 +1377,7 @@ export class StorefrontService {
 
       // Convert the tracked shopping cart (if the shopper had one) into an order.
       if (body.cartId) {
-        void CartsService.markConverted(db, summary.store.merchant.id, body.cartId, result.id)
+        void CartsService.markConverted(platformDb, summary.store.merchant.id, body.cartId, result.id)
       }
 
       return ok({
@@ -1349,9 +1387,10 @@ export class StorefrontService {
       })
     }
 
-    summary = await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
+    summary = await this.buildSummary(db, slug, body, body.shippingAddress.country as string | undefined)
 
     await this.assertCodAvailable(
+      db,
       summary.store.merchant.id,
       body.paymentMethod,
       summary.total,
@@ -1360,7 +1399,7 @@ export class StorefrontService {
 
     // Legacy "card" demo method is treated as paid-on-place; everything else waits for payment.
     const paymentStatus = body.paymentMethod === 'card' ? 'paid' : 'unpaid'
-    const result = await this.createOrderTx(summary.store, body, {
+    const result = await this.createOrderTx(db, summary.store, body, {
       items: summary.items,
       subtotal: summary.subtotal,
       discountTotal: summary.discountTotal,
@@ -1371,7 +1410,9 @@ export class StorefrontService {
       promotionId: summary.promotion?.id ?? null
     }, { paymentStatus })
 
-    void EmailsService.orderPlaced(db, result)
+    // Fire-and-forget follow-ups run on the platform admin connection — the
+    // request-scoped tenant connection is closed once this handler returns.
+    void EmailsService.orderPlaced(platformDb, result)
     emit(summary.store.merchant.id, 'order.created', {
       orderId: result.id,
       orderNumber: result.orderNumber,
@@ -1381,7 +1422,7 @@ export class StorefrontService {
 
     // Convert the tracked shopping cart (if the shopper had one) into an order.
     if (body.cartId) {
-      void CartsService.markConverted(db, summary.store.merchant.id, body.cartId, result.id)
+      void CartsService.markConverted(platformDb, summary.store.merchant.id, body.cartId, result.id)
     }
 
     return ok({
@@ -1391,8 +1432,8 @@ export class StorefrontService {
     })
   }
 
-  static async createProviderCheckout(slug: string, body: CheckoutInput) {
-    const store = await this.resolveStore(slug)
+  static async createProviderCheckout(db: DB, slug: string, body: CheckoutInput) {
+    const store = await this.resolveStore(db, slug)
     const providerId = body.paymentMethod
 
     // Idempotent replay: the same logical checkout retried (gateway timeout /
@@ -1400,7 +1441,7 @@ export class StorefrontService {
     // order + session. No redirect URL is re-issued — the shopper lands on the
     // confirmation page and re-verifies with the provider.
     if (body.idempotencyKey) {
-      const existing = await this.findByIdempotencyKey(store.merchant.id, body.idempotencyKey)
+      const existing = await this.findByIdempotencyKey(db, store.merchant.id, body.idempotencyKey)
       if (existing) {
         return ok({
           id: existing.id,
@@ -1439,11 +1480,11 @@ export class StorefrontService {
       credentials: decryptJson<Record<string, string>>(configRow.credentials)
     }
 
-    const summary = await this.buildSummary(slug, body, body.shippingAddress.country as string | undefined)
+    const summary = await this.buildSummary(db, slug, body, body.shippingAddress.country as string | undefined)
 
     let order: typeof orders.$inferSelect
     try {
-      order = await this.createOrderTx(store, body, {
+      order = await this.createOrderTx(db, store, body, {
         items: summary.items,
         subtotal: summary.subtotal,
         discountTotal: summary.discountTotal,
@@ -1460,7 +1501,7 @@ export class StorefrontService {
     } catch (err) {
       // Concurrent duplicate raced past the pre-check — hand back the winner.
       if (body.idempotencyKey && (err as { code?: string }).code === '23505') {
-        const existing = await this.findByIdempotencyKey(store.merchant.id, body.idempotencyKey)
+        const existing = await this.findByIdempotencyKey(db, store.merchant.id, body.idempotencyKey)
         if (existing) {
           return ok({
             id: existing.id,
@@ -1476,7 +1517,9 @@ export class StorefrontService {
       throw err
     }
 
-    void EmailsService.orderPlaced(db, order)
+    // Fire-and-forget follow-ups run on the platform admin connection — the
+    // request-scoped tenant connection is closed once this handler returns.
+    void EmailsService.orderPlaced(platformDb, order)
     emit(store.merchant.id, 'order.created', {
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -1486,7 +1529,7 @@ export class StorefrontService {
 
     // Convert the tracked shopping cart (if the shopper had one) into an order.
     if (body.cartId) {
-      void CartsService.markConverted(db, store.merchant.id, body.cartId, order.id)
+      void CartsService.markConverted(platformDb, store.merchant.id, body.cartId, order.id)
     }
 
     const urls = this.orderUrls(slug, providerId, order.orderNumber)
@@ -1517,7 +1560,7 @@ export class StorefrontService {
       // Session failed → cancel immediately and release the held stock instead of
       // waiting for the expiry sweep (the customer never reached the gateway).
       log.error(`${providerId} createSession failed for ${order.orderNumber}`, err)
-      await this.cancelPendingOrder(order)
+      await this.cancelPendingOrder(db, order)
       throw badRequest(
         'PROVIDER_SESSION_FAILED',
         `Could not start a ${providerId} payment session — please try another payment method`
@@ -1548,8 +1591,10 @@ export class StorefrontService {
 
   /** Cancel a pending unpaid provider order — delegates to the authoritative
    *  shared cancellation (claim + restock + coupon restore).
+   *  `db` is the tenant connection when called from a tenant route, the admin
+   *  connection when called from the platform-wide sweep.
    *  Returns false when another path (webhook, sweep, sync) already resolved the order. */
-  private static async cancelPendingOrder(order: typeof orders.$inferSelect): Promise<boolean> {
+  private static async cancelPendingOrder(db: DB, order: typeof orders.$inferSelect): Promise<boolean> {
     return runCancelPendingOrder(db, order)
   }
 
@@ -1635,7 +1680,7 @@ export class StorefrontService {
     let cancelled = 0
     for (const order of stale) {
       try {
-        const done = await this.cancelPendingOrder(order)
+        const done = await this.cancelPendingOrder(db, order)
         if (done) cancelled++
       } catch (err) {
         log.error(`failed to expire order ${order.orderNumber}`, err)

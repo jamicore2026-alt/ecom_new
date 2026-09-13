@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 import { StorefrontService } from './service'
+import { createTenantConnection } from '../../database/tenant-context'
 import {
   storefrontQuery,
   storeParams,
@@ -98,7 +99,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .post(
     '/:slug/checkout/preview',
-    ({ params, body }) => StorefrontService.preview(params.slug, body),
+    async ({ params, body }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.preview(db, params.slug, body)
+      } finally {
+        await end()
+      }
+    },
     {
       params: storeParams,
       body: checkoutPreviewBody,
@@ -108,7 +117,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .post(
     '/:slug/checkout',
-    ({ params, body }) => StorefrontService.checkout(params.slug, body),
+    async ({ params, body }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.checkout(db, params.slug, body)
+      } finally {
+        await end()
+      }
+    },
     {
       params: storeParams,
       body: checkoutBody,
@@ -118,7 +135,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .post(
     '/:slug/checkout/pay',
-    ({ params, body }) => StorefrontService.createProviderCheckout(params.slug, body),
+    async ({ params, body }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.createProviderCheckout(db, params.slug, body)
+      } finally {
+        await end()
+      }
+    },
     {
       params: storeParams,
       body: checkoutBody,
