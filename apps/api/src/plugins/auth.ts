@@ -1,12 +1,15 @@
 import { Elysia } from 'elysia'
 import jwt from '@elysiajs/jwt'
-import { and, eq, lt } from 'drizzle-orm'
+import { and, eq, inArray, lt } from 'drizzle-orm'
 import { db } from '../database/client'
+import { createTenantConnection } from '../database/tenant-context'
 import { merchants, roles, tokenBlacklist, users } from '../database/schema'
 import { unauthorized, forbidden } from '../shared/errors'
 import type { Permission } from '../shared/types'
 import { resolvePermissions } from '../shared/types'
 import { constantTimeEqual } from '../shared/crypto'
+import { OPERATE_STATUSES } from '../shared/merchant-lifecycle'
+import type { DB } from '../database/client'
 import type { Merchant, Role, User } from '../database/schema'
 
 const DEV_ACCESS_SECRET = 'dev-access-secret-change-me'
@@ -35,6 +38,14 @@ export interface AuthContext {
   merchant: Merchant
   /** The user's assigned roles row (null when the user has no roleId). */
   role: Role | null
+  /**
+   * Request-scoped tenant connection. Runs as the `app_runtime` role with
+   * `app.current_merchant_id` set, so Row Level Security confines every query
+   * to this merchant. Never reuse it outside the request it was created for.
+   */
+  db: DB
+  /** Close the request-scoped tenant connection. Called by the auth plugin. */
+  close: () => Promise<void>
 }
 
 /**
@@ -159,16 +170,29 @@ export const authPlugin = new Elysia({ name: 'auth' })
     const [merchant] = await db
       .select()
       .from(merchants)
-      .where(and(eq(merchants.id, user.merchantId), eq(merchants.status, 'active')))
+      .where(and(eq(merchants.id, user.merchantId), inArray(merchants.status, OPERATE_STATUSES)))
     if (!merchant) throw unauthorized('Store is not active')
+
+    // Open the request-scoped tenant connection AFTER the merchant is known:
+    // the user/merchant lookups above run on the platform admin connection
+    // because they must resolve identity before a tenant can be pinned.
+    // Every subsequent query in the request uses `auth.db`, which is confined
+    // to this merchant's rows by Row Level Security.
+    const tenancy = await createTenantConnection(user.merchantId)
 
     let role: typeof roles.$inferSelect | null = null
     if (user.roleId) {
-      const [roleRow] = await db.select().from(roles).where(eq(roles.id, user.roleId))
+      const [roleRow] = await tenancy.db.select().from(roles).where(eq(roles.id, user.roleId))
       role = roleRow ?? null
     }
 
-    return { auth: { user, merchant, role } }
+    return { auth: { user, merchant, role, db: tenancy.db, close: tenancy.end } }
+  })
+  .onAfterHandle({ as: 'global' }, async ({ auth }) => {
+    await (auth as AuthContext | undefined)?.close?.()
+  })
+  .onError({ as: 'global' }, async ({ auth }) => {
+    await (auth as AuthContext | undefined)?.close?.()
   })
 
 /** Guard that runs BEFORE body validation (derive stage) so unauthorized

@@ -1,11 +1,11 @@
 import { and, desc, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { contentPages } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
 
 export class ContentService {
-  static async list(merchantId: string) {
+  static async list(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(contentPages)
@@ -14,7 +14,7 @@ export class ContentService {
     return ok({ items: rows })
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select()
       .from(contentPages)
@@ -23,7 +23,7 @@ export class ContentService {
     return ok(row)
   }
 
-  static async getBySlug(slugName: string) {
+  static async getBySlug(db: DB, slugName: string) {
     const [row] = await db
       .select()
       .from(contentPages)
@@ -33,6 +33,7 @@ export class ContentService {
   }
 
   static async create(
+    db: DB,
     merchantId: string,
     input: { title: string; slug: string; content?: string; status?: string }
   ) {
@@ -53,11 +54,12 @@ export class ContentService {
   }
 
   static async update(
+    db: DB,
     merchantId: string,
     id: string,
     input: { title?: string; slug?: string; content?: string; status?: string; metaTitle?: string; metaDescription?: string }
   ) {
-    await this.get(merchantId, id)
+    await this.get(db, merchantId, id)
     const [row] = await db
       .update(contentPages)
       .set({
@@ -76,8 +78,8 @@ export class ContentService {
     return ok(row)
   }
 
-  static async delete(merchantId: string, id: string) {
-    await this.get(merchantId, id)
+  static async delete(db: DB, merchantId: string, id: string) {
+    await this.get(db, merchantId, id)
     await db
       .delete(contentPages)
       .where(and(eq(contentPages.id, id), eq(contentPages.merchantId, merchantId)))

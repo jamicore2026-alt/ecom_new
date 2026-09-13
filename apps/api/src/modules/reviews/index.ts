@@ -8,15 +8,15 @@ export const reviewsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .get(
     '/reviews',
-    ({ query, auth }) => ReviewsService.list(auth.merchant.id, query),
+    ({ query, auth }) => ReviewsService.list(auth.db, auth.merchant.id, query),
     { query: reviewQuery, detail: { tags: ['Reviews'], summary: 'List product reviews' } }
   )
   .use(requirePermission('products.create', 'products.update', 'products.delete'))
   .patch(
     '/reviews/:id',
     async ({ params, body, auth, request }) => {
-      const result = await ReviewsService.update(auth.merchant.id, params.id, body)
-      auditFromRequest(auth, request, {
+      const result = await ReviewsService.update(auth.db, auth.merchant.id, params.id, body)
+      await auditFromRequest(auth, request, {
         action: 'review.moderate',
         entityType: 'review',
         entityId: params.id,
@@ -32,6 +32,6 @@ export const reviewsModule = new Elysia({ prefix: '/api' })
   )
   .delete(
     '/reviews/:id',
-    ({ params, auth }) => ReviewsService.remove(auth.merchant.id, params.id),
+    ({ params, auth }) => ReviewsService.remove(auth.db, auth.merchant.id, params.id),
     { params: reviewParams, detail: { tags: ['Reviews'], summary: 'Delete a review' } }
   )

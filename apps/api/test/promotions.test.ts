@@ -417,7 +417,7 @@ describe('P0 closure — promotions, cancellation routing, refund idempotency', 
       })
       .returning()
 
-    await OrdersService.reconcileStaleRefunds()
+    await OrdersService.reconcileStaleRefunds(db)
     const [released] = await db.select().from(refunds).where(eq(refunds.id, stale.id))
     expect(released.status).toBe('failed')
     expect(released.lastError).toContain('reconciliation')

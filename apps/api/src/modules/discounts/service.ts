@@ -1,5 +1,5 @@
 import { and, count, desc, eq, ilike } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { coupons, promotions } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { roundForCurrency } from '../../shared/currency'
@@ -27,7 +27,7 @@ export interface PromoLine {
 export class DiscountsService {
   /* -------------------------------- coupons -------------------------------- */
 
-  static async listCoupons(merchantId: string, q: { page?: string; limit?: string; search?: string; status?: string }) {
+  static async listCoupons(db: DB, merchantId: string, q: { page?: string; limit?: string; search?: string; status?: string }) {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [eq(coupons.merchantId, merchantId)]
     if (q.status) conditions.push(eq(coupons.status, q.status))
@@ -46,7 +46,7 @@ export class DiscountsService {
     return ok({ items, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async getCoupon(merchantId: string, id: string) {
+  static async getCoupon(db: DB, merchantId: string, id: string) {
     const [coupon] = await db
       .select()
       .from(coupons)
@@ -56,6 +56,7 @@ export class DiscountsService {
   }
 
   static async createCoupon(
+    db: DB,
     merchantId: string,
     input: {
       code: string
@@ -96,6 +97,7 @@ export class DiscountsService {
   }
 
   static async updateCoupon(
+    db: DB,
     merchantId: string,
     id: string,
     input: {
@@ -139,7 +141,7 @@ export class DiscountsService {
     return ok(updated)
   }
 
-  static async deleteCoupon(merchantId: string, id: string) {
+  static async deleteCoupon(db: DB, merchantId: string, id: string) {
     const [coupon] = await db
       .select()
       .from(coupons)
@@ -162,6 +164,7 @@ export class DiscountsService {
    * Never trusts client-supplied discount totals — everything is recomputed here.
    */
   static async resolvePromotion(
+    db: DB,
     merchantId: string,
     currency: string,
     lines: PromoLine[]
@@ -216,7 +219,7 @@ export class DiscountsService {
     return best
   }
 
-  static async listPromotions(merchantId: string, q: { page?: string; limit?: string; status?: string }) {
+  static async listPromotions(db: DB, merchantId: string, q: { page?: string; limit?: string; status?: string }) {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [eq(promotions.merchantId, merchantId)]
     if (q.status) conditions.push(eq(promotions.status, q.status))
@@ -234,7 +237,7 @@ export class DiscountsService {
     return ok({ items, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async getPromotion(merchantId: string, id: string) {
+  static async getPromotion(db: DB, merchantId: string, id: string) {
     const [promotion] = await db
       .select()
       .from(promotions)
@@ -244,6 +247,7 @@ export class DiscountsService {
   }
 
   static async createPromotion(
+    db: DB,
     merchantId: string,
     input: {
       name: string
@@ -281,6 +285,7 @@ export class DiscountsService {
   }
 
   static async updatePromotion(
+    db: DB,
     merchantId: string,
     id: string,
     input: {
@@ -326,7 +331,7 @@ export class DiscountsService {
     return ok(updated)
   }
 
-  static async deletePromotion(merchantId: string, id: string) {
+  static async deletePromotion(db: DB, merchantId: string, id: string) {
     const [promotion] = await db
       .select()
       .from(promotions)
@@ -343,7 +348,7 @@ export class DiscountsService {
 
   /* -------------------------------- validate -------------------------------- */
 
-  static async validateCoupon(merchantId: string, code: string, subtotal: number, currency = 'USD') {
+  static async validateCoupon(db: DB, merchantId: string, code: string, subtotal: number, currency = 'USD') {
     const [coupon] = await db
       .select()
       .from(coupons)

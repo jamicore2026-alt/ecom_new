@@ -1,6 +1,6 @@
 # JamiCore — Gap Analysis (Multi-Tenant SaaS)
 
-Status: baseline audit · Date: 2026-09-10 · Evidence: source + test suite (284 pass) + graphify graph (2828 nodes)
+Status: baseline audit · Date: 2026-09-11 · Evidence: source + test suite (284 pass) + graphify graph (2828 nodes)
 
 This is the executive summary. Each dimension has its own deep-dive:
 
@@ -12,7 +12,15 @@ This is the executive summary. Each dimension has its own deep-dive:
 
 ## Current state (what exists)
 
-Row-level tenancy over a shared Postgres schema (`merchants` = tenant, `schema.ts:33`). Two-level tenancy merchant → `outlets` with strict server-side scope resolution (`shared/merchant-context.ts:31`); "every request merchant-scoped" invariant (`docs/business-invariants.md:68`). Per-tenant feature gating exists as a Boolean registry (`merchant_modules`, `schema.ts:89`). RBAC with authoritative roles table, audit logging, outbound webhooks, API keys, background jobs, endpoint-level rate limiting, and a broad commerce/F&B/warehouse feature set (41 dashboard routes).
+Row-level tenancy over a shared Postgres schema (`merchants` = tenant, `schema.ts:33`). Two-level tenancy merchant → `outlets` with strict server-side scope resolution (`shared/merchant-context.ts:31`); "every request merchant-scoped" invariant (`docs/business-invariants.md:68`). Per-tenant feature gating exists as a Boolean registry (`merchant_modules`, `schema.ts:89`). RBAC with authoritative roles table, audit logging, outbound webhooks, API keys, background jobs, endpoint-level rate limiting, and a broad commerce/F&B/warehouse feature set (44 dashboard routes, 42 API modules).
+
+**F&B native stack** (the differentiator): menu items → modifier groups → modifiers → per-outlet availability + price overrides (`schema.ts:142-241`), food orders, kitchen stations + tickets + items (`schema.ts:611-670`), tables + table sessions, delivery fleet (zones/carriers/drivers/assignments).
+
+**Warehouse/manufacturing native stack**: warehouses + warehouse inventory + stock transfers, suppliers + purchase orders + goods receipts (`schema.ts:1437-1530`), bill of materials + production orders (`schema.ts:1555-1630`).
+
+**Commerce completion**: fulfillments (carrier/tracking/label URL, `schema.ts:1252`), refunds with idempotent retries (`schema.ts:909`), idempotency keys on orders + refunds for safe checkout/POS re-entry, customer self-service auth (email verification, password reset via `customer-auth` module).
+
+**Platform plumbing**: uploads (file storage abstraction), dashboard overview stats endpoint, 27 shared state machines/utilities (`shared/`) including `order-state.ts`, `delivery-state.ts`, `kitchen-state.ts`, `inventory.ts`, `revenue.ts`, `crypto.ts` (AES-256-GCM credential encryption for payment providers).
 
 ## The gap, in one paragraph
 

@@ -15,6 +15,56 @@ Scope: JamiCore's mechanics *as a platform*, i.e. what a tenant-scalable, billab
 
 ---
 
+## Existing modules not yet in the docs (inventory correction)
+
+The SaaS gap list above focuses on the *missing platform layer*. For completeness, the existing surface is 42 API modules / 44 dashboard routes. Modules omitted from the original audit:
+
+- **F&B storefront data model** — `menu_items`, `modifier_groups`, `modifiers`, `menu_item_modifiers`, `menu_item_outlets` (`schema.ts:142-241`). Food orders alone were covered; the menu/modifier model that feeds them is not. Per-outlet availability + price adjustment means one menu, many outlet views.
+- **Fulfillments** — `fulfillments` table (`schema.ts:1252`), carrier/tracking-number/label-URL flow, status `unfulfilled → shipped → delivered`.
+- **Refunds** — `refunds` (`schema.ts:909`) with idempotency key + attempt count + last-error for retry-safe external refunds (MyFatoorah/Tamara).
+- **Idempotency** — `orders.idempotency_key` + `refunds.idempotency_key` with merchant-scoped partial unique indexes; safe checkout/POS double-submit handling.
+- **Uploads** — `uploads` module + web `/uploads` + storefront `/uploads/[...path]`, backed by `shared/storage.ts` abstraction.
+- **Customer self-service auth** — `customer-auth` module + storefront `/account/forgot|reset|verify`; `customers.email_verified`, `email_verified_at`, `token_version` (session invalidation on password change).
+- **Overview** — dashboard aggregate stats endpoint (`overview` module).
+- **Procurement** — `suppliers`, `purchase_orders`, `purchase_order_items`, `goods_receipts`, `goods_receipt_items` (`schema.ts:1437-1530`).
+- **Production/BOM** — `bill_of_materials`, `bom_items`, `production_orders`, `production_order_items` (`schema.ts:1555-1630`).
+- **Kitchen/KDS** — `kitchen_stations`, `kitchen_tickets`, `kitchen_ticket_items` (`schema.ts:611-670`), dashboard `/kds` + `/kitchen`, state machine in `shared/kitchen-state.ts`.
+
+### Shared utilities inventory (27 files in `apps/api/src/shared/`)
+
+Covered by the gap docs: `merchant-context.ts`, `rate-limit.ts`, `table-state.ts`, `delivery-state.ts`, CSV export helpers.
+
+Not previously documented:
+
+| Utility | Purpose |
+|---|---|
+| `order-state.ts` | Order state machine (authoritative transitions) |
+| `kitchen-state.ts` | KOT/kitchen-ticket state machine (status, priority) |
+| `inventory.ts` | Stock mutation engine (reserve/release/commit on order flow) |
+| `order-cancel.ts` | Single authoritative cancellation op (cancels order + releases stock) |
+| `order-payments.ts` | Paid-transition side effects (customer totals, funnel metrics) |
+| `revenue.ts` | Profit/revenue aggregation for `analytics`/`overview` |
+| `crypto.ts` | AES-256-GCM credential encryption (`payment_provider_configs.credentials`, BYOK) |
+| `event-dispatch.ts` | Internal event bus (order placed → webhook/email/reward hooks) |
+| `jobs-worker.ts` | Background job worker loop (backing the `background_jobs` table) |
+| `outbound-webhook.ts` + `webhook-delivery.ts` + `outbound-url.ts` | Outbound webhook signing, retry, signed-URL generation |
+| `mailer.ts` | Email transport layer (`emails` module) |
+| `storage.ts` | File storage abstraction (`uploads` module) |
+| `product-search.ts` | tsvector product search (`products.search_vector`, GIN) |
+| `currency.ts` | Money/number formatting (3-decimal GCC scale) |
+| `pagination.ts`, `response.ts`, `errors.ts` | List paging, API envelope, error classes |
+| `outlet-scope.ts` | Outlet-scope resolution helper |
+| `types.ts` | Shared domain types (`ModuleId`, `TableState`, `KitchenItemStatus`, …) |
+| `logger.ts` | Structured logging |
+
+### Under-documented schema columns (earlier migrations)
+
+- `orders.order_type, outlet_id, scheduled_for, table_session_id, warehouse_id, attribution_channel, coupon_code, promotion_id` — the food-order/commerce evolution of the orders table.
+- `products.slug` tenant-unique + `products.search_vector` tsvector/GIN.
+- `payment_provider_configs.credentials` (AES-256-GCM encrypted).
+
+---
+
 ## P0-1 · Merchant self-serve signup & onboarding — MISSING
 
 **Evidence:** the only entry point is the dashboard login (`apps/web/src/routes/login/+page.svelte`), which takes email + `merchantSlug`; no signup/register/provision flow exists in `apps/api/src/modules/*` (searched; only order/product route-registration comments matched). The sole tenant creator is the seed script (`apps/api/src/database/seed.ts`). There is no store setup wizard anywhere.

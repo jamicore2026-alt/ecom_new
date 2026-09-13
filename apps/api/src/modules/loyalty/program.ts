@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { loyaltyEarningRules, loyaltyRewards, loyaltyTiers, loyaltyAccounts } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
@@ -18,7 +18,7 @@ export type RewardInput = {
 export class LoyaltyProgramService {
   // ---- tiers ----
 
-  static async listTiers(merchantId: string) {
+  static async listTiers(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(loyaltyTiers)
@@ -37,7 +37,7 @@ export class LoyaltyProgramService {
     })
   }
 
-  static async createTier(merchantId: string, input: TierInput) {
+  static async createTier(db: DB, merchantId: string, input: TierInput) {
     const [row] = await db
       .insert(loyaltyTiers)
       .values({
@@ -51,8 +51,8 @@ export class LoyaltyProgramService {
     return ok(row)
   }
 
-  static async updateTier(merchantId: string, id: string, input: Partial<TierInput>) {
-    await this.assertTier(merchantId, id)
+  static async updateTier(db: DB, merchantId: string, id: string, input: Partial<TierInput>) {
+    await this.assertTier(db, merchantId, id)
     const [row] = await db
       .update(loyaltyTiers)
       .set({
@@ -66,15 +66,15 @@ export class LoyaltyProgramService {
     return ok(row)
   }
 
-  static async deleteTier(merchantId: string, id: string) {
-    await this.assertTier(merchantId, id)
+  static async deleteTier(db: DB, merchantId: string, id: string) {
+    await this.assertTier(db, merchantId, id)
     await db
       .delete(loyaltyTiers)
       .where(and(eq(loyaltyTiers.id, id), eq(loyaltyTiers.merchantId, merchantId)))
     return ok({ deleted: true })
   }
 
-  private static async assertTier(merchantId: string, id: string) {
+  private static async assertTier(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select()
       .from(loyaltyTiers)
@@ -85,7 +85,7 @@ export class LoyaltyProgramService {
 
   // ---- earning rules ----
 
-  static async listRules(merchantId: string) {
+  static async listRules(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(loyaltyEarningRules)
@@ -94,7 +94,7 @@ export class LoyaltyProgramService {
     return ok({ items: rows })
   }
 
-  static async createRule(merchantId: string, input: RuleInput) {
+  static async createRule(db: DB, merchantId: string, input: RuleInput) {
     const [row] = await db
       .insert(loyaltyEarningRules)
       .values({
@@ -109,8 +109,8 @@ export class LoyaltyProgramService {
     return ok(row)
   }
 
-  static async updateRule(merchantId: string, id: string, input: Partial<RuleInput>) {
-    await this.assertRule(merchantId, id)
+  static async updateRule(db: DB, merchantId: string, id: string, input: Partial<RuleInput>) {
+    await this.assertRule(db, merchantId, id)
     const [row] = await db
       .update(loyaltyEarningRules)
       .set({
@@ -125,15 +125,15 @@ export class LoyaltyProgramService {
     return ok(row)
   }
 
-  static async deleteRule(merchantId: string, id: string) {
-    await this.assertRule(merchantId, id)
+  static async deleteRule(db: DB, merchantId: string, id: string) {
+    await this.assertRule(db, merchantId, id)
     await db
       .delete(loyaltyEarningRules)
       .where(and(eq(loyaltyEarningRules.id, id), eq(loyaltyEarningRules.merchantId, merchantId)))
     return ok({ deleted: true })
   }
 
-  private static async assertRule(merchantId: string, id: string) {
+  private static async assertRule(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select()
       .from(loyaltyEarningRules)
@@ -144,7 +144,7 @@ export class LoyaltyProgramService {
 
   // ---- rewards catalog ----
 
-  static async listRewards(merchantId: string) {
+  static async listRewards(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(loyaltyRewards)
@@ -153,7 +153,7 @@ export class LoyaltyProgramService {
     return ok({ items: rows })
   }
 
-  static async createReward(merchantId: string, input: RewardInput) {
+  static async createReward(db: DB, merchantId: string, input: RewardInput) {
     const [row] = await db
       .insert(loyaltyRewards)
       .values({
@@ -169,8 +169,8 @@ export class LoyaltyProgramService {
     return ok(row)
   }
 
-  static async updateReward(merchantId: string, id: string, input: Partial<RewardInput>) {
-    await this.assertReward(merchantId, id)
+  static async updateReward(db: DB, merchantId: string, id: string, input: Partial<RewardInput>) {
+    await this.assertReward(db, merchantId, id)
     const [row] = await db
       .update(loyaltyRewards)
       .set({
@@ -186,15 +186,15 @@ export class LoyaltyProgramService {
     return ok(row)
   }
 
-  static async deleteReward(merchantId: string, id: string) {
-    await this.assertReward(merchantId, id)
+  static async deleteReward(db: DB, merchantId: string, id: string) {
+    await this.assertReward(db, merchantId, id)
     await db
       .delete(loyaltyRewards)
       .where(and(eq(loyaltyRewards.id, id), eq(loyaltyRewards.merchantId, merchantId)))
     return ok({ deleted: true })
   }
 
-  private static async assertReward(merchantId: string, id: string) {
+  private static async assertReward(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select()
       .from(loyaltyRewards)

@@ -16,6 +16,6 @@ const themeBody = t.Object({
 
 export const themeModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
-  .get('/theme', async ({ auth }) => ThemeService.get(auth.merchant.id))
+  .get('/theme', async ({ auth }) => ThemeService.get(auth.db, auth.merchant.id))
   .use(requirePermission('settings.manage'))
-  .put('/theme', async ({ auth, body }) => ThemeService.update(auth.merchant.id, body), { body: themeBody })
+  .put('/theme', async ({ auth, body }) => ThemeService.update(auth.db, auth.merchant.id, body), { body: themeBody })

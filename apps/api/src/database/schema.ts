@@ -15,6 +15,7 @@ import {
 import { sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
 import type { Address, DeliveryStatus, DeliveryZoneStatus, DriverStatus, FoodOrderModifier, KitchenItemStatus, KitchenPriority, KitchenStationStatus, KotStatus, ModuleId, OutletStatus, Permission, Scope, TableSessionStatus, TableState } from '../shared/types'
+import type { MerchantStatus } from '../shared/merchant-lifecycle'
 
 // scale 3 supports GCC currencies with 3 decimals (KWD/BHD/OMR)
 const money = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
@@ -38,7 +39,7 @@ export const merchants = pgTable('merchants', {
   phone: varchar('phone', { length: 50 }),
   currency: varchar('currency', { length: 10 }).notNull().default('USD'),
   timezone: varchar('timezone', { length: 100 }).notNull().default('UTC'),
-  status: varchar('status', { length: 20 }).notNull().default('active'),
+  status: varchar('status', { length: 20 }).$type<MerchantStatus>().notNull().default('active'),
   createdAt: timestamp('created_at').defaultNow().notNull()
 })
 

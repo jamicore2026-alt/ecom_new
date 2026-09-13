@@ -32,11 +32,11 @@ const previewBody = t.Object({
 export const segmentsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
 
-  .get('/segments', async ({ auth }) => SegmentsService.list(auth.merchant.id))
-  .get('/segments/:id', async ({ auth, params }) => SegmentsService.get(auth.merchant.id, params.id))
-  .post('/segments/preview', async ({ auth, body }) => SegmentsService.preview(auth.merchant.id, body.definition), { body: previewBody })
+  .get('/segments', async ({ auth }) => SegmentsService.list(auth.db, auth.merchant.id))
+  .get('/segments/:id', async ({ auth, params }) => SegmentsService.get(auth.db, auth.merchant.id, params.id))
+  .post('/segments/preview', async ({ auth, body }) => SegmentsService.preview(auth.db, auth.merchant.id, body.definition), { body: previewBody })
 
   .use(requirePermission('settings.manage'))
-  .post('/segments', async ({ auth, body }) => SegmentsService.create(auth.merchant.id, body), { body: requiredBody })
-  .put('/segments/:id', async ({ auth, params, body }) => SegmentsService.update(auth.merchant.id, params.id, body as { name?: string; definition?: SegmentDefinition }), { body: segmentBody })
-  .delete('/segments/:id', async ({ auth, params }) => SegmentsService.delete(auth.merchant.id, params.id))
+  .post('/segments', async ({ auth, body }) => SegmentsService.create(auth.db, auth.merchant.id, body), { body: requiredBody })
+  .put('/segments/:id', async ({ auth, params, body }) => SegmentsService.update(auth.db, auth.merchant.id, params.id, body as { name?: string; definition?: SegmentDefinition }), { body: segmentBody })
+  .delete('/segments/:id', async ({ auth, params }) => SegmentsService.delete(auth.db, auth.merchant.id, params.id))

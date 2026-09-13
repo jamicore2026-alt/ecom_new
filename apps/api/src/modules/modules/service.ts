@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { merchantModules } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
@@ -7,7 +7,7 @@ import { MODULES } from '../../shared/types'
 import type { ModuleId } from '../../shared/types'
 
 export class ModulesService {
-  static async list(merchantId: string) {
+  static async list(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(merchantModules)
@@ -24,7 +24,7 @@ export class ModulesService {
     return ok(catalog)
   }
 
-  static async setEnabled(merchantId: string, module: string, enabled: boolean) {
+  static async setEnabled(db: DB, merchantId: string, module: string, enabled: boolean) {
     const mod: ModuleId = module as ModuleId
     if (!MODULES.includes(mod)) {
       throw notFound('MODULE_NOT_FOUND', 'Unknown module')

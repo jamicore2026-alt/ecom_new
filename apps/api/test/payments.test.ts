@@ -190,7 +190,7 @@ describe('storefront payments integration', () => {
       currency: order.currency
     })
 
-    await OrdersService.applyPaymentResult(merchantId, 'myfatoorah', {
+    await OrdersService.applyPaymentResult(db, merchantId, 'myfatoorah', {
       providerRef: 'mf-ref-paytest',
       status: 'paid',
       eventId: 'evt-paytest-1',
@@ -208,7 +208,7 @@ describe('storefront payments integration', () => {
     expect(txn.status).toBe('paid')
 
     // A second confirmation must not double-apply anything harmful
-    await OrdersService.applyPaymentResult(merchantId, 'myfatoorah', {
+    await OrdersService.applyPaymentResult(db, merchantId, 'myfatoorah', {
       providerRef: 'mf-ref-paytest',
       status: 'paid',
       eventId: 'evt-paytest-2'

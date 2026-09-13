@@ -1,17 +1,18 @@
 import { Elysia } from 'elysia'
 import { t } from 'elysia'
-import type { AuthIdentity } from '../../plugins/auth'
+import type { AuthContext, AuthIdentity } from '../../plugins/auth'
 import { authPlugin, requirePermission } from '../../plugins/auth'
 import { AuditService } from './service'
 import { auditQuery } from './model'
+import { db as adminDb } from '../../database/client'
 
 export * from './service'
 
 export const auditParams = t.Object({ id: t.String() })
 
-/** Build + fire an audit record from an authenticated request context. */
+/** Record an audit entry from an authenticated request context. Awaits the insert so it lands before the tenant connection closes; never throws. */
 export const auditFromRequest = (
-  auth: AuthIdentity,
+  auth: AuthContext | AuthIdentity,
   request: Request,
   opts: {
     action: string
@@ -19,10 +20,11 @@ export const auditFromRequest = (
     entityId?: string
     metadata?: Record<string, unknown>
   }
-) => {
+): Promise<void> => {
   const forwarded = request.headers.get('x-forwarded-for')
   const ip = forwarded?.split(',')[0].trim() || null
-  void AuditService.log({
+  const db = 'db' in auth ? auth.db : adminDb
+  return AuditService.log(db, {
     merchantId: auth.merchant.id,
     actorUserId: auth.user.id,
     actorName: auth.user.name,
@@ -37,11 +39,11 @@ export const auditFromRequest = (
 export const auditLogsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(requirePermission('reports.read'))
-  .get('/audit', ({ query, auth }) => AuditService.list(auth.merchant.id, query), {
+  .get('/audit', ({ query, auth }) => AuditService.list(auth.db, auth.merchant.id, query), {
     query: auditQuery,
     detail: { tags: ['Audit Logs'], summary: 'List merchant activity / audit history' }
   })
-  .get('/audit/:id', ({ params, auth }) => AuditService.detail(auth.merchant.id, params.id), {
+  .get('/audit/:id', ({ params, auth }) => AuditService.detail(auth.db, auth.merchant.id, params.id), {
     params: auditParams,
     detail: { tags: ['Audit Logs'], summary: 'Get a single audit entry' }
   })

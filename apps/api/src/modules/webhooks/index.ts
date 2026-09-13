@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../database/client'
+import { withTenantContext } from '../../database/tenant-context'
 import { merchants, paymentProviderConfigs, webhookEvents } from '../../database/schema'
 import { getProvider } from '../../payments/registry'
 import { decryptJson } from '../../shared/crypto'
@@ -65,7 +66,11 @@ export const webhooksModule = new Elysia({ prefix: '/api', name: 'webhooks' }).p
     }
 
     try {
-      await OrdersService.applyPaymentResult(merchant.id, params.provider, result)
+      // The merchant is identified by the payload/signature, not a JWT, so the
+      // order work runs under a tenant context opened for that merchant.
+      await withTenantContext(merchant.id, (tenantDb) =>
+        OrdersService.applyPaymentResult(tenantDb, merchant.id, params.provider, result)
+      )
     } catch (err) {
       // Release the claim so the provider's retry can be applied — a failed
       // application must not be swallowed by dedupe forever.

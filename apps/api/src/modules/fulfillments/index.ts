@@ -15,26 +15,26 @@ export const fulfillmentsModule = new Elysia({ prefix: '/api' })
   .use(requirePermission('orders.read'))
 
   .get('/fulfillments', async ({ auth, query }) => {
-    return FulfillmentsService.list(auth.merchant.id, await branchScopeOf(auth), query)
+    return FulfillmentsService.list(auth.db, auth.merchant.id, await branchScopeOf(auth.db, auth), query)
   }, { query: fulfillmentQuery })
 
   .get('/fulfillments/:id', async ({ auth, params }) => {
-    return FulfillmentsService.get(auth.merchant.id, await branchScopeOf(auth), params.id)
+    return FulfillmentsService.get(auth.db, auth.merchant.id, await branchScopeOf(auth.db, auth), params.id)
   }, { params: fulfillmentParams })
 
   .use(requirePermission('orders.create', 'orders.update', 'orders.cancel'))
   .post('/fulfillments', async ({ auth, body }) => {
-    return FulfillmentsService.create(auth.merchant.id, await branchScopeOf(auth), body)
+    return FulfillmentsService.create(auth.db, auth.merchant.id, await branchScopeOf(auth.db, auth), body)
   }, { body: createFulfillmentBody })
 
   .put('/fulfillments/:id', async ({ auth, params, body }) => {
-    return FulfillmentsService.update(auth.merchant.id, await branchScopeOf(auth), params.id, body)
+    return FulfillmentsService.update(auth.db, auth.merchant.id, await branchScopeOf(auth.db, auth), params.id, body)
   }, { params: fulfillmentParams, body: updateFulfillmentBody })
 
   .post('/fulfillments/:id/ship', async ({ auth, params, body }) => {
-    return FulfillmentsService.markShipped(auth.merchant.id, await branchScopeOf(auth), params.id, body)
+    return FulfillmentsService.markShipped(auth.db, auth.merchant.id, await branchScopeOf(auth.db, auth), params.id, body)
   }, { params: fulfillmentParams, body: markShippedBody })
 
   .post('/fulfillments/:id/cancel', async ({ auth, params }) => {
-    return FulfillmentsService.cancel(auth.merchant.id, await branchScopeOf(auth), params.id)
+    return FulfillmentsService.cancel(auth.db, auth.merchant.id, await branchScopeOf(auth.db, auth), params.id)
   }, { params: fulfillmentParams })

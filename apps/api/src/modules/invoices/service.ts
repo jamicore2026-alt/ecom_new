@@ -1,5 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { invoices, orderItems, orders, storeSettings } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
@@ -8,7 +8,7 @@ import { assertOrderInBranchScope, branchOrderCondition } from '../../shared/out
 
 export class InvoicesService {
   /** Generate the next invoice number for a merchant (e.g. INV-0001). */
-  private static async nextInvoiceNumber(merchantId: string): Promise<string> {
+  private static async nextInvoiceNumber(db: DB, merchantId: string): Promise<string> {
     const [settings] = await db
       .select({ name: storeSettings.name })
       .from(storeSettings)
@@ -28,6 +28,7 @@ export class InvoicesService {
 
   /** Create an invoice (or credit note) for an order. Idempotent per order+type. */
   static async create(
+    db: DB,
     merchantId: string,
     branchIds: string[] | null,
     input: { orderId: string; type?: 'invoice' | 'credit_note'; gstin?: string }
@@ -54,7 +55,7 @@ export class InvoicesService {
       .from(orderItems)
       .where(eq(orderItems.orderId, order.id))
 
-    const invoiceNumber = await this.nextInvoiceNumber(merchantId)
+    const invoiceNumber = await this.nextInvoiceNumber(db, merchantId)
 
     const [invoice] = await db
       .insert(invoices)
@@ -84,6 +85,7 @@ export class InvoicesService {
   }
 
   static async list(
+    db: DB,
     merchantId: string,
     branchIds: string[] | null,
     query: { page?: string; limit?: string } = {}
@@ -106,7 +108,7 @@ export class InvoicesService {
     return ok({ items: rows.map((row) => row.invoices), meta: makeMeta(page, limit, rows.length) })
   }
 
-  static async get(merchantId: string, branchIds: string[] | null, id: string) {
+  static async get(db: DB, merchantId: string, branchIds: string[] | null, id: string) {
     const [row] = await db
       .select()
       .from(invoices)
@@ -117,7 +119,7 @@ export class InvoicesService {
     return ok(row.invoices)
   }
 
-  static async getByOrder(merchantId: string, branchIds: string[] | null, orderId: string) {
+  static async getByOrder(db: DB, merchantId: string, branchIds: string[] | null, orderId: string) {
     const [order] = await db
       .select()
       .from(orders)

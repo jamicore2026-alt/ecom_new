@@ -159,7 +159,7 @@ describe('permission convergence (P2-2)', () => {
       .where(and(eq(users.email, 'admin@jamicore.com'), eq(users.status, 'active')))
     const email = `norm-${stamp}@jamicore.com`
 
-    const created = await SettingsService.createStaff(adminRow.merchantId, {
+    const created = await SettingsService.createStaff(db, adminRow.merchantId, {
       name: 'Norm Conv',
       email,
       password: 'password123',

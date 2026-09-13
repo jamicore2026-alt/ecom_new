@@ -30,70 +30,70 @@ export const settingsModule = new Elysia({ prefix: '/api' })
   .group('/settings', (app) =>
     app
       .use(requireAdmin)
-      .get('/store', async ({ auth }) => SettingsService.getStore(auth.merchant.id))
-      .put('/store', async ({ body, auth }) => SettingsService.updateStore(auth.merchant.id, body), {
+      .get('/store', async ({ auth }) => SettingsService.getStore(auth.db, auth.merchant.id))
+      .put('/store', async ({ body, auth }) => SettingsService.updateStore(auth.db, auth.merchant.id, body), {
         body: storeBody
       })
-      .get('/payments', async ({ auth }) => SettingsService.getPayments(auth.merchant.id))
-      .put('/payments', async ({ body, auth }) => SettingsService.updatePayments(auth.merchant.id, body), {
+      .get('/payments', async ({ auth }) => SettingsService.getPayments(auth.db, auth.merchant.id))
+      .put('/payments', async ({ body, auth }) => SettingsService.updatePayments(auth.db, auth.merchant.id, body), {
         body: paymentBody
       })
       .get(
         '/payments/providers',
-        async ({ auth }) => SettingsService.listPaymentProviders(auth.merchant.id)
+        async ({ auth }) => SettingsService.listPaymentProviders(auth.db, auth.merchant.id)
       )
       .put(
         '/payments/providers/:provider',
         async ({ params, body, auth }) =>
-          SettingsService.updatePaymentProvider(auth.merchant.id, params.provider, body),
+          SettingsService.updatePaymentProvider(auth.db, auth.merchant.id, params.provider, body),
         { body: providerBody, params: providerParams }
       )
       .post(
         '/payments/providers/:provider/test',
-        async ({ params, auth }) => SettingsService.testPaymentProvider(auth.merchant.id, params.provider),
+        async ({ params, auth }) => SettingsService.testPaymentProvider(auth.db, auth.merchant.id, params.provider),
         { params: providerParams }
       )
-      .get('/shipping', async ({ auth }) => SettingsService.getShipping(auth.merchant.id))
-      .put('/shipping', async ({ body, auth }) => SettingsService.updateShipping(auth.merchant.id, body), {
+      .get('/shipping', async ({ auth }) => SettingsService.getShipping(auth.db, auth.merchant.id))
+      .put('/shipping', async ({ body, auth }) => SettingsService.updateShipping(auth.db, auth.merchant.id, body), {
         body: shippingBody
       })
-      .get('/taxes', async ({ auth }) => SettingsService.getTaxes(auth.merchant.id))
-      .put('/taxes', async ({ body, auth }) => SettingsService.updateTaxes(auth.merchant.id, body), {
+      .get('/taxes', async ({ auth }) => SettingsService.getTaxes(auth.db, auth.merchant.id))
+      .put('/taxes', async ({ body, auth }) => SettingsService.updateTaxes(auth.db, auth.merchant.id, body), {
         body: taxBody
       })
-      .get('/cod', async ({ auth }) => SettingsService.getCodRules(auth.merchant.id))
-      .put('/cod', async ({ body, auth }) => SettingsService.updateCodRules(auth.merchant.id, body), {
+      .get('/cod', async ({ auth }) => SettingsService.getCodRules(auth.db, auth.merchant.id))
+      .put('/cod', async ({ body, auth }) => SettingsService.updateCodRules(auth.db, auth.merchant.id, body), {
         body: codRulesBody
       })
-      .get('/checkout', async ({ auth }) => SettingsService.getCheckoutSettings(auth.merchant.id))
-      .put('/checkout', async ({ body, auth }) => SettingsService.updateCheckoutSettings(auth.merchant.id, body), {
+      .get('/checkout', async ({ auth }) => SettingsService.getCheckoutSettings(auth.db, auth.merchant.id))
+      .put('/checkout', async ({ body, auth }) => SettingsService.updateCheckoutSettings(auth.db, auth.merchant.id, body), {
         body: checkoutBody
       })
       .get('/serviceability/:pincode', async ({ auth, params }) =>
-        SettingsService.checkServiceability(auth.merchant.id, params.pincode)
+        SettingsService.checkServiceability(auth.db, auth.merchant.id, params.pincode)
       )
-      .get('/carriers', async ({ auth }) => SettingsService.listCarriers(auth.merchant.id))
-      .post('/carriers', async ({ body, auth }) => SettingsService.createCarrier(auth.merchant.id, body), {
+      .get('/carriers', async ({ auth }) => SettingsService.listCarriers(auth.db, auth.merchant.id))
+      .post('/carriers', async ({ body, auth }) => SettingsService.createCarrier(auth.db, auth.merchant.id, body), {
         body: carrierBody
       })
       .put('/carriers/:id', async ({ params, body, auth }) =>
-        SettingsService.updateCarrier(auth.merchant.id, params.id, body), { body: carrierBody }
+        SettingsService.updateCarrier(auth.db, auth.merchant.id, params.id, body), { body: carrierBody }
       )
       .delete('/carriers/:id', async ({ params, auth }) =>
-        SettingsService.deleteCarrier(auth.merchant.id, params.id)
+        SettingsService.deleteCarrier(auth.db, auth.merchant.id, params.id)
       )
       .get('/notifications', async ({ auth }) =>
-        SettingsService.getNotifications(auth.merchant.id)
+        SettingsService.getNotifications(auth.db, auth.merchant.id)
       )
       .put(
         '/notifications',
-        async ({ body, auth }) => SettingsService.updateNotifications(auth.merchant.id, body),
+        async ({ body, auth }) => SettingsService.updateNotifications(auth.db, auth.merchant.id, body),
         { body: notificationsBody }
       )
-      .get('/staff', async ({ auth }) => SettingsService.listStaff(auth.merchant.id))
+      .get('/staff', async ({ auth }) => SettingsService.listStaff(auth.db, auth.merchant.id))
       .post('/staff', async ({ body, auth, request }) => {
-        const result = await SettingsService.createStaff(auth.merchant.id, body)
-        auditFromRequest(auth, request, {
+        const result = await SettingsService.createStaff(auth.db, auth.merchant.id, body)
+        await auditFromRequest(auth, request, {
           action: 'staff.create',
           entityType: 'staff',
           entityId: result.data.id
@@ -103,8 +103,8 @@ export const settingsModule = new Elysia({ prefix: '/api' })
         body: staffCreateBody
       })
       .put('/staff/:id', async ({ params, body, auth, request }) => {
-        const result = await SettingsService.updateStaff(auth.merchant.id, params.id, body, auth.user)
-        auditFromRequest(auth, request, {
+        const result = await SettingsService.updateStaff(auth.db, auth.merchant.id, params.id, body, auth.user)
+        await auditFromRequest(auth, request, {
           action: 'staff.update',
           entityType: 'staff',
           entityId: params.id
@@ -112,8 +112,8 @@ export const settingsModule = new Elysia({ prefix: '/api' })
         return result
       }, { body: staffUpdateBody })
       .delete('/staff/:id', async ({ params, auth, request }) => {
-        const result = await SettingsService.deleteStaff(auth.merchant.id, params.id, auth.user)
-        auditFromRequest(auth, request, {
+        const result = await SettingsService.deleteStaff(auth.db, auth.merchant.id, params.id, auth.user)
+        await auditFromRequest(auth, request, {
           action: 'staff.delete',
           entityType: 'staff',
           entityId: params.id

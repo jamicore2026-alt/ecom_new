@@ -6,4 +6,4 @@ import { OverviewService } from './service'
 export const overviewModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(requirePermission('reports.read'))
-  .get('/overview', async ({ auth }) => OverviewService.dashboard(auth.merchant.id, await branchScopeOf(auth)))
+  .get('/overview', async ({ auth }) => OverviewService.dashboard(auth.db, auth.merchant.id, await branchScopeOf(auth.db, auth)))

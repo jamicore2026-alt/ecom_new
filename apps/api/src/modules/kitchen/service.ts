@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, inArray, isNull, notInArray, or } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import {
   kitchenStations,
   kitchenTickets,
@@ -32,7 +32,7 @@ const addMeta = (ticket: { receivedAt: Date; prepSlaMin: number; status: string 
 /* ------------------------------ stations ------------------------------ */
 
 export class KitchenStationsService {
-  static async list(merchantId: string, query: { outletId?: string }, scope: OutletScope) {
+  static async list(db: DB, merchantId: string, query: { outletId?: string }, scope: OutletScope) {
     const scopedIds = effectiveOutletIds(scope)
     if (scopedIds === null) return ok([])
     // A station is visible when it belongs to one of the caller's outlets, or
@@ -58,7 +58,7 @@ export class KitchenStationsService {
     return ok(rows)
   }
 
-  static async get(merchantId: string, id: string, scope: OutletScope) {
+  static async get(db: DB, merchantId: string, id: string, scope: OutletScope) {
     const [row] = await db
       .select({
         id: kitchenStations.id,
@@ -76,7 +76,7 @@ export class KitchenStationsService {
     return ok(row)
   }
 
-  static async create(merchantId: string, input: { name: string; outletId?: string; prepSlaMin?: number; sortOrder?: number; status?: string }, scope: OutletScope) {
+  static async create(db: DB, merchantId: string, input: { name: string; outletId?: string; prepSlaMin?: number; sortOrder?: number; status?: string }, scope: OutletScope) {
     if (input.outletId) assertInOutletScope(scope, input.outletId)
     const [dup] = await db.select().from(kitchenStations).where(and(eq(kitchenStations.merchantId, merchantId), eq(kitchenStations.name, input.name)))
     if (dup) throw conflict('STATION_EXISTS', `A station named "${input.name}" already exists`)
@@ -95,7 +95,7 @@ export class KitchenStationsService {
     return ok(row)
   }
 
-  static async update(merchantId: string, id: string, input: { name?: string; outletId?: string; prepSlaMin?: number; sortOrder?: number; status?: string }, scope: OutletScope) {
+  static async update(db: DB, merchantId: string, id: string, input: { name?: string; outletId?: string; prepSlaMin?: number; sortOrder?: number; status?: string }, scope: OutletScope) {
     const [existing] = await db.select().from(kitchenStations).where(and(eq(kitchenStations.id, id), eq(kitchenStations.merchantId, merchantId)))
     if (!existing) throw notFound('STATION_NOT_FOUND', 'Kitchen station not found')
     assertInOutletScopeOrShared(scope, existing.outletId)
@@ -114,7 +114,7 @@ export class KitchenStationsService {
     return ok(updated)
   }
 
-  static async remove(merchantId: string, id: string, scope: OutletScope) {
+  static async remove(db: DB, merchantId: string, id: string, scope: OutletScope) {
     const [existing] = await db.select().from(kitchenStations).where(and(eq(kitchenStations.id, id), eq(kitchenStations.merchantId, merchantId)))
     if (!existing) throw notFound('STATION_NOT_FOUND', 'Kitchen station not found')
     assertInOutletScopeOrShared(scope, existing.outletId)
@@ -129,7 +129,7 @@ export class KitchenStationsService {
 
 export class KitchenTicketsService {
   /** Resolve/ensure a station for a menu item's routing name; falls back to a General station. */
-  private static async resolveStations(merchantId: string, names: Set<string>): Promise<Map<string, { id: string; prepSlaMin: number }>> {
+  private static async resolveStations(db: DB, merchantId: string, names: Set<string>): Promise<Map<string, { id: string; prepSlaMin: number }>> {
     const want = names.size ? [...names] : [DEFAULT_STATION]
     if (!want.includes(DEFAULT_STATION)) want.push(DEFAULT_STATION)
     const rows = await db.select().from(kitchenStations).where(and(eq(kitchenStations.merchantId, merchantId), inArray(kitchenStations.name, want)))
@@ -146,7 +146,7 @@ export class KitchenTicketsService {
   }
 
   /** Generate KOT tickets for a food order, routed by menu item kitchen station. Idempotent per (order, station). */
-  static async generateForOrder(merchantId: string, orderId: string, priority: 'LOW' | 'NORMAL' | 'HIGH' = 'NORMAL', scope: OutletScope) {
+  static async generateForOrder(db: DB, merchantId: string, orderId: string, priority: 'LOW' | 'NORMAL' | 'HIGH' = 'NORMAL', scope: OutletScope) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, orderId), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('ORDER_NOT_FOUND', 'Order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'Only food orders produce kitchen tickets')
@@ -166,7 +166,7 @@ export class KitchenTicketsService {
       .where(eq(foodOrderItems.orderId, orderId))
     if (items.length === 0) throw badRequest('NO_ITEMS', 'This order has no food items to route')
 
-    const stationsByName = await this.resolveStations(merchantId, new Set(items.map((i) => (i.station || DEFAULT_STATION).trim() || DEFAULT_STATION)))
+    const stationsByName = await this.resolveStations(db, merchantId, new Set(items.map((i) => (i.station || DEFAULT_STATION).trim() || DEFAULT_STATION)))
     const groups = new Map<string, typeof items>()
     for (const item of items) {
       const key = (item.station || DEFAULT_STATION).trim() || DEFAULT_STATION
@@ -212,10 +212,10 @@ export class KitchenTicketsService {
       }
     })
 
-    return this.list(merchantId, { orderId }, scope)
+    return this.list(db, merchantId, { orderId }, scope)
   }
 
-  static async list(merchantId: string, query: { outletId?: string; stationId?: string; status?: string; search?: string; orderId?: string; page?: number; limit?: number }, scope: OutletScope) {
+  static async list(db: DB, merchantId: string, query: { outletId?: string; stationId?: string; status?: string; search?: string; orderId?: string; page?: number; limit?: number }, scope: OutletScope) {
     const { page, limit, offset } = parsePagination(query)
     const scopedIds = effectiveOutletIds(scope)
     if (scopedIds === null) return ok({ items: [], meta: makeMeta(page, limit, 0) })
@@ -268,7 +268,7 @@ export class KitchenTicketsService {
     return ok({ items: rows.map((r) => ({ ...r, ...addMeta(r) })), meta: makeMeta(page, limit, total) })
   }
 
-  static async get(merchantId: string, id: string, scope: OutletScope) {
+  static async get(db: DB, merchantId: string, id: string, scope: OutletScope) {
     const [ticket] = await db
       .select({
         id: kitchenTickets.id,
@@ -304,14 +304,14 @@ export class KitchenTicketsService {
     return ok({ ...ticket, ...addMeta(ticket), items })
   }
 
-  private static async setTimestamps(merchantId: string, id: string, status: KotStatus) {
+  private static async setTimestamps(db: DB, merchantId: string, id: string, status: KotStatus) {
     if (status === 'PREPARING') return db.update(kitchenTickets).set({ startedAt: new Date() }).where(and(eq(kitchenTickets.id, id), eq(kitchenTickets.merchantId, merchantId)))
     if (status === 'READY') return db.update(kitchenTickets).set({ readyAt: new Date(), closedAt: new Date() }).where(and(eq(kitchenTickets.id, id), eq(kitchenTickets.merchantId, merchantId)))
     if (status === 'CANCELLED') return db.update(kitchenTickets).set({ closedAt: new Date() }).where(and(eq(kitchenTickets.id, id), eq(kitchenTickets.merchantId, merchantId)))
     return Promise.resolve()
   }
 
-  static async transition(merchantId: string, id: string, nextStatus: string, scope: OutletScope) {
+  static async transition(db: DB, merchantId: string, id: string, nextStatus: string, scope: OutletScope) {
     const [ticket] = await db.select().from(kitchenTickets).where(and(eq(kitchenTickets.id, id), eq(kitchenTickets.merchantId, merchantId)))
     if (!ticket) throw notFound('TICKET_NOT_FOUND', 'Kitchen ticket not found')
     assertInOutletScope(scope, ticket.outletId)
@@ -324,18 +324,18 @@ export class KitchenTicketsService {
         await tx.update(kitchenTicketItems).set({ status: 'READY', readyAt: new Date() }).where(and(eq(kitchenTicketItems.ticketId, id), eq(kitchenTicketItems.status, 'PENDING')))
       }
     })
-    return this.get(merchantId, id, scope)
+    return this.get(db, merchantId, id, scope)
   }
 
-  static async bump(merchantId: string, id: string, scope: OutletScope) {
-    return this.transition(merchantId, id, 'READY', scope)
+  static async bump(db: DB, merchantId: string, id: string, scope: OutletScope) {
+    return this.transition(db, merchantId, id, 'READY', scope)
   }
 
-  static async recall(merchantId: string, id: string, scope: OutletScope) {
-    return this.transition(merchantId, id, 'RECALLED', scope)
+  static async recall(db: DB, merchantId: string, id: string, scope: OutletScope) {
+    return this.transition(db, merchantId, id, 'RECALLED', scope)
   }
 
-  static async setPriority(merchantId: string, id: string, priority: 'LOW' | 'NORMAL' | 'HIGH', scope: OutletScope) {
+  static async setPriority(db: DB, merchantId: string, id: string, priority: 'LOW' | 'NORMAL' | 'HIGH', scope: OutletScope) {
     const [ticket] = await db.select().from(kitchenTickets).where(and(eq(kitchenTickets.id, id), eq(kitchenTickets.merchantId, merchantId)))
     if (!ticket) throw notFound('TICKET_NOT_FOUND', 'Kitchen ticket not found')
     assertInOutletScope(scope, ticket.outletId)
@@ -344,7 +344,7 @@ export class KitchenTicketsService {
   }
 
   /** Item-level completion: picking items READY/DONE can bump the whole ticket when all lines are done. */
-  static async itemStatus(merchantId: string, id: string, itemId: string, status: string, scope: OutletScope) {
+  static async itemStatus(db: DB, merchantId: string, id: string, itemId: string, status: string, scope: OutletScope) {
     const [ticket] = await db.select().from(kitchenTickets).where(and(eq(kitchenTickets.id, id), eq(kitchenTickets.merchantId, merchantId)))
     if (!ticket) throw notFound('TICKET_NOT_FOUND', 'Kitchen ticket not found')
     assertInOutletScope(scope, ticket.outletId)
@@ -365,10 +365,10 @@ export class KitchenTicketsService {
       const lines = await db.select({ status: kitchenTicketItems.status }).from(kitchenTicketItems).where(eq(kitchenTicketItems.ticketId, id))
       const remaining = lines.filter((l) => l.status !== 'DONE' && l.status !== 'CANCELLED')
       if (remaining.length === 0 && !['READY', 'CANCELLED'].includes(ticket.status)) {
-        await this.transition(merchantId, id, 'READY', scope)
+        await this.transition(db, merchantId, id, 'READY', scope)
       }
     }
-    return this.get(merchantId, id, scope)
+    return this.get(db, merchantId, id, scope)
   }
 }
 
@@ -376,7 +376,7 @@ export class KitchenTicketsService {
 
 export class KdsBoardService {
   /** Group open (and ready) tickets by station — the KDS display model. */
-  static async board(merchantId: string, query: { outletId?: string; stationId?: string }, scope: OutletScope) {
+  static async board(db: DB, merchantId: string, query: { outletId?: string; stationId?: string }, scope: OutletScope) {
     const scopedIds = effectiveOutletIds(scope)
     if (scopedIds === null) return ok({ stations: [], delayedCount: 0 })
     const conds = [eq(kitchenTickets.merchantId, merchantId), notInArray(kitchenTickets.status, ['CANCELLED']), inArray(kitchenTickets.outletId, scopedIds)]

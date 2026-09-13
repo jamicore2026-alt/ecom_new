@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, ilike, count } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import {
   menuItems,
   products,
@@ -16,7 +16,7 @@ import { notFound, conflict, badRequest } from '../../shared/errors'
 import { assertInOutletScope, type OutletScope } from '../../shared/outlet-scope'
 
 export class MenuService {
-  static async list(merchantId: string, query: { search?: string; status?: string; page?: string | number; limit?: string | number }) {
+  static async list(db: DB, merchantId: string, query: { search?: string; status?: string; page?: string | number; limit?: string | number }) {
     const { page, limit, offset } = parsePagination(query)
     const conds = [eq(menuItems.merchantId, merchantId)]
     if (query.status) conds.push(eq(menuItems.status, query.status))
@@ -47,7 +47,7 @@ export class MenuService {
       .limit(limit)
       .offset(offset)
 
-    const groupsById = await this.attachGroups(merchantId, rows)
+    const groupsById = await this.attachGroups(db, merchantId, rows)
     const items = groupsById.size
       ? rows.map((r) => ({ ...r, modifierGroups: groupsById.get(r.id) ?? [] }))
       : rows
@@ -55,7 +55,7 @@ export class MenuService {
     return ok({ items, meta: makeMeta(page, limit, total) })
   }
 
-  private static async attachGroups(merchantId: string, items: { id: string }[]) {
+  private static async attachGroups(db: DB, merchantId: string, items: { id: string }[]) {
     if (items.length === 0) return new Map<string, (typeof modifierGroups.$inferSelect & { modifiers: (typeof modifiers.$inferSelect)[] })[]>()
     const menuIds = items.map((i) => i.id)
     const links = await db
@@ -76,7 +76,7 @@ export class MenuService {
     return out
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select({
         id: menuItems.id,
@@ -102,7 +102,7 @@ export class MenuService {
     if (!row) throw notFound('NOT_FOUND', 'Menu item not found')
 
     // Fetch current merchant's default outlet for display context (optional).
-    const groups = await this.groupsForItem(merchantId, id)
+    const groups = await this.groupsForItem(db, merchantId, id)
     const outlets = await db
       .select()
       .from(menuItemOutlets)
@@ -110,7 +110,7 @@ export class MenuService {
     return ok({ ...row, modifierGroups: groups, outletRules: outlets })
   }
 
-  static async create(merchantId: string, input: {
+  static async create(db: DB, merchantId: string, input: {
     productId: string
     available?: boolean
     preparationTimeMin?: number
@@ -142,10 +142,10 @@ export class MenuService {
       availability: (input.availability ?? []) as never
     }).returning()
 
-    return this.get(merchantId, row.id)
+    return this.get(db, merchantId, row.id)
   }
 
-  static async update(merchantId: string, id: string, input: Record<string, unknown>) {
+  static async update(db: DB, merchantId: string, id: string, input: Record<string, unknown>) {
     const [existing] = await db.select().from(menuItems).where(and(eq(menuItems.id, id), eq(menuItems.merchantId, merchantId)))
     if (!existing) throw notFound('NOT_FOUND', 'Menu item not found')
 
@@ -157,17 +157,17 @@ export class MenuService {
     if (input.availability !== undefined) set.availability = input.availability as never
 
     const [row] = await db.update(menuItems).set(set).where(and(eq(menuItems.id, id), eq(menuItems.merchantId, merchantId))).returning()
-    return this.get(merchantId, row.id)
+    return this.get(db, merchantId, row.id)
   }
 
-  static async remove(merchantId: string, id: string) {
+  static async remove(db: DB, merchantId: string, id: string) {
     const [existing] = await db.select().from(menuItems).where(and(eq(menuItems.id, id), eq(menuItems.merchantId, merchantId)))
     if (!existing) throw notFound('NOT_FOUND', 'Menu item not found')
     const [row] = await db.update(menuItems).set({ status: 'archived' }).where(and(eq(menuItems.id, id), eq(menuItems.merchantId, merchantId))).returning()
     return ok(row)
   }
 
-  private static async groupsForItem(merchantId: string, menuItemId: string) {
+  private static async groupsForItem(db: DB, merchantId: string, menuItemId: string) {
     const links = await db
       .select({ group: modifierGroups, sortOrder: menuItemModifiers.sortOrder })
       .from(menuItemModifiers)
@@ -183,7 +183,7 @@ export class MenuService {
 
   /* ------------------------------ modifiers ------------------------------ */
 
-  static async bindModifierGroup(merchantId: string, menuItemId: string, groupId: string) {
+  static async bindModifierGroup(db: DB, merchantId: string, menuItemId: string, groupId: string) {
     const [item] = await db.select().from(menuItems).where(and(eq(menuItems.id, menuItemId), eq(menuItems.merchantId, merchantId)))
     if (!item) throw notFound('NOT_FOUND', 'Menu item not found')
     const [group] = await db.select().from(modifierGroups).where(and(eq(modifierGroups.id, groupId), eq(modifierGroups.merchantId, merchantId)))
@@ -192,17 +192,17 @@ export class MenuService {
     const [link] = await db.select().from(menuItemModifiers).where(and(eq(menuItemModifiers.menuItemId, menuItemId), eq(menuItemModifiers.modifierGroupId, groupId)))
     if (link) throw conflict('ALREADY_BOUND', 'Modifier group already bound to this item')
     await db.insert(menuItemModifiers).values({ merchantId, menuItemId, modifierGroupId: groupId })
-    return this.get(merchantId, menuItemId)
+    return this.get(db, merchantId, menuItemId)
   }
 
-  static async unbindModifierGroup(merchantId: string, menuItemId: string, groupId: string) {
+  static async unbindModifierGroup(db: DB, merchantId: string, menuItemId: string, groupId: string) {
     const [item] = await db.select().from(menuItems).where(and(eq(menuItems.id, menuItemId), eq(menuItems.merchantId, merchantId)))
     if (!item) throw notFound('NOT_FOUND', 'Menu item not found')
     await db.delete(menuItemModifiers).where(and(eq(menuItemModifiers.menuItemId, menuItemId), eq(menuItemModifiers.modifierGroupId, groupId)))
-    return this.get(merchantId, menuItemId)
+    return this.get(db, merchantId, menuItemId)
   }
 
-  static async setOutletRule(merchantId: string, menuItemId: string, input: { outletId: string; available?: boolean; priceAdjustment?: number }, scope: OutletScope) {
+  static async setOutletRule(db: DB, merchantId: string, menuItemId: string, input: { outletId: string; available?: boolean; priceAdjustment?: number }, scope: OutletScope) {
     const [item] = await db.select().from(menuItems).where(and(eq(menuItems.id, menuItemId), eq(menuItems.merchantId, merchantId)))
     if (!item) throw notFound('NOT_FOUND', 'Menu item not found')
     assertInOutletScope(scope, input.outletId)
@@ -216,19 +216,19 @@ export class MenuService {
     } else {
       await db.insert(menuItemOutlets).values({ merchantId, menuItemId, outletId: input.outletId, ...values })
     }
-    return this.get(merchantId, menuItemId)
+    return this.get(db, merchantId, menuItemId)
   }
 
   /* --------------------------- modifier groups --------------------------- */
 
-  static async listGroups(merchantId: string) {
+  static async listGroups(db: DB, merchantId: string) {
     const rows = await db.select().from(modifierGroups).where(eq(modifierGroups.merchantId, merchantId)).orderBy(desc(modifierGroups.sortOrder))
     const ids = rows.map((r) => r.id)
     const mods = ids.length ? await db.select().from(modifiers).where(and(inArray(modifiers.modifierGroupId, ids), eq(modifiers.merchantId, merchantId))) : []
     return ok(rows.map((g) => ({ ...g, modifiers: mods.filter((m) => m.modifierGroupId === g.id) })))
   }
 
-  static async createGroup(merchantId: string, input: { name: string; required?: boolean; minSelections?: number; maxSelections?: number; sortOrder?: number; status?: string }) {
+  static async createGroup(db: DB, merchantId: string, input: { name: string; required?: boolean; minSelections?: number; maxSelections?: number; sortOrder?: number; status?: string }) {
     const [row] = await db.insert(modifierGroups).values({
       merchantId,
       name: input.name,
@@ -241,21 +241,21 @@ export class MenuService {
     return ok(row)
   }
 
-  static async updateGroup(merchantId: string, id: string, input: Record<string, unknown>) {
+  static async updateGroup(db: DB, merchantId: string, id: string, input: Record<string, unknown>) {
     const [existing] = await db.select().from(modifierGroups).where(and(eq(modifierGroups.id, id), eq(modifierGroups.merchantId, merchantId)))
     if (!existing) throw notFound('NOT_FOUND', 'Modifier group not found')
     const [row] = await db.update(modifierGroups).set(input).where(and(eq(modifierGroups.id, id), eq(modifierGroups.merchantId, merchantId))).returning()
     return ok(row)
   }
 
-  static async removeGroup(merchantId: string, id: string) {
+  static async removeGroup(db: DB, merchantId: string, id: string) {
     const [existing] = await db.select().from(modifierGroups).where(and(eq(modifierGroups.id, id), eq(modifierGroups.merchantId, merchantId)))
     if (!existing) throw notFound('NOT_FOUND', 'Modifier group not found')
     await db.delete(modifierGroups).where(eq(modifierGroups.id, id))
     return ok({ id })
   }
 
-  static async addModifier(merchantId: string, groupId: string, input: { name: string; priceAdjustment?: number; available?: boolean; sortOrder?: number; status?: string }) {
+  static async addModifier(db: DB, merchantId: string, groupId: string, input: { name: string; priceAdjustment?: number; available?: boolean; sortOrder?: number; status?: string }) {
     const [group] = await db.select().from(modifierGroups).where(and(eq(modifierGroups.id, groupId), eq(modifierGroups.merchantId, merchantId)))
     if (!group) throw notFound('NOT_FOUND', 'Modifier group not found')
     const [row] = await db.insert(modifiers).values({
@@ -270,14 +270,14 @@ export class MenuService {
     return ok(row)
   }
 
-  static async updateModifier(merchantId: string, id: string, input: Record<string, unknown>) {
+  static async updateModifier(db: DB, merchantId: string, id: string, input: Record<string, unknown>) {
     const [existing] = await db.select().from(modifiers).where(and(eq(modifiers.id, id), eq(modifiers.merchantId, merchantId)))
     if (!existing) throw notFound('NOT_FOUND', 'Modifier not found')
     const [row] = await db.update(modifiers).set(input).where(and(eq(modifiers.id, id), eq(modifiers.merchantId, merchantId))).returning()
     return ok(row)
   }
 
-  static async removeModifier(merchantId: string, id: string) {
+  static async removeModifier(db: DB, merchantId: string, id: string) {
     const [existing] = await db.select().from(modifiers).where(and(eq(modifiers.id, id), eq(modifiers.merchantId, merchantId)))
     if (!existing) throw notFound('NOT_FOUND', 'Modifier not found')
     await db.delete(modifiers).where(eq(modifiers.id, id))

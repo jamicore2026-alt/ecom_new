@@ -1,5 +1,5 @@
 import { and, count, eq, gte, gt, inArray, lte, sql } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import {
   customers,
   merchants,
@@ -22,7 +22,7 @@ const startOfToday = () => startOfUtcDay(new Date())
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400000)
 
 export class OverviewService {
-  static async dashboard(merchantId: string, branchIds: string[] | null = null) {
+  static async dashboard(db: DB, merchantId: string, branchIds: string[] | null = null) {
     const [merchant] = await db
       .select({ currency: merchants.currency })
       .from(merchants)
@@ -34,7 +34,7 @@ export class OverviewService {
     const start30 = daysAgo(29)
     const [todayKey] = [dayKey(today)]
 
-    const todaySales = await netRevenue(merchantId, today, branchIds)
+    const todaySales = await netRevenue(db, merchantId, today, branchIds)
 
     const [ordersTodayRow] = await db
       .select({ count: count() })
@@ -107,7 +107,7 @@ export class OverviewService {
       )
       .groupBy(sql`to_char(${orders.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`)
 
-    const chartMap = new Map(await netRevenueByDay(merchantId, start30, branchIds))
+    const chartMap = new Map(await netRevenueByDay(db, merchantId, start30, branchIds))
     const countMap = new Map(
       chartRowsRaw.map((r) => [r.day, Number(r.ordersCount ?? 0)])
     )
@@ -167,7 +167,7 @@ export class OverviewService {
 
     const avgOrderValue =
       Number(rangeRow?.ordersCount ?? 0) > 0
-        ? (await netRevenue(merchantId, start30, branchIds)) / Number(rangeRow?.ordersCount ?? 0)
+        ? (await netRevenue(db, merchantId, start30, branchIds)) / Number(rangeRow?.ordersCount ?? 0)
         : 0
 
     return ok({

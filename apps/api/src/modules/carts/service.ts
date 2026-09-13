@@ -1,5 +1,5 @@
 import { and, desc, eq, isNull, lt } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { carts, customers, merchants, storeSettings } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
@@ -21,6 +21,7 @@ export type CartItem = {
 export class CartsService {
   /** Persist a server-side snapshot of the shopper's cart. */
   static async saveCart(
+    db: DB,
     slug: string,
     input: {
       cartId?: string
@@ -87,7 +88,7 @@ export class CartsService {
   }
 
   /** Mark a cart as abandoned + trigger recovery email. Returns count touched. */
-  static async sweepAbandonedCarts(abandonAfterMs: number = 24 * 60 * 60 * 1000): Promise<number> {
+  static async sweepAbandonedCarts(db: DB, abandonAfterMs: number = 24 * 60 * 60 * 1000): Promise<number> {
     const cutoff = new Date(Date.now() - abandonAfterMs)
 
     const abandoned = await db
@@ -132,7 +133,7 @@ export class CartsService {
         .from(carts)
         .where(eq(carts.id, cart.id))
 
-      await this.sendRecoveryEmail(cart.merchantId, email, updated.recoveryCode as string)
+      await this.sendRecoveryEmail(db, cart.merchantId, email, updated.recoveryCode as string)
       count++
     }
 
@@ -140,7 +141,7 @@ export class CartsService {
   }
 
   /** Recover a cart from a recovery code — restore the items (client revalidates stock). */
-  static async recoverCart(slug: string, recoveryCode: string, _customerId?: string) {
+  static async recoverCart(db: DB, slug: string, recoveryCode: string, _customerId?: string) {
     const [merchant] = await db
       .select()
       .from(merchants)
@@ -172,6 +173,7 @@ export class CartsService {
 
   /** Record a completed checkout — mark any matching cart as converted. */
   static async markConverted(
+    db: DB,
     merchantId: string,
     cartId: string | null | undefined,
     orderId: string
@@ -184,7 +186,7 @@ export class CartsService {
   }
 
   /** List carts for the merchant dashboard. */
-  static async list(merchantId: string, query: { status?: string; page?: string; limit?: string } = {}) {
+  static async list(db: DB, merchantId: string, query: { status?: string; page?: string; limit?: string } = {}) {
     const page = Number(query.page ?? 1)
     const limit = Math.min(Number(query.limit ?? 50), 100)
     const offset = (page - 1) * limit
@@ -217,7 +219,7 @@ export class CartsService {
     })
   }
 
-  private static async sendRecoveryEmail(merchantId: string, to: string, recoveryCode: string) {
+  private static async sendRecoveryEmail(db: DB, merchantId: string, to: string, recoveryCode: string) {
     try {
       const [merchant] = await db
         .select({ name: merchants.name })

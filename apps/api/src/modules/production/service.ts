@@ -1,5 +1,6 @@
 import { and, count, desc, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import {
   billOfMaterials,
   bomItems,
@@ -28,7 +29,7 @@ const PO_STATUS_TRANSITIONS: Record<string, string[]> = {
 const nextNumber = (prefix: string) =>
   `${prefix}${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`
 
-const assertBomInMerchant = async (merchantId: string, bomId: string) => {
+const assertBomInMerchant = async (db: DB, merchantId: string, bomId: string) => {
   const [row] = await db
     .select()
     .from(billOfMaterials)
@@ -37,7 +38,7 @@ const assertBomInMerchant = async (merchantId: string, bomId: string) => {
   return row
 }
 
-const assertBatchInMerchant = async (merchantId: string, batchId: string) => {
+const assertBatchInMerchant = async (db: DB, merchantId: string, batchId: string) => {
   const [row] = await db
     .select()
     .from(productionOrders)
@@ -49,7 +50,7 @@ const assertBatchInMerchant = async (merchantId: string, batchId: string) => {
 export class ProductionService {
   /* ----------------------------------- BOM ---------------------------------- */
 
-  static async listBoms(merchantId: string, q: { page?: string; limit?: string; search?: string; status?: string }) {
+  static async listBoms(db: DB, merchantId: string, q: { page?: string; limit?: string; search?: string; status?: string }) {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [eq(billOfMaterials.merchantId, merchantId)]
     if (q.search) conditions.push(sql`${billOfMaterials.name} ilike ${`%${q.search.trim()}%`}`)
@@ -88,8 +89,8 @@ export class ProductionService {
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async getBom(merchantId: string, id: string) {
-    const bom = await assertBomInMerchant(merchantId, id)
+  static async getBom(db: DB, merchantId: string, id: string) {
+    const bom = await assertBomInMerchant(db, merchantId, id)
     const [output] = await db
       .select({
         name: products.name,
@@ -117,6 +118,7 @@ export class ProductionService {
   }
 
   static async createBom(
+    db: DB,
     merchantId: string,
     input: {
       name: string
@@ -126,7 +128,7 @@ export class ProductionService {
       items: Array<{ variantId: string; quantity: number }>
     }
   ) {
-    const cleaned = await this.validateBom(merchantId, input, input.outputVariantId)
+    const cleaned = await this.validateBom(db, merchantId, input, input.outputVariantId)
     const [bom] = await db
       .insert(billOfMaterials)
       .values({
@@ -146,6 +148,7 @@ export class ProductionService {
   }
 
   static async updateBom(
+    db: DB,
     merchantId: string,
     id: string,
     input: {
@@ -155,7 +158,7 @@ export class ProductionService {
       items?: Array<{ variantId: string; quantity: number }>
     }
   ) {
-    const bom = await assertBomInMerchant(merchantId, id)
+    const bom = await assertBomInMerchant(db, merchantId, id)
 
     const patch: Record<string, unknown> = {
       ...(input.name !== undefined && { name: input.name.trim() }),
@@ -167,7 +170,7 @@ export class ProductionService {
       // Components are locked in once the BOM leaves draft — a later change
       // would rewrite historical consumption.
       if (bom.status !== 'draft') throw conflict('BOM_LOCKED', 'Only draft BOMs can change their components')
-      const items = await this.validateBom(merchantId, { items: input.items }, bom.outputVariantId)
+      const items = await this.validateBom(db, merchantId, { items: input.items }, bom.outputVariantId)
       await db.delete(bomItems).where(eq(bomItems.bomId, id))
       await db.insert(bomItems).values(
         items.map((it) => ({ bomId: id, variantId: it.variantId, quantity: it.quantity }))
@@ -184,6 +187,7 @@ export class ProductionService {
 
   /** Validates BOM items and returns them deduped/totaled per variant. */
   private static async validateBom(
+    db: DB,
     merchantId: string,
     input: { items: Array<{ variantId: string; quantity: number }> },
     outputVariantId: string
@@ -217,6 +221,7 @@ export class ProductionService {
   /* ------------------------------ production orders ------------------------------ */
 
   static async listProductionOrders(
+    db: DB,
     merchantId: string,
     q: { page?: string; limit?: string; status?: string; bomId?: string }
   ) {
@@ -259,8 +264,8 @@ export class ProductionService {
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async getProductionOrder(merchantId: string, id: string) {
-    const order = await assertBatchInMerchant(merchantId, id)
+  static async getProductionOrder(db: DB, merchantId: string, id: string) {
+    const order = await assertBatchInMerchant(db, merchantId, id)
     const bom = await db
       .select({
         name: billOfMaterials.name,
@@ -288,10 +293,11 @@ export class ProductionService {
   }
 
   static async createProductionOrder(
+    db: DB,
     merchantId: string,
     input: { bomId: string; quantity: number; notes?: string }
   ) {
-    const bom = await assertBomInMerchant(merchantId, input.bomId)
+    const bom = await assertBomInMerchant(db, merchantId, input.bomId)
     if (bom.status !== 'active') throw conflict('BOM_NOT_ACTIVE', 'Only active BOMs can be produced')
     if (!Number.isInteger(input.quantity) || input.quantity <= 0) {
       throw badRequest('INVALID_QUANTITY', 'Batch quantity must be a positive integer')
@@ -311,8 +317,8 @@ export class ProductionService {
     return ok(order)
   }
 
-  static async transitionProductionOrder(merchantId: string, id: string, to: string) {
-    const order = await assertBatchInMerchant(merchantId, id)
+  static async transitionProductionOrder(db: DB, merchantId: string, id: string, to: string) {
+    const order = await assertBatchInMerchant(db, merchantId, id)
     const allowed = PO_STATUS_TRANSITIONS[order.status as string] ?? []
     if (!allowed.includes(to)) {
       throw conflict('BAD_TRANSITION', `Cannot move a ${order.status} production order to ${to}`)
@@ -338,15 +344,16 @@ export class ProductionService {
    * When a warehouse is provided, the same movements are mirrored there.
    */
   static async completeProduction(
+    db: DB,
     merchantId: string,
     id: string,
     input: { warehouseId?: string }
   ) {
-    const order = await assertBatchInMerchant(merchantId, id)
+    const order = await assertBatchInMerchant(db, merchantId, id)
     if (order.status === 'completed') throw conflict('ALREADY_COMPLETED', 'Production order is already completed')
     if (order.status === 'cancelled') throw conflict('CANCELLED', 'Cancelled production orders cannot be completed')
 
-    const bom = await assertBomInMerchant(merchantId, order.bomId)
+    const bom = await assertBomInMerchant(db, merchantId, order.bomId)
     const items = await db
       .select()
       .from(bomItems)

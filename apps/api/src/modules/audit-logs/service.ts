@@ -1,5 +1,5 @@
 import { desc, gt, lt, and, eq, count } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { auditLogs } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
@@ -21,7 +21,7 @@ export interface AuditLogInput {
 
 export class AuditService {
   /** Fire-and-forget audit recorder. Never throws, never blocks the caller. */
-  static async log(input: AuditLogInput) {
+  static async log(db: DB, input: AuditLogInput) {
     try {
       await db.insert(auditLogs).values({
         merchantId: input.merchantId,
@@ -39,6 +39,7 @@ export class AuditService {
   }
 
   static async list(
+    db: DB,
     merchantId: string,
     q: {
       page?: string
@@ -79,7 +80,7 @@ export class AuditService {
     })
   }
 
-  static async detail(merchantId: string, id: string) {
+  static async detail(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select()
       .from(auditLogs)

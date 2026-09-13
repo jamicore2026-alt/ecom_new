@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import {
   stockTransfers,
   warehouseInventory,
@@ -11,7 +11,7 @@ import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
 
 export class WarehousesService {
-  static async list(merchantId: string) {
+  static async list(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(warehouses)
@@ -20,7 +20,7 @@ export class WarehousesService {
     return ok({ items: rows })
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select()
       .from(warehouses)
@@ -30,6 +30,7 @@ export class WarehousesService {
   }
 
   static async create(
+    db: DB,
     merchantId: string,
     input: {
       name: string
@@ -64,6 +65,7 @@ export class WarehousesService {
   }
 
   static async update(
+    db: DB,
     merchantId: string,
     id: string,
     input: {
@@ -74,7 +76,7 @@ export class WarehousesService {
       status?: string
     }
   ) {
-    await this.get(merchantId, id)
+    await this.get(db, merchantId, id)
     if (input.isDefault) {
       await db
         .update(warehouses)
@@ -95,7 +97,7 @@ export class WarehousesService {
     return ok(row)
   }
 
-  static async listInventory(merchantId: string, warehouseId: string) {
+  static async listInventory(db: DB, merchantId: string, warehouseId: string) {
     const [warehouse] = await db
       .select()
       .from(warehouses)
@@ -129,6 +131,7 @@ export class WarehousesService {
 
   /** Set absolute stock for a variant in a warehouse. */
   static async setInventory(
+    db: DB,
     merchantId: string,
     warehouseId: string,
     variantId: string,
@@ -164,6 +167,7 @@ export class WarehousesService {
 
   /** Transfer stock between warehouses. */
   static async transfer(
+    db: DB,
     merchantId: string,
     input: {
       fromWarehouseId: string
@@ -249,7 +253,7 @@ export class WarehousesService {
     return ok({ transferred: true, quantity: input.quantity })
   }
 
-  static async listTransfers(merchantId: string) {
+  static async listTransfers(db: DB, merchantId: string) {
     const rows = await db
       .select({
         id: stockTransfers.id,
@@ -265,23 +269,24 @@ export class WarehousesService {
       .where(eq(stockTransfers.merchantId, merchantId))
       .orderBy(desc(stockTransfers.createdAt))
 
-    const enriched = await this.enrichTransfers(merchantId, rows)
+    const enriched = await this.enrichTransfers(db, merchantId, rows)
     return ok({ items: enriched })
   }
 
-  static async getTransfer(merchantId: string, id: string) {
+  static async getTransfer(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select()
       .from(stockTransfers)
       .where(and(eq(stockTransfers.id, id), eq(stockTransfers.merchantId, merchantId)))
     if (!row) throw notFound('TRANSFER_NOT_FOUND', 'Transfer not found')
 
-    const [enriched] = await this.enrichTransfers(merchantId, [row])
+    const [enriched] = await this.enrichTransfers(db, merchantId, [row])
     return ok(enriched)
   }
 
   /** Join warehouse and product/variant names onto raw transfer rows. */
   private static async enrichTransfers(
+    db: DB,
     merchantId: string,
     rows: Array<{
       id: string

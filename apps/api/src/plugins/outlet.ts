@@ -55,6 +55,7 @@ export const outletGuard = (opts: OutletGuardOptions = {}) => {
       if (!auth) throw unauthorized()
 
       const context = await resolveMerchantContext(
+        auth.db,
         auth.user.id,
         auth.merchant.id,
         isAdmin(auth),

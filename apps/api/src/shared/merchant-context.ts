@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
-import { db } from '../database/client'
 import { merchantModules, outlets, userOutlets } from '../database/schema'
+import type { DB } from '../database/client'
 import type { Outlet } from '../database/schema'
 import { DEFAULT_MODULES, type ModuleId, type Scope } from './types'
 
@@ -29,6 +29,7 @@ export interface MerchantContext {
  * this service owns outlet + module scope only.
  */
 export async function resolveMerchantContext(
+  db: DB,
   userId: string,
   merchantId: string,
   isAdminUser: boolean,

@@ -1,12 +1,12 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { userOutlets, outlets, users } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
 
 export class UserOutletsService {
   /** List outlets a given user is explicitly assigned to. */
-  static async listForUser(merchantId: string, userId: string) {
+  static async listForUser(db: DB, merchantId: string, userId: string) {
     // ensure the user belongs to this merchant
     const [user] = await db
       .select()
@@ -23,7 +23,7 @@ export class UserOutletsService {
   }
 
   /** Replace the outlet assignments for a user (must all belong to merchant). */
-  static async assign(merchantId: string, userId: string, outletIds: string[]) {
+  static async assign(db: DB, merchantId: string, userId: string, outletIds: string[]) {
     const [user] = await db
       .select()
       .from(users)

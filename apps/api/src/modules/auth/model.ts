@@ -30,7 +30,8 @@ export const authMerchant = t.Object({
   id: t.String(),
   name: t.String(),
   slug: t.String(),
-  currency: t.String()
+  currency: t.String(),
+  status: t.String()
 })
 
 const settings = t.Object({

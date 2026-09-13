@@ -10,12 +10,12 @@ export const customerTagsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
 
   .get('/customers/:id/tags', async ({ auth, params }) =>
-    CustomerTagsService.listByCustomer(auth.merchant.id, params.id))
+    CustomerTagsService.listByCustomer(auth.db, auth.merchant.id, params.id))
 
   .use(requirePermission('settings.manage'))
   .post('/customers/:id/tags', async ({ auth, params, body, request }) => {
-    const result = await CustomerTagsService.add(auth.merchant.id, params.id, body.tag)
-    auditFromRequest(auth, request, {
+    const result = await CustomerTagsService.add(auth.db, auth.merchant.id, params.id, body.tag)
+    await auditFromRequest(auth, request, {
       action: 'customer.tag_add',
       entityType: 'customer',
       entityId: params.id
@@ -23,8 +23,8 @@ export const customerTagsModule = new Elysia({ prefix: '/api' })
     return result
   }, { body: tagBody })
   .delete('/customers/:id/tags/:tag', async ({ auth, params, request }) => {
-    const result = await CustomerTagsService.remove(auth.merchant.id, params.id, params.tag)
-    auditFromRequest(auth, request, {
+    const result = await CustomerTagsService.remove(auth.db, auth.merchant.id, params.id, params.tag)
+    await auditFromRequest(auth, request, {
       action: 'customer.tag_remove',
       entityType: 'customer',
       entityId: params.id

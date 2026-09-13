@@ -1,17 +1,17 @@
 import { and, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { roles } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound, conflict, badRequest } from '../../shared/errors'
 import { normalizePermissions } from '../../shared/types'
 
 export class RolesService {
-  static async list(merchantId: string) {
+  static async list(db: DB, merchantId: string) {
     const rows = await db.select().from(roles).where(eq(roles.merchantId, merchantId))
     return ok(rows)
   }
 
-  static async get(merchantId: string, roleId: string) {
+  static async get(db: DB, merchantId: string, roleId: string) {
     const [row] = await db
       .select()
       .from(roles)
@@ -20,8 +20,8 @@ export class RolesService {
     return ok(row)
   }
 
-  static async create(merchantId: string, input: { name: string; permissions?: string[]; scope?: string }) {
-    await this.assertNameAvailable(merchantId, input.name)
+  static async create(db: DB, merchantId: string, input: { name: string; permissions?: string[]; scope?: string }) {
+    await this.assertNameAvailable(db, merchantId, input.name)
     const [row] = await db
       .insert(roles)
       .values({
@@ -36,6 +36,7 @@ export class RolesService {
   }
 
   static async update(
+    db: DB,
     merchantId: string,
     roleId: string,
     input: { name?: string; permissions?: string[]; scope?: string }
@@ -48,7 +49,7 @@ export class RolesService {
     if (existing.isSystem) throw badRequest('IMMUTABLE_ROLE', 'System roles cannot be modified')
 
     if (input.name && input.name !== existing.name) {
-      await this.assertNameAvailable(merchantId, input.name, roleId)
+      await this.assertNameAvailable(db, merchantId, input.name, roleId)
     }
 
     const [row] = await db
@@ -63,7 +64,7 @@ export class RolesService {
     return ok(row)
   }
 
-  static async remove(merchantId: string, roleId: string) {
+  static async remove(db: DB, merchantId: string, roleId: string) {
     const [existing] = await db
       .select()
       .from(roles)
@@ -75,6 +76,7 @@ export class RolesService {
   }
 
   private static async assertNameAvailable(
+    db: DB,
     merchantId: string,
     name: string,
     excludeId?: string

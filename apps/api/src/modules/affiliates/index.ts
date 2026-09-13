@@ -14,8 +14,8 @@ export const affiliatesModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(requirePermission('settings.manage'))
 
-  .get('/affiliates', async ({ auth }) => AffiliatesService.list(auth.merchant.id))
-  .get('/affiliates/:id/referrals', async ({ auth, params }) => AffiliatesService.referrals(auth.merchant.id, params.id))
+  .get('/affiliates', async ({ auth }) => AffiliatesService.list(auth.db, auth.merchant.id))
+  .get('/affiliates/:id/referrals', async ({ auth, params }) => AffiliatesService.referrals(auth.db, auth.merchant.id, params.id))
 
   .use(requirePermission('settings.manage'))
-  .post('/affiliates', async ({ auth, body }) => AffiliatesService.create(auth.merchant.id, body), { body: affiliateBody })
+  .post('/affiliates', async ({ auth, body }) => AffiliatesService.create(auth.db, auth.merchant.id, body), { body: affiliateBody })

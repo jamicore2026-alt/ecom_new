@@ -5,7 +5,7 @@ import { OrdersService } from './modules/orders/service'
 import { runJobWorker } from './shared/jobs-worker'
 import { CartsService } from './modules/carts/service'
 import { closeRateLimitStore } from './shared/rate-limit'
-import { connection } from './database/client'
+import { connection, db } from './database/client'
 import { logStorageDriver } from './shared/storage'
 import { createLogger } from './shared/logger'
 
@@ -27,7 +27,7 @@ const pruneRevokedTokens = () =>
 // Release refund reservations whose process died between the gateway call and
 // the resolution transaction (crash safety — see OrdersService.retryRefund).
 const reconcileRefunds = () =>
-  OrdersService.reconcileStaleRefunds().catch((err) =>
+  OrdersService.reconcileStaleRefunds(db).catch((err) =>
     log.error('reconciliation failed', err)
   )
 
@@ -40,7 +40,7 @@ const runWorkers = () =>
 // Abandoned carts: after 24h of inactivity, mark + send a recovery email.
 const ABANDON_AFTER_MS = 24 * 60 * 60 * 1000
 const sweepAbandonedCarts = () =>
-  CartsService.sweepAbandonedCarts(ABANDON_AFTER_MS).catch((err) =>
+  CartsService.sweepAbandonedCarts(db, ABANDON_AFTER_MS).catch((err) =>
     log.error('abandoned-cart sweep failed', err)
   )
 

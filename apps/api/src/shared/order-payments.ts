@@ -1,9 +1,9 @@
 import { and, eq, sql } from 'drizzle-orm'
-import { db } from '../database/client'
 import { customers, orders, visits } from '../database/schema'
 import { badRequest } from './errors'
+import type { DB } from '../database/client'
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+type Tx = Parameters<Parameters<DB['transaction']>[0]>[0]
 type OrderRow = typeof orders.$inferSelect
 
 /**
@@ -39,6 +39,7 @@ export const markOrderPaidEffects = async (tx: Tx, merchantId: string, order: Or
  * invariant as gateway payments so totals/emails/visits stay consistent.
  */
 export const applyManualMarkPaid = async (
+  db: DB,
   order: OrderRow,
   extra: Partial<OrderRow> = {}
 ): Promise<OrderRow> =>

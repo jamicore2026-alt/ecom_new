@@ -1,12 +1,12 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { customers, loyaltyAccounts, loyaltyLedger } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
 
 export class LoyaltyService {
   /** Verify the customer belongs to the current merchant before touching loyalty data. */
-  private static async assertCustomer(merchantId: string, customerId: string) {
+  private static async assertCustomer(db: DB, merchantId: string, customerId: string) {
     const [customer] = await db
       .select({ id: customers.id })
       .from(customers)
@@ -16,8 +16,8 @@ export class LoyaltyService {
   }
 
   /** Ensure a loyalty account exists for a customer and return it. */
-  static async ensureAccount(merchantId: string, customerId: string) {
-    await this.assertCustomer(merchantId, customerId)
+  static async ensureAccount(db: DB, merchantId: string, customerId: string) {
+    await this.assertCustomer(db, merchantId, customerId)
     const [existing] = await db
       .select()
       .from(loyaltyAccounts)
@@ -43,11 +43,12 @@ export class LoyaltyService {
    * and SQL expressions prevent lost updates under concurrent credits/debits.
    */
   static async adjust(
+    db: DB,
     merchantId: string,
     customerId: string,
     input: { points: number; type: string; reference?: string; meta?: Record<string, unknown> }
   ) {
-    const account = await this.ensureAccount(merchantId, customerId)
+    const account = await this.ensureAccount(db, merchantId, customerId)
     if (!account) throw notFound('LOYALTY_ACCOUNT_NOT_FOUND', 'Loyalty account not found')
 
     return await db.transaction(async (tx) => {
@@ -90,13 +91,13 @@ export class LoyaltyService {
     })
   }
 
-  static async getByCustomer(merchantId: string, customerId: string) {
-    const account = await this.ensureAccount(merchantId, customerId)
+  static async getByCustomer(db: DB, merchantId: string, customerId: string) {
+    const account = await this.ensureAccount(db, merchantId, customerId)
     return ok(account)
   }
 
-  static async ledger(merchantId: string, customerId: string) {
-    await this.assertCustomer(merchantId, customerId)
+  static async ledger(db: DB, merchantId: string, customerId: string) {
+    await this.assertCustomer(db, merchantId, customerId)
     const rows = await db
       .select()
       .from(loyaltyLedger)
@@ -111,7 +112,7 @@ export class LoyaltyService {
    * Returns member counts, outstanding/redeemable balance, lifetime points issued,
    * total redeemed, and a tier distribution.
    */
-  static async overview(merchantId: string) {
+  static async overview(db: DB, merchantId: string) {
     const [counts] = await db
       .select({
         members: sql<number>`count(*)::int`,

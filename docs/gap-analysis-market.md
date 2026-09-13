@@ -4,8 +4,10 @@ Scope: JamiCore's feature surface vs the 2026 multi-tenant commerce SaaS landsca
 
 ## What JamiCore ships today (inventory)
 
-**Commerce core:** products w/ variants + categories, inventory + thresholds, stock movements, checkout w/ promotions/discounts/COD rules/checkout settings, orders (full state machine), payments (MyFatoorah, Tamara), coupons, invoices, reviews, wishlist, carts, customer accounts + addresses + tags + segments.
-**Operations-adjacent (the unusual half):** POS, tables + table sessions, kitchen display (KDS), food orders, delivery fleet (zones, carriers, drivers, assignments), warehouses + transfers + procurement + BOM/production orders.
+**Commerce core:** products w/ variants + categories, inventory + thresholds, stock movements, checkout w/ promotions/discounts/COD rules/checkout settings, orders (full state machine), payments (MyFatoorah, Tamara), coupons, invoices, refunds (idempotent retries), reviews, wishlist, carts, customer accounts + addresses + tags + segments.
+**F&B native:** menu items → modifier groups → modifiers → per-outlet availability + price overrides (`schema.ts:142-241`), table sessions + POS, kitchen display (`/kds` stations/tickets/items), food orders, delivery fleet (zones, carriers, drivers, assignments).
+**Warehouse/manufacturing native:** warehouses + stock transfers, procurement (suppliers, purchase orders, goods receipts), BOM/production orders (`schema.ts:1437-1630`).
+**Operations completion:** fulfillments (carrier/tracking/label), idempotent checkout (orders/refunds idempotency keys), customer self-service auth (verify/reset/forgot), SEO (storefront sitemap.xml + robots.txt).
 **Growth tooling:** affiliates/referrals, campaigns, loyalty (tiers/rewards/rules/ledger), email templates, content pages, theme configs, analytics/profit, CSV import/export, API keys, outbound webhooks, audit logs.
 **Tenancy:** merchant tenants, outlets, RBAC roles, module gating (see `gap-analysis-saas.md`).
 
@@ -29,6 +31,8 @@ Scope: JamiCore's feature surface vs the 2026 multi-tenant commerce SaaS landsca
 ## The actual gap / opportunity
 
 **JamiCore is not competing to be "Shopify for X".** Its differentiator — *the whole reason a merchant signs up* — is that **point-of-sale, dining/restaurant flow, delivery ops, and warehouse/manufacturing are native**, not app-shaped. On Shopify or BigCommerce every one of those is a paid app, a separate data model, and an integration project. That is the wedge: **"one box for merchants who sell across storefront + physical outlet + dine-in + delivery + inventory across warehouses."**
+
+The F&B data model alone is a selling point against POS competitors: a full menu (items → modifier groups → modifiers), per-outlet availability and price overrides (`menu_item_outlets`), time-based item availability, kitchen-station routing, and KOT ticket state — all native, wired to the same orders/checkout/warehouse engine the storefront uses. Toast/Square do POS menus; they don't pair them with multi-warehouse inventory, procurement PO's, and a BOM-driven production floor in one subscription.
 
 The market **gap** JamiCore must close to make that wedge sellable:
 

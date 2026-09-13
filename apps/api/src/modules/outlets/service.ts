@@ -1,5 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { outlets } from '../../database/schema'
 import type { MerchantContext } from '../../shared/merchant-context'
 import { ok } from '../../shared/response'
@@ -14,7 +14,7 @@ export interface OutletInput {
 }
 
 export class OutletsService {
-  static async list(merchantId: string) {
+  static async list(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(outlets)
@@ -23,11 +23,11 @@ export class OutletsService {
     return ok(rows)
   }
 
-  static async listAllowed(ctx: MerchantContext) {
+  static async listAllowed(db: DB, ctx: MerchantContext) {
     return ok(ctx.allowedOutlets)
   }
 
-  static async get(merchantId: string, outletId: string) {
+  static async get(db: DB, merchantId: string, outletId: string) {
     const [row] = await db
       .select()
       .from(outlets)
@@ -36,7 +36,7 @@ export class OutletsService {
     return ok(row)
   }
 
-  static async create(merchantId: string, input: OutletInput) {
+  static async create(db: DB, merchantId: string, input: OutletInput) {
     const [existing] = await db
       .select()
       .from(outlets)
@@ -56,7 +56,7 @@ export class OutletsService {
     return ok(row)
   }
 
-  static async update(merchantId: string, outletId: string, input: Partial<OutletInput>) {
+  static async update(db: DB, merchantId: string, outletId: string, input: Partial<OutletInput>) {
     const [existing] = await db
       .select()
       .from(outlets)
@@ -84,7 +84,7 @@ export class OutletsService {
     return ok(row)
   }
 
-  static async archive(merchantId: string, outletId: string) {
+  static async archive(db: DB, merchantId: string, outletId: string) {
     const [existing] = await db
       .select()
       .from(outlets)

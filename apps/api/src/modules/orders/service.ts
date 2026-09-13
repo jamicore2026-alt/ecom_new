@@ -1,6 +1,7 @@
 import { and, count, desc, eq, gte, ilike, lte, ne, or, sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
+import { db as platformDb } from '../../database/client'
 import { toCsv } from '../../shared/csv'
 import { createLogger } from '../../shared/logger'
 
@@ -76,7 +77,7 @@ interface OrderQuery {
 export class OrdersService {
   /* --------------------------------- list --------------------------------- */
 
-  static async list(merchantId: string, q: OrderQuery, branchIds: string[] | null = null) {
+  static async list(db: DB, merchantId: string, q: OrderQuery, branchIds: string[] | null = null) {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [eq(orders.merchantId, merchantId)]
 
@@ -142,7 +143,7 @@ export class OrdersService {
 
   /* ------------------------------ csv export ------------------------------ */
 
-  static async exportCsv(merchantId: string, branchIds: string[] | null = null): Promise<string> {
+  static async exportCsv(db: DB, merchantId: string, branchIds: string[] | null = null): Promise<string> {
     const conditions = [eq(orders.merchantId, merchantId)]
     const scoped = branchOrderCondition(branchIds)
     if (scoped) conditions.push(scoped)
@@ -216,7 +217,7 @@ export class OrdersService {
 
   /* -------------------------------- detail -------------------------------- */
 
-  static async get(merchantId: string, id: string, branchIds: string[] | null = null) {
+  static async get(db: DB, merchantId: string, id: string, branchIds: string[] | null = null) {
     const [order] = await db
       .select()
       .from(orders)
@@ -263,6 +264,7 @@ export class OrdersService {
   /* ------------------------------- workflow ------------------------------- */
 
   static async updateStatus(
+    db: DB,
     merchantId: string,
     id: string,
     input: { status?: string; paymentStatus?: string; fulfillmentStatus?: string },
@@ -282,7 +284,7 @@ export class OrdersService {
       if (input.paymentStatus && input.paymentStatus !== order.paymentStatus) {
         throw badRequest('INVALID_TRANSITION', 'Cannot combine cancellation with a payment change')
       }
-      return this.cancel(merchantId, id, branchIds)
+      return this.cancel(db, merchantId, id, branchIds)
     }
 
     if (input.status && input.status !== order.status) {
@@ -336,6 +338,7 @@ export class OrdersService {
       // Route the unpaid→paid flip through the shared helper so customer totals,
       // funnel metrics and emails behave exactly like gateway payments.
       const applied = await applyManualMarkPaid(
+        db,
         order,
         values.status ? { status: values.status } : {}
       )
@@ -353,7 +356,7 @@ export class OrdersService {
     return ok(updated)
   }
 
-  static async cancel(merchantId: string, id: string, branchIds: string[] | null = null) {
+  static async cancel(db: DB, merchantId: string, id: string, branchIds: string[] | null = null) {
     const [order] = await db
       .select()
       .from(orders)
@@ -400,6 +403,7 @@ export class OrdersService {
   /* ------------------------- returns / refunds ---------------------------- */
 
   static async createReturn(
+    db: DB,
     merchantId: string,
     input: { orderId: string; orderItemId: string; quantity: number; reason?: string },
     branchIds: string[] | null = null
@@ -473,6 +477,7 @@ export class OrdersService {
   }
 
   static async updateReturn(
+    db: DB,
     merchantId: string,
     id: string,
     input: { status: 'approved' | 'rejected' },
@@ -544,7 +549,7 @@ export class OrdersService {
     return ok(updated)
   }
 
-  static async listReturns(merchantId: string, orderId: string | undefined, branchIds: string[] | null = null) {
+  static async listReturns(db: DB, merchantId: string, orderId: string | undefined, branchIds: string[] | null = null) {
     const conditions = [eq(returnsTable.merchantId, merchantId)]
     if (orderId) conditions.push(eq(returnsTable.orderId, orderId))
     const scoped = branchOrderCondition(branchIds)
@@ -569,6 +574,7 @@ export class OrdersService {
   }
 
   static async createRefund(
+    db: DB,
     merchantId: string,
     input: { orderId: string; returnId?: string; amount: number; method?: string; idempotencyKey?: string },
     branchIds: string[] | null = null
@@ -779,7 +785,7 @@ export class OrdersService {
       return row
     })
 
-    void EmailsService.refundProcessed(merchantId, reserved.order.id, input.amount)
+    void EmailsService.refundProcessed(platformDb, merchantId, reserved.order.id, input.amount)
     emit(merchantId, 'refund.completed', {
       refundId: refund.id,
       orderId: reserved.order.id,
@@ -795,7 +801,7 @@ export class OrdersService {
    * the SAME idempotency key, so a provider that saw the first attempt dedupes
    * instead of paying out twice. Attempt count is tracked for auditability.
    */
-  static async retryRefund(merchantId: string, refundId: string, branchIds: string[] | null = null) {
+  static async retryRefund(db: DB, merchantId: string, refundId: string, branchIds: string[] | null = null) {
     const [refund] = await db
       .select()
       .from(refunds)
@@ -905,7 +911,7 @@ export class OrdersService {
         })
         .where(eq(orders.id, order.id))
 
-      void EmailsService.refundProcessed(merchantId, order.id, Number(refund.amount))
+      void EmailsService.refundProcessed(platformDb, merchantId, order.id, Number(refund.amount))
       return ok(row)
     })
   }
@@ -919,6 +925,7 @@ export class OrdersService {
    * payment-callback webhook delegate here so payment state has a single owner.
    */
   static async applyPaymentResult(
+    db: DB,
     merchantId: string,
     providerId: string,
     result: CallbackResult
@@ -984,7 +991,7 @@ export class OrdersService {
     })
 
     if (paidOrderId) {
-      void EmailsService.orderPaid(merchantId, paidOrderId)
+      void EmailsService.orderPaid(platformDb, merchantId, paidOrderId)
       const [order] = await db
         .select({ orderNumber: orders.orderNumber })
         .from(orders)
@@ -1002,7 +1009,7 @@ export class OrdersService {
    * the balance becomes refundable again — the retry endpoint can still push
    * it through with the same idempotency key.
    */
-  static async reconcileStaleRefunds() {
+  static async reconcileStaleRefunds(db: DB) {
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000)
     const released = await db
       .update(refunds)
@@ -1014,7 +1021,7 @@ export class OrdersService {
     }
   }
 
-  static async listRefunds(merchantId: string, orderId: string | undefined, branchIds: string[] | null = null) {
+  static async listRefunds(db: DB, merchantId: string, orderId: string | undefined, branchIds: string[] | null = null) {
     const conditions = [eq(refunds.merchantId, merchantId)]
     if (orderId) conditions.push(eq(refunds.orderId, orderId))
     const scoped = branchOrderCondition(branchIds)

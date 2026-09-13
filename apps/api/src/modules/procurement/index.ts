@@ -53,47 +53,47 @@ export const procurementModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(requirePermission('inventory.read'))
 
-  .get('/suppliers', async ({ auth, query }) => ProcurementService.listSuppliers(auth.merchant.id, query))
-  .get('/suppliers/:id', async ({ auth, params }) => ProcurementService.getSupplier(auth.merchant.id, params.id), {
+  .get('/suppliers', async ({ auth, query }) => ProcurementService.listSuppliers(auth.db, auth.merchant.id, query))
+  .get('/suppliers/:id', async ({ auth, params }) => ProcurementService.getSupplier(auth.db, auth.merchant.id, params.id), {
     params: idParam
   })
-  .get('/purchase-orders', async ({ auth, query }) => ProcurementService.listPurchaseOrders(auth.merchant.id, query))
-  .get('/purchase-orders/:id', async ({ auth, params }) => ProcurementService.getPurchaseOrder(auth.merchant.id, params.id), {
+  .get('/purchase-orders', async ({ auth, query }) => ProcurementService.listPurchaseOrders(auth.db, auth.merchant.id, query))
+  .get('/purchase-orders/:id', async ({ auth, params }) => ProcurementService.getPurchaseOrder(auth.db, auth.merchant.id, params.id), {
     params: idParam
   })
-  .get('/goods-receipts', async ({ auth, query }) => ProcurementService.listGoodsReceipts(auth.merchant.id, query))
-  .get('/goods-receipts/:id', async ({ auth, params }) => ProcurementService.getGoodsReceipt(auth.merchant.id, params.id), {
+  .get('/goods-receipts', async ({ auth, query }) => ProcurementService.listGoodsReceipts(auth.db, auth.merchant.id, query))
+  .get('/goods-receipts/:id', async ({ auth, params }) => ProcurementService.getGoodsReceipt(auth.db, auth.merchant.id, params.id), {
     params: idParam
   })
 
   .use(requirePermission('inventory.manage'))
 
-  .post('/suppliers', async ({ auth, body }) => ProcurementService.createSupplier(auth.merchant.id, body), {
+  .post('/suppliers', async ({ auth, body }) => ProcurementService.createSupplier(auth.db, auth.merchant.id, body), {
     body: supplierBody
   })
-  .put('/suppliers/:id', async ({ auth, params, body }) => ProcurementService.updateSupplier(auth.merchant.id, params.id, body), {
+  .put('/suppliers/:id', async ({ auth, params, body }) => ProcurementService.updateSupplier(auth.db, auth.merchant.id, params.id, body), {
     params: idParam,
     body: supplierUpdateBody
   })
 
-  .post('/purchase-orders', async ({ auth, body }) => ProcurementService.createPurchaseOrder(auth.merchant.id, body), {
+  .post('/purchase-orders', async ({ auth, body }) => ProcurementService.createPurchaseOrder(auth.db, auth.merchant.id, body), {
     body: purchaseOrderBody
   })
-  .put('/purchase-orders/:id', async ({ auth, params, body }) => ProcurementService.updatePurchaseOrder(auth.merchant.id, params.id, body), {
+  .put('/purchase-orders/:id', async ({ auth, params, body }) => ProcurementService.updatePurchaseOrder(auth.db, auth.merchant.id, params.id, body), {
     params: idParam,
     body: purchaseOrderUpdateBody
   })
-  .post('/purchase-orders/:id/submit', async ({ auth, params }) => ProcurementService.transitionPurchaseOrder(auth.merchant.id, params.id, 'pending'), {
+  .post('/purchase-orders/:id/submit', async ({ auth, params }) => ProcurementService.transitionPurchaseOrder(auth.db, auth.merchant.id, params.id, 'pending'), {
     params: idParam
   })
-  .post('/purchase-orders/:id/approve', async ({ auth, params }) => ProcurementService.transitionPurchaseOrder(auth.merchant.id, params.id, 'approved', auth.user.id), {
+  .post('/purchase-orders/:id/approve', async ({ auth, params }) => ProcurementService.transitionPurchaseOrder(auth.db, auth.merchant.id, params.id, 'approved', auth.user.id), {
     params: idParam
   })
-  .post('/purchase-orders/:id/cancel', async ({ auth, params }) => ProcurementService.transitionPurchaseOrder(auth.merchant.id, params.id, 'cancelled'), {
+  .post('/purchase-orders/:id/cancel', async ({ auth, params }) => ProcurementService.transitionPurchaseOrder(auth.db, auth.merchant.id, params.id, 'cancelled'), {
     params: idParam
   })
   .post('/purchase-orders/:id/receive', async ({ auth, params, body }) =>
-    ProcurementService.receiveGoods(auth.merchant.id, params.id, auth.user.id, body), {
+    ProcurementService.receiveGoods(auth.db, auth.merchant.id, params.id, auth.user.id, body), {
     params: idParam,
     body: receiveBody
   })

@@ -3,7 +3,9 @@ import postgres from 'postgres'
 import * as schema from './schema'
 
 export const DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/ecom_merchant'
+  process.env.APP_ADMIN_DATABASE_URL ??
+  process.env.DATABASE_URL ??
+  'postgres://postgres:postgres@localhost:5432/ecom_merchant'
 
 export const connection = postgres(DATABASE_URL, { max: 10 })
 

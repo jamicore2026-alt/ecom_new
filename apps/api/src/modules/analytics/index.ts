@@ -14,14 +14,14 @@ export const analyticsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(requirePermission('reports.read'))
   .get('/analytics/sales', async ({ query, auth }) =>
-    AnalyticsService.sales(auth.merchant.id, query, await branchScopeOf(auth)), { query: analyticsQuery }
+    AnalyticsService.sales(auth.db, auth.merchant.id, query, await branchScopeOf(auth.db, auth)), { query: analyticsQuery }
   )
   .get('/analytics/products', async ({ query, auth }) =>
-    AnalyticsService.products(auth.merchant.id, query, await branchScopeOf(auth)), { query: analyticsQuery }
+    AnalyticsService.products(auth.db, auth.merchant.id, query, await branchScopeOf(auth.db, auth)), { query: analyticsQuery }
   )
   .get('/analytics/customers', async ({ query, auth }) =>
-    AnalyticsService.customers(auth.merchant.id, query, await branchScopeOf(auth)), { query: analyticsQuery }
+    AnalyticsService.customers(auth.db, auth.merchant.id, query, await branchScopeOf(auth.db, auth)), { query: analyticsQuery }
   )
   .get('/analytics/conversion', async ({ query, auth }) =>
-    AnalyticsService.conversion(auth.merchant.id, query), { query: analyticsQuery }
+    AnalyticsService.conversion(auth.db, auth.merchant.id, query), { query: analyticsQuery }
   )

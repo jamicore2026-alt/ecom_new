@@ -38,38 +38,38 @@ export const productionModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(requirePermission('inventory.read'))
 
-  .get('/boms', async ({ auth, query }) => ProductionService.listBoms(auth.merchant.id, query))
-  .get('/boms/:id', async ({ auth, params }) => ProductionService.getBom(auth.merchant.id, params.id), {
+  .get('/boms', async ({ auth, query }) => ProductionService.listBoms(auth.db, auth.merchant.id, query))
+  .get('/boms/:id', async ({ auth, params }) => ProductionService.getBom(auth.db, auth.merchant.id, params.id), {
     params: idParam
   })
-  .get('/production-orders', async ({ auth, query }) => ProductionService.listProductionOrders(auth.merchant.id, query))
-  .get('/production-orders/:id', async ({ auth, params }) => ProductionService.getProductionOrder(auth.merchant.id, params.id), {
+  .get('/production-orders', async ({ auth, query }) => ProductionService.listProductionOrders(auth.db, auth.merchant.id, query))
+  .get('/production-orders/:id', async ({ auth, params }) => ProductionService.getProductionOrder(auth.db, auth.merchant.id, params.id), {
     params: idParam
   })
 
   .use(requirePermission('inventory.manage'))
 
-  .post('/boms', async ({ auth, body }) => ProductionService.createBom(auth.merchant.id, body), {
+  .post('/boms', async ({ auth, body }) => ProductionService.createBom(auth.db, auth.merchant.id, body), {
     body: bomBody
   })
-  .put('/boms/:id', async ({ auth, params, body }) => ProductionService.updateBom(auth.merchant.id, params.id, body), {
+  .put('/boms/:id', async ({ auth, params, body }) => ProductionService.updateBom(auth.db, auth.merchant.id, params.id, body), {
     params: idParam,
     body: bomUpdateBody
   })
 
-  .post('/production-orders', async ({ auth, body }) => ProductionService.createProductionOrder(auth.merchant.id, body), {
+  .post('/production-orders', async ({ auth, body }) => ProductionService.createProductionOrder(auth.db, auth.merchant.id, body), {
     body: batchBody
   })
   .post('/production-orders/:id/start', async ({ auth, params }) =>
-    ProductionService.transitionProductionOrder(auth.merchant.id, params.id, 'in_progress'), {
+    ProductionService.transitionProductionOrder(auth.db, auth.merchant.id, params.id, 'in_progress'), {
     params: idParam
   })
   .post('/production-orders/:id/complete', async ({ auth, params, body }) =>
-    ProductionService.completeProduction(auth.merchant.id, params.id, body), {
+    ProductionService.completeProduction(auth.db, auth.merchant.id, params.id, body), {
     params: idParam,
     body: completeBody
   })
   .post('/production-orders/:id/cancel', async ({ auth, params }) =>
-    ProductionService.transitionProductionOrder(auth.merchant.id, params.id, 'cancelled'), {
+    ProductionService.transitionProductionOrder(auth.db, auth.merchant.id, params.id, 'cancelled'), {
     params: idParam
   })

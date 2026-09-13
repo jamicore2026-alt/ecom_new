@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { themeConfigs } from '../../database/schema'
 import { ok } from '../../shared/response'
 
 export class ThemeService {
-  static async get(merchantId: string) {
+  static async get(db: DB, merchantId: string) {
     const [row] = await db
       .select()
       .from(themeConfigs)
@@ -25,6 +25,7 @@ export class ThemeService {
   }
 
   static async update(
+    db: DB,
     merchantId: string,
     input: {
       primaryColor?: string
@@ -37,7 +38,7 @@ export class ThemeService {
       config?: Record<string, unknown>
     }
   ) {
-    const current = await this.get(merchantId)
+    const current = await this.get(db, merchantId)
     await db
       .insert(themeConfigs)
       .values({
@@ -65,6 +66,6 @@ export class ThemeService {
           updatedAt: new Date()
         }
       })
-    return this.get(merchantId)
+    return this.get(db, merchantId)
   }
 }

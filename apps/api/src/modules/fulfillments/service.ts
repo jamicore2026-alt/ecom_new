@@ -1,5 +1,5 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
-import { db } from '../../database/client'
+import { and, desc, eq } from 'drizzle-orm'
+import type { DB } from '../../database/client'
 import { createLogger } from '../../shared/logger'
 
 const log = createLogger('fulfillments')
@@ -40,8 +40,18 @@ export const FULFILLMENT_TRANSITIONS: Record<FulfillmentStatus, FulfillmentStatu
   cancelled: []
 }
 
+/**
+ * The order-level `fulfillmentStatus` column is binary (unfulfilled|fulfilled,
+ * see orders `fulfillmentStatusSchema`). The per-fulfillment granular status
+ * lives on the fulfillment row; only shipped/delivered warrant 'fulfilled' at
+ * the order level.
+ */
+const toOrderFulfillmentStatus = (s: FulfillmentStatus): 'unfulfilled' | 'fulfilled' =>
+  s === 'shipped' || s === 'delivered' ? 'fulfilled' : 'unfulfilled'
+
 export class FulfillmentsService {
   static async list(
+    db: DB,
     merchantId: string,
     branchIds: string[] | null,
     query: { status?: string; orderId?: string; page?: string; limit?: string }
@@ -57,42 +67,40 @@ export class FulfillmentsService {
       .select()
       .from(fulfillments)
       .innerJoin(orders, eq(fulfillments.orderId, orders.id))
+      .leftJoin(customers, eq(orders.customerId, customers.id))
       .where(and(...conditions))
       .orderBy(desc(fulfillments.createdAt))
       .limit(limit)
       .offset(offset)
 
-    const orderIds = [...new Set(rows.map((r) => r.orders.id))]
-    const orderRows = orderIds.length
-      ? await db
-          .select({ id: orders.id, orderNumber: orders.orderNumber, customerId: orders.customerId })
-          .from(orders)
-          .where(inArray(orders.id, orderIds))
-      : []
-    const orderById = new Map(orderRows.map((o) => [o.id, o]))
-
     return ok({
       items: rows.map((r) => ({
         ...r.fulfillments,
-        orderNumber: orderById.get(r.fulfillments.orderId)?.orderNumber ?? null,
-        customerEmail: null
+        orderNumber: r.orders.orderNumber,
+        customerEmail: r.customers?.email ?? null
       })),
       meta: makeMeta(page, limit, rows.length)
     })
   }
 
-  static async get(merchantId: string, branchIds: string[] | null, id: string) {
+  static async get(db: DB, merchantId: string, branchIds: string[] | null, id: string) {
     const [row] = await db
       .select()
       .from(fulfillments)
       .innerJoin(orders, eq(fulfillments.orderId, orders.id))
+      .leftJoin(customers, eq(orders.customerId, customers.id))
       .where(and(eq(fulfillments.id, id), eq(fulfillments.merchantId, merchantId)))
     if (!row) throw notFound('FULFILLMENT_NOT_FOUND', 'Fulfillment not found')
     assertOrderInBranchScope(branchIds, row.orders.outletId)
-    return ok(row.fulfillments)
+    return ok({
+      ...row.fulfillments,
+      orderNumber: row.orders.orderNumber,
+      customerEmail: row.customers?.email ?? null
+    })
   }
 
   static async create(
+    db: DB,
     merchantId: string,
     branchIds: string[] | null,
     input: {
@@ -125,12 +133,19 @@ export class FulfillmentsService {
       })
       .returning()
 
-    await this.updateOrderFulfillmentStatus(order.merchantId, order.id, 'processing')
+    // The order-level fulfillmentStatus is binary — a freshly created fulfillment
+    // row stays 'unfulfilled' until it ships (see toOrderFulfillmentStatus).
+    await dispatchWebhookEvent(db, merchantId, 'fulfillment.created', {
+      fulfillmentId: row.id,
+      orderId: row.orderId,
+      status: row.status
+    })
 
     return ok(row)
   }
 
   static async update(
+    db: DB,
     merchantId: string,
     branchIds: string[] | null,
     id: string,
@@ -179,13 +194,15 @@ export class FulfillmentsService {
       .returning()
 
     // Derive the order-level fulfillment status from this fulfillment's status.
-    const orderFulfillmentStatus =
-      status === 'shipped' || status === 'delivered' || status === 'processing' || status === 'packed'
-        ? 'fulfilled'
-        : 'unfulfilled'
-    await this.updateOrderFulfillmentStatus(merchantId, updated.orderId, orderFulfillmentStatus)
+    // Only shipped/delivered move the order to 'fulfilled' (binary column).
+    await this.updateOrderFulfillmentStatus(
+      db,
+      merchantId,
+      updated.orderId,
+      toOrderFulfillmentStatus(status)
+    )
 
-    await dispatchWebhookEvent(merchantId, 'fulfillment.updated', {
+    await dispatchWebhookEvent(db, merchantId, 'fulfillment.updated', {
       fulfillmentId: updated.id,
       orderId: updated.orderId,
       status: updated.status,
@@ -193,26 +210,28 @@ export class FulfillmentsService {
     })
 
     if (status === 'shipped') {
-      await this.sendShippedEmail(merchantId, updated.orderId)
+      await this.sendShippedEmail(db, merchantId, updated.orderId)
     }
 
     return ok(updated)
   }
 
   static async markShipped(
+    db: DB,
     merchantId: string,
     branchIds: string[] | null,
     id: string,
     input: { trackingNumber?: string; trackingUrl?: string; labelUrl?: string; carrier?: string }
   ) {
-    return this.update(merchantId, branchIds, id, { status: 'shipped', ...input })
+    return this.update(db, merchantId, branchIds, id, { status: 'shipped', ...input })
   }
 
-  static async cancel(merchantId: string, branchIds: string[] | null, id: string) {
-    return this.update(merchantId, branchIds, id, { status: 'cancelled' })
+  static async cancel(db: DB, merchantId: string, branchIds: string[] | null, id: string) {
+    return this.update(db, merchantId, branchIds, id, { status: 'cancelled' })
   }
 
   private static async updateOrderFulfillmentStatus(
+    db: DB,
     merchantId: string,
     orderId: string,
     status: string
@@ -223,7 +242,7 @@ export class FulfillmentsService {
       .where(and(eq(orders.id, orderId), eq(orders.merchantId, merchantId)))
   }
 
-  private static async sendShippedEmail(merchantId: string, orderId: string) {
+  private static async sendShippedEmail(db: DB, merchantId: string, orderId: string) {
     try {
       const [order] = await db
         .select()
@@ -253,25 +272,14 @@ export class FulfillmentsService {
         lines: [{ label: 'Order', value: order.orderNumber }]
       })
 
-      const result = await getMailer().send({
+      await getMailer().send({
         from: `${storeName} <${fromEmail}>`,
         to: customer.email,
         subject: `Your order ${order.orderNumber} has shipped`,
         html
       })
-      if (result.ok) {
-        const [orderMerchant] = await db
-          .select({ id: orders.id })
-          .from(orders)
-          .where(eq(orders.id, orderId))
-        void orderMerchant
-      }
     } catch (e) {
       log.error('shipped email failed', e)
     }
-  }
-
-  private static async dispatch(merchantId: string, event: string, payload: Record<string, unknown>) {
-    await dispatchWebhookEvent(merchantId, event, payload)
   }
 }

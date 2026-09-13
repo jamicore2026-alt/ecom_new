@@ -1,5 +1,6 @@
 import { and, count, desc, eq, sql } from 'drizzle-orm'
 import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import {
   goodsReceipts,
   goodsReceiptItems,
@@ -31,7 +32,7 @@ const nextNumber = (prefix: string) =>
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-const assertPoInMerchant = async (merchantId: string, poId: string) => {
+const assertPoInMerchant = async (db: DB, merchantId: string, poId: string) => {
   const [row] = await db
     .select()
     .from(purchaseOrders)
@@ -43,7 +44,7 @@ const assertPoInMerchant = async (merchantId: string, poId: string) => {
 export class ProcurementService {
   /* --------------------------------- suppliers -------------------------------- */
 
-  static async listSuppliers(merchantId: string, q: { page?: string; limit?: string; search?: string; status?: string }) {
+  static async listSuppliers(db: DB, merchantId: string, q: { page?: string; limit?: string; search?: string; status?: string }) {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [eq(suppliers.merchantId, merchantId)]
     if (q.search) {
@@ -69,7 +70,7 @@ export class ProcurementService {
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async getSupplier(merchantId: string, id: string) {
+  static async getSupplier(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select()
       .from(suppliers)
@@ -79,6 +80,7 @@ export class ProcurementService {
   }
 
   static async createSupplier(
+    db: DB,
     merchantId: string,
     input: {
       name: string
@@ -109,6 +111,7 @@ export class ProcurementService {
   }
 
   static async updateSupplier(
+    db: DB,
     merchantId: string,
     id: string,
     input: {
@@ -122,7 +125,7 @@ export class ProcurementService {
       notes?: string
     }
   ) {
-    await this.getSupplier(merchantId, id)
+    await this.getSupplier(db, merchantId, id)
     const [row] = await db
       .update(suppliers)
       .set({
@@ -143,6 +146,7 @@ export class ProcurementService {
   /* --------------------------------- purchase orders -------------------------------- */
 
   static async listPurchaseOrders(
+    db: DB,
     merchantId: string,
     q: { page?: string; limit?: string; status?: string; supplierId?: string }
   ) {
@@ -184,8 +188,8 @@ export class ProcurementService {
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async getPurchaseOrder(merchantId: string, id: string) {
-    const po = await assertPoInMerchant(merchantId, id)
+  static async getPurchaseOrder(db: DB, merchantId: string, id: string) {
+    const po = await assertPoInMerchant(db, merchantId, id)
     const [supplier] = await db
       .select()
       .from(suppliers)
@@ -227,6 +231,7 @@ export class ProcurementService {
   }
 
   static async createPurchaseOrder(
+    db: DB,
     merchantId: string,
     input: {
       supplierId: string
@@ -235,11 +240,11 @@ export class ProcurementService {
       items: Array<{ variantId: string; quantity: number; unitCost: number }>
     }
   ) {
-    await this.getSupplier(merchantId, input.supplierId)
+    await this.getSupplier(db, merchantId, input.supplierId)
     if (!input.items.length) throw badRequest('NO_ITEMS', 'A purchase order needs at least one item')
-    this.validateItems(merchantId, input.items)
+    this.validateItems(db, merchantId, input.items)
 
-    const subtotal = this.subtotal(input.items)
+    const subtotal = this.subtotal(db, input.items)
     const [po] = await db
       .insert(purchaseOrders)
       .values({
@@ -267,6 +272,7 @@ export class ProcurementService {
   }
 
   static async updatePurchaseOrder(
+    db: DB,
     merchantId: string,
     id: string,
     input: {
@@ -276,10 +282,10 @@ export class ProcurementService {
       items?: Array<{ variantId: string; quantity: number; unitCost: number }>
     }
   ) {
-    const po = await assertPoInMerchant(merchantId, id)
+    const po = await assertPoInMerchant(db, merchantId, id)
     if (po.status !== 'draft') throw conflict('PO_LOCKED', 'Only draft purchase orders can be edited')
 
-    if (input.supplierId) await this.getSupplier(merchantId, input.supplierId)
+    if (input.supplierId) await this.getSupplier(db, merchantId, input.supplierId)
 
     const patch: Record<string, unknown> = {
       ...(input.supplierId !== undefined && { supplierId: input.supplierId }),
@@ -289,8 +295,8 @@ export class ProcurementService {
 
     if (input.items) {
       if (!input.items.length) throw badRequest('NO_ITEMS', 'A purchase order needs at least one item')
-      this.validateItems(merchantId, input.items)
-      const subtotal = this.subtotal(input.items)
+      this.validateItems(db, merchantId, input.items)
+      const subtotal = this.subtotal(db, input.items)
       patch.subtotal = subtotal
     }
 
@@ -318,6 +324,7 @@ export class ProcurementService {
 
   /** Validates every item references a variant owned by this merchant. */
   private static async validateItems(
+    db: DB,
     merchantId: string,
     items: Array<{ variantId: string; quantity: number; unitCost: number }>
   ) {
@@ -337,12 +344,12 @@ export class ProcurementService {
     }
   }
 
-  private static subtotal(items: Array<{ quantity: number; unitCost: number }>) {
+  private static subtotal(db: DB, items: Array<{ quantity: number; unitCost: number }>) {
     return Math.round(items.reduce((sum, it) => sum + it.quantity * it.unitCost, 0) * 1000) / 1000
   }
 
-  static async transitionPurchaseOrder(merchantId: string, id: string, to: string, userId?: string) {
-    const po = await assertPoInMerchant(merchantId, id)
+  static async transitionPurchaseOrder(db: DB, merchantId: string, id: string, to: string, userId?: string) {
+    const po = await assertPoInMerchant(db, merchantId, id)
     const allowed = PO_STATUS_TRANSITIONS[po.status as string] ?? []
     if (!allowed.includes(to)) {
       throw conflict('BAD_TRANSITION', `Cannot move a ${po.status} purchase order to ${to}`)
@@ -366,7 +373,7 @@ export class ProcurementService {
 
   /* --------------------------------- goods receipts -------------------------------- */
 
-  static async listGoodsReceipts(merchantId: string, q: { page?: string; limit?: string; purchaseOrderId?: string }) {
+  static async listGoodsReceipts(db: DB, merchantId: string, q: { page?: string; limit?: string; purchaseOrderId?: string }) {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [eq(goodsReceipts.merchantId, merchantId)]
     if (q.purchaseOrderId) conditions.push(eq(goodsReceipts.purchaseOrderId, q.purchaseOrderId))
@@ -403,7 +410,7 @@ export class ProcurementService {
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async getGoodsReceipt(merchantId: string, id: string) {
+  static async getGoodsReceipt(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select()
       .from(goodsReceipts)
@@ -434,6 +441,7 @@ export class ProcurementService {
 
   /** Records a goods receipt for an approved PO and moves stock into the warehouse. */
   static async receiveGoods(
+    db: DB,
     merchantId: string,
     poId: string,
     userId: string,
@@ -441,7 +449,7 @@ export class ProcurementService {
   ) {
     if (!input.items.length) throw badRequest('NO_ITEMS', 'A goods receipt needs at least one item')
 
-    const po = await assertPoInMerchant(merchantId, poId)
+    const po = await assertPoInMerchant(db, merchantId, poId)
     if (!['approved', 'partial'].includes(po.status as string)) {
       throw conflict('PO_NOT_APPROVED', 'Only approved purchase orders can be received')
     }

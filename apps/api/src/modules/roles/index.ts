@@ -8,11 +8,11 @@ import { createRoleBody, roleParams, updateRoleBody } from './model'
 export const rolesModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(outletGuard())
-  .get('/roles', async ({ auth }) => RolesService.list(auth.merchant.id))
+  .get('/roles', async ({ auth }) => RolesService.list(auth.db, auth.merchant.id))
   .use(outletGuard({ permissions: ['staff.manage'] }))
   .post('/roles', async ({ body, auth, request }) => {
-    const result = await RolesService.create(auth.merchant.id, body)
-    auditFromRequest(auth, request, {
+    const result = await RolesService.create(auth.db, auth.merchant.id, body)
+    await auditFromRequest(auth, request, {
       action: 'role.create',
       entityType: 'role',
       entityId: result.data.id,
@@ -23,8 +23,8 @@ export const rolesModule = new Elysia({ prefix: '/api' })
   .put(
     '/roles/:roleId',
     async ({ params, body, auth, request }) => {
-      const result = await RolesService.update(auth.merchant.id, params.roleId, body)
-      auditFromRequest(auth, request, {
+      const result = await RolesService.update(auth.db, auth.merchant.id, params.roleId, body)
+      await auditFromRequest(auth, request, {
         action: 'role.update',
         entityType: 'role',
         entityId: params.roleId
@@ -34,8 +34,8 @@ export const rolesModule = new Elysia({ prefix: '/api' })
     { params: roleParams, body: updateRoleBody }
   )
   .delete('/roles/:roleId', async ({ params, auth, request }) => {
-    const result = await RolesService.remove(auth.merchant.id, params.roleId)
-    auditFromRequest(auth, request, {
+    const result = await RolesService.remove(auth.db, auth.merchant.id, params.roleId)
+    await auditFromRequest(auth, request, {
       action: 'role.delete',
       entityType: 'role',
       entityId: params.roleId

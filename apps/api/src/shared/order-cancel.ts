@@ -1,5 +1,4 @@
 import { and, eq, sql } from 'drizzle-orm'
-import { db } from '../database/client'
 import {
   coupons,
   inventoryLogs,
@@ -8,8 +7,9 @@ import {
   productVariants,
   returnsTable
 } from '../database/schema'
+import type { DB } from '../database/client'
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+type Tx = Parameters<Parameters<DB['transaction']>[0]>[0]
 type OrderRow = typeof orders.$inferSelect
 
 /**
@@ -104,6 +104,7 @@ export const cancelPendingOrderTx = async (
 
 /** Standalone runner for paths that don't already hold a transaction. */
 export const runCancelPendingOrder = async (
+  db: DB,
   order: OrderRow,
   opts: { reason?: string } = {}
 ): Promise<boolean> => db.transaction((tx) => cancelPendingOrderTx(tx, order, opts))

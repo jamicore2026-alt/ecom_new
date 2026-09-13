@@ -1,11 +1,11 @@
 import { and, desc, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { affiliates, referrals } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest } from '../../shared/errors'
 
 export class AffiliatesService {
-  static async list(merchantId: string) {
+  static async list(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(affiliates)
@@ -15,6 +15,7 @@ export class AffiliatesService {
   }
 
   static async create(
+    db: DB,
     merchantId: string,
     input: { name: string; email: string; referralCode: string; commissionRate: number }
   ) {
@@ -38,7 +39,7 @@ export class AffiliatesService {
     return ok(row)
   }
 
-  static async referrals(merchantId: string, affiliateId: string) {
+  static async referrals(db: DB, merchantId: string, affiliateId: string) {
     const rows = await db
       .select()
       .from(referrals)

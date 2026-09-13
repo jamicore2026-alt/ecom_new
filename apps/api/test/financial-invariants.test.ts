@@ -127,10 +127,10 @@ describe('P1 financial invariants', () => {
     const orderId = placed.body.data.id
 
     const key = crypto.randomUUID()
-    const first = await OrdersService.createRefund(merchantId, { orderId, amount: 10, idempotencyKey: key })
+    const first = await OrdersService.createRefund(db, merchantId, { orderId, amount: 10, idempotencyKey: key })
     expect(first.data.status).toBe('completed')
 
-    const second = await OrdersService.createRefund(merchantId, { orderId, amount: 10, idempotencyKey: key })
+    const second = await OrdersService.createRefund(db, merchantId, { orderId, amount: 10, idempotencyKey: key })
     expect(second.data.id).toBe(first.data.id)
     expect(second.data.status).toBe('completed')
 
@@ -165,7 +165,7 @@ describe('P1 financial invariants', () => {
       })
       .returning()
 
-    const retried = await OrdersService.createRefund(merchantId, { orderId, amount: 5, idempotencyKey: key })
+    const retried = await OrdersService.createRefund(db, merchantId, { orderId, amount: 5, idempotencyKey: key })
     expect(retried.data.id).toBe(failedRow.id)
     expect(retried.data.status).toBe('completed')
     expect(retried.data.attemptCount).toBe(2)

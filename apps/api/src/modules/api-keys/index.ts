@@ -19,14 +19,14 @@ export const apiKeysModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(requirePermission('settings.manage'))
 
-  .get('/api-keys', async ({ auth, query }) => ApiKeysService.list(auth.merchant.id, query), { query: apiKeyQuery })
+  .get('/api-keys', async ({ auth, query }) => ApiKeysService.list(auth.db, auth.merchant.id, query), { query: apiKeyQuery })
   .post('/api-keys', async ({ auth, body, request }) => {
-    const result = await ApiKeysService.create(auth.merchant.id, {
+    const result = await ApiKeysService.create(auth.db, auth.merchant.id, {
       name: body.name,
       scopes: body.scopes,
       expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined
     })
-    auditFromRequest(auth, request, {
+    await auditFromRequest(auth, request, {
       action: 'api_key.create',
       entityType: 'api_key',
       entityId: result.data.key.id
@@ -34,8 +34,8 @@ export const apiKeysModule = new Elysia({ prefix: '/api' })
     return result
   }, { body: createBody })
   .delete('/api-keys/:id', async ({ auth, params, request }) => {
-    const result = await ApiKeysService.revoke(auth.merchant.id, params.id)
-    auditFromRequest(auth, request, {
+    const result = await ApiKeysService.revoke(auth.db, auth.merchant.id, params.id)
+    await auditFromRequest(auth, request, {
       action: 'api_key.revoke',
       entityType: 'api_key',
       entityId: params.id

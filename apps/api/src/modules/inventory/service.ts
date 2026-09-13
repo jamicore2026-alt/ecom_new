@@ -1,5 +1,5 @@
 import { and, count, desc, eq, gte, gt, ilike, lte, or, sql } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { categories, inventoryLogs, products, productVariants } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
@@ -25,7 +25,7 @@ const variantWithProduct = {
 }
 
 export class InventoryService {
-  static async list(merchantId: string, q: { page?: string; limit?: string; search?: string; status?: string }) {
+  static async list(db: DB, merchantId: string, q: { page?: string; limit?: string; search?: string; status?: string }) {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [eq(products.merchantId, merchantId)]
     if (q.search) {
@@ -56,7 +56,7 @@ export class InventoryService {
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async lowStock(merchantId: string, q: { page?: string; limit?: string }) {
+  static async lowStock(db: DB, merchantId: string, q: { page?: string; limit?: string }) {
     const { page, limit, offset } = parsePagination(q)
     const where = and(
       eq(products.merchantId, merchantId),
@@ -80,7 +80,7 @@ export class InventoryService {
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async outOfStock(merchantId: string, q: { page?: string; limit?: string }) {
+  static async outOfStock(db: DB, merchantId: string, q: { page?: string; limit?: string }) {
     const { page, limit, offset } = parsePagination(q)
     const where = and(eq(products.merchantId, merchantId), eq(productVariants.inventory, 0))
     const [{ total }] = await db
@@ -101,6 +101,7 @@ export class InventoryService {
   }
 
   static async history(
+    db: DB,
     merchantId: string,
     q: { page?: string; limit?: string; variantId?: string; productId?: string; dateFrom?: string; dateTo?: string }
   ) {
@@ -144,7 +145,7 @@ export class InventoryService {
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async adjust(merchantId: string, variantId: string, input: { change: number; reason: string }) {
+  static async adjust(db: DB, merchantId: string, variantId: string, input: { change: number; reason: string }) {
     if (input.change === 0) throw badRequest('BAD_REQUEST', 'Change must be non-zero')
 
     const [found] = await db

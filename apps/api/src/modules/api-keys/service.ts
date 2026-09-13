@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { and, desc, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { apiKeys } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
@@ -10,7 +10,7 @@ import { constantTimeEqual } from '../../shared/crypto'
 const SK_PREFIX = 'ecom_'
 
 export class ApiKeysService {
-  static async list(merchantId: string, query: { page?: string; limit?: string } = {}) {
+  static async list(db: DB, merchantId: string, query: { page?: string; limit?: string } = {}) {
     const { page, limit, offset } = parsePagination(query)
     const rows = await db
       .select()
@@ -36,6 +36,7 @@ export class ApiKeysService {
   }
 
   static async create(
+    db: DB,
     merchantId: string,
     input: { name: string; scopes?: string[]; expiresAt?: Date }
   ) {
@@ -60,7 +61,7 @@ export class ApiKeysService {
     return ok({ key: row, secret: `${prefix}.${secret}` })
   }
 
-  static async revoke(merchantId: string, id: string) {
+  static async revoke(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .update(apiKeys)
       .set({ status: 'revoked', revokedAt: new Date() })
@@ -70,7 +71,7 @@ export class ApiKeysService {
     return ok({ id: row.id, status: row.status })
   }
 
-  static async resolve(providedKey: string): Promise<{ merchant: string; scopes: string[] } | null> {
+  static async resolve(db: DB, providedKey: string): Promise<{ merchant: string; scopes: string[] } | null> {
     const [prefix, secret] = splitKey(providedKey)
     if (!prefix || !secret) return null
 

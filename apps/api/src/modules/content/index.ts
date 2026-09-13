@@ -22,10 +22,10 @@ const createBody = t.Object({
 export const contentModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
 
-  .get('/content', async ({ auth }) => ContentService.list(auth.merchant.id))
-  .get('/content/:id', async ({ auth, params }) => ContentService.get(auth.merchant.id, params.id))
+  .get('/content', async ({ auth }) => ContentService.list(auth.db, auth.merchant.id))
+  .get('/content/:id', async ({ auth, params }) => ContentService.get(auth.db, auth.merchant.id, params.id))
 
   .use(requirePermission('products.create', 'products.update', 'products.delete'))
-  .post('/content', async ({ auth, body }) => ContentService.create(auth.merchant.id, body), { body: createBody })
-  .put('/content/:id', async ({ auth, params, body }) => ContentService.update(auth.merchant.id, params.id, body), { body: pageBody })
-  .delete('/content/:id', async ({ auth, params }) => ContentService.delete(auth.merchant.id, params.id))
+  .post('/content', async ({ auth, body }) => ContentService.create(auth.db, auth.merchant.id, body), { body: createBody })
+  .put('/content/:id', async ({ auth, params, body }) => ContentService.update(auth.db, auth.merchant.id, params.id, body), { body: pageBody })
+  .delete('/content/:id', async ({ auth, params }) => ContentService.delete(auth.db, auth.merchant.id, params.id))

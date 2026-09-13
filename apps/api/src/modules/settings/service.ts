@@ -1,6 +1,6 @@
 import { hash } from 'bcryptjs'
 import { and, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import {
   carriers,
   checkoutSettings,
@@ -25,6 +25,7 @@ import type { Permission } from '../../shared/types'
 import { normalizePermissions } from '../../shared/types'
 
 const upsert = <T extends { merchantId: string }>(
+  db: DB,
   table: any,
   merchantId: string,
   values: Omit<T, 'merchantId' | 'updatedAt'>
@@ -38,7 +39,7 @@ const upsert = <T extends { merchantId: string }>(
     })
 
 export class SettingsService {
-  static async getStore(merchantId: string) {
+  static async getStore(db: DB, merchantId: string) {
     const [merchant] = await db.select().from(merchants).where(eq(merchants.id, merchantId))
     if (!merchant) throw notFound('NOT_FOUND', 'Merchant not found')
 
@@ -57,6 +58,7 @@ export class SettingsService {
   }
 
   static async updateStore(
+    db: DB,
     merchantId: string,
     input: {
       name?: string
@@ -67,9 +69,9 @@ export class SettingsService {
       announcement?: string
     }
   ) {
-    const current = await this.getStore(merchantId)
+    const current = await this.getStore(db, merchantId)
 
-    await upsert(storeSettings, merchantId, {
+    await upsert(db, storeSettings, merchantId, {
       name: input.name ?? current.data.name,
       logo: input.logo ?? current.data.logo,
       address: (input.address as never) ?? current.data.address,
@@ -77,10 +79,10 @@ export class SettingsService {
       timezone: input.timezone ?? current.data.timezone,
       announcement: input.announcement ?? current.data.announcement
     })
-    return this.getStore(merchantId)
+    return this.getStore(db, merchantId)
   }
 
-  static async getPayments(merchantId: string) {
+  static async getPayments(db: DB, merchantId: string) {
     const [settings] = await db
       .select()
       .from(paymentSettings)
@@ -98,21 +100,23 @@ export class SettingsService {
   }
 
   static async updatePayments(
+    db: DB,
     merchantId: string,
     input: { methods?: Array<{ id: string; label: string; enabled: boolean }>; currency?: string }
   ) {
-    const current = await this.getPayments(merchantId)
+    const current = await this.getPayments(db, merchantId)
 
-    await upsert(paymentSettings, merchantId, {
+    await upsert(db, paymentSettings, merchantId, {
       methods: input.methods ?? current.data.methods,
       currency: input.currency ?? current.data.currency
     })
-    return this.getPayments(merchantId)
+    return this.getPayments(db, merchantId)
   }
 
   /* ------------------------- payment providers (BYOK) ----------------------- */
 
   private static async resolveProviderConfig(
+    db: DB,
     merchantId: string,
     providerId: string
   ): Promise<{ config: ResolvedProviderConfig } | null> {
@@ -135,13 +139,13 @@ export class SettingsService {
   }
 
   /** Runtime (decrypted) provider config for checkout/webhook flows. */
-  static async getEnabledProvider(merchantId: string, providerId: string) {
-    const resolved = await this.resolveProviderConfig(merchantId, providerId)
+  static async getEnabledProvider(db: DB, merchantId: string, providerId: string) {
+    const resolved = await this.resolveProviderConfig(db, merchantId, providerId)
     if (!resolved || !resolved.config.enabled) throw notFound('PROVIDER_NOT_FOUND', `Payment provider "${providerId}" is not available for this store`)
     return resolved.config
   }
 
-  static async listPaymentProviders(merchantId: string) {
+  static async listPaymentProviders(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(paymentProviderConfigs)
@@ -170,6 +174,7 @@ export class SettingsService {
   }
 
   static async updatePaymentProvider(
+    db: DB,
     merchantId: string,
     providerId: string,
     input: {
@@ -182,7 +187,7 @@ export class SettingsService {
     const adapter = getProvider(providerId)
     if (!adapter) throw notFound('NOT_FOUND', `Unknown payment provider: ${providerId}`)
 
-    const existing = await this.resolveProviderConfig(merchantId, providerId)
+    const existing = await this.resolveProviderConfig(db, merchantId, providerId)
     const stored = existing ? { ...existing.config.credentials } : {}
 
     if (input.credentials) {
@@ -249,11 +254,11 @@ export class SettingsService {
     return ok({ providerId, enabled })
   }
 
-  static async testPaymentProvider(merchantId: string, providerId: string) {
+  static async testPaymentProvider(db: DB, merchantId: string, providerId: string) {
     const adapter = getProvider(providerId)
     if (!adapter) throw notFound('NOT_FOUND', `Unknown payment provider: ${providerId}`)
 
-    const resolved = await this.resolveProviderConfig(merchantId, providerId)
+    const resolved = await this.resolveProviderConfig(db, merchantId, providerId)
     if (!resolved) {
       throw badRequest('PROVIDER_NOT_CONFIGURED', `${adapter.def.label} has no saved credentials`)
     }
@@ -261,7 +266,7 @@ export class SettingsService {
     return ok({ providerId, status: 'ok' })
   }
 
-  static async getShipping(merchantId: string) {
+  static async getShipping(db: DB, merchantId: string) {
     const [settings] = await db
       .select()
       .from(shippingSettings)
@@ -276,22 +281,23 @@ export class SettingsService {
   }
 
   static async updateShipping(
+    db: DB,
     merchantId: string,
     input: {
       zones?: Array<{ name: string; countries: string[]; rate: number; freeAbove?: number }>
       freeShippingThreshold?: number
     }
   ) {
-    const current = await this.getShipping(merchantId)
+    const current = await this.getShipping(db, merchantId)
 
-    await upsert(shippingSettings, merchantId, {
+    await upsert(db, shippingSettings, merchantId, {
       zones: input.zones ?? current.data.zones,
       freeShippingThreshold: input.freeShippingThreshold ?? current.data.freeShippingThreshold
     })
-    return this.getShipping(merchantId)
+    return this.getShipping(db, merchantId)
   }
 
-  static async getTaxes(merchantId: string) {
+  static async getTaxes(db: DB, merchantId: string) {
     const [settings] = await db.select().from(taxSettings).where(eq(taxSettings.merchantId, merchantId))
     return ok(
       settings ?? {
@@ -303,21 +309,22 @@ export class SettingsService {
   }
 
   static async updateTaxes(
+    db: DB,
     merchantId: string,
     input: { autoCalculate?: boolean; rates?: Array<{ region: string; rate: number }> }
   ) {
-    const current = await this.getTaxes(merchantId)
+    const current = await this.getTaxes(db, merchantId)
 
-    await upsert(taxSettings, merchantId, {
+    await upsert(db, taxSettings, merchantId, {
       autoCalculate: input.autoCalculate ?? current.data.autoCalculate,
       rates: input.rates ?? current.data.rates
     })
-    return this.getTaxes(merchantId)
+    return this.getTaxes(db, merchantId)
   }
 
   /* ----------------------------- notifications ----------------------------- */
 
-  static async getNotifications(merchantId: string) {
+  static async getNotifications(db: DB, merchantId: string) {
     const [row] = await db
       .select()
       .from(notificationSettings)
@@ -334,6 +341,7 @@ export class SettingsService {
   }
 
   static async updateNotifications(
+    db: DB,
     merchantId: string,
     input: {
       enabled?: boolean
@@ -342,20 +350,20 @@ export class SettingsService {
       templates?: Record<string, boolean>
     }
   ) {
-    const current = await this.getNotifications(merchantId)
+    const current = await this.getNotifications(db, merchantId)
 
-    await upsert(notificationSettings, merchantId, {
+    await upsert(db, notificationSettings, merchantId, {
       enabled: input.enabled ?? current.data.enabled,
       fromName: input.fromName !== undefined ? input.fromName : current.data.fromName,
       fromEmail: input.fromEmail !== undefined ? input.fromEmail : current.data.fromEmail,
       templates: input.templates ?? current.data.templates
     })
-    return this.getNotifications(merchantId)
+    return this.getNotifications(db, merchantId)
   }
 
   /* --------------------------------- staff -------------------------------- */
 
-  static async listStaff(merchantId: string) {
+  static async listStaff(db: DB, merchantId: string) {
     const rows = await db
       .select({
         id: users.id,
@@ -374,7 +382,7 @@ export class SettingsService {
   }
 
   /** Validate a roleId belongs to the merchant; returns it when valid. */
-  private static async assertRoleInMerchant(merchantId: string, roleId: string): Promise<string> {
+  private static async assertRoleInMerchant(db: DB, merchantId: string, roleId: string): Promise<string> {
     const [role] = await db
       .select({ id: roles.id })
       .from(roles)
@@ -384,6 +392,7 @@ export class SettingsService {
   }
 
   static async createStaff(
+    db: DB,
     merchantId: string,
     input: {
       name: string
@@ -401,7 +410,7 @@ export class SettingsService {
       .where(and(eq(users.merchantId, merchantId), eq(users.email, email)))
     if (existing) throw conflict('DUPLICATE', 'A staff member with this email already exists')
 
-    const roleId = input.roleId ? await this.assertRoleInMerchant(merchantId, input.roleId) : null
+    const roleId = input.roleId ? await this.assertRoleInMerchant(db, merchantId, input.roleId) : null
     const passwordHash = await hash(input.password, 12)
     const [created] = await db
       .insert(users)
@@ -421,6 +430,7 @@ export class SettingsService {
   }
 
   static async updateStaff(
+    db: DB,
     merchantId: string,
     id: string,
     input: {
@@ -462,7 +472,7 @@ export class SettingsService {
     if (input.role !== undefined) values.role = input.role
     if (input.permissions !== undefined) values.permissions = normalizePermissions(input.permissions) as Permission[]
     if (input.roleId !== undefined) {
-      values.roleId = input.roleId === null ? null : await this.assertRoleInMerchant(merchantId, input.roleId)
+      values.roleId = input.roleId === null ? null : await this.assertRoleInMerchant(db, merchantId, input.roleId)
     }
     if (input.status !== undefined) values.status = input.status
 
@@ -487,7 +497,7 @@ export class SettingsService {
     return ok(updated)
   }
 
-  static async deleteStaff(merchantId: string, id: string, actor: User) {
+  static async deleteStaff(db: DB, merchantId: string, id: string, actor: User) {
     const [target] = await db
       .select()
       .from(users)
@@ -506,7 +516,7 @@ export class SettingsService {
   }
   /* ----------------------------- COD rules ----------------------------- */
 
-  static async getCodRules(merchantId: string) {
+  static async getCodRules(db: DB, merchantId: string) {
     const [row] = await db.select().from(codRules).where(eq(codRules.merchantId, merchantId))
     return ok(
       row ?? {
@@ -522,6 +532,7 @@ export class SettingsService {
   }
 
   static async updateCodRules(
+    db: DB,
     merchantId: string,
     input: {
       serviceablePincodes?: string[]
@@ -532,9 +543,9 @@ export class SettingsService {
       enabled?: boolean
     }
   ) {
-    const current = await this.getCodRules(merchantId)
+    const current = await this.getCodRules(db, merchantId)
 
-    await upsert(codRules, merchantId, {
+    await upsert(db, codRules, merchantId, {
       serviceablePincodes:
         input.serviceablePincodes ?? current.data.serviceablePincodes ?? [],
       blacklistPincodes: input.blacklistPincodes ?? current.data.blacklistPincodes ?? [],
@@ -544,12 +555,12 @@ export class SettingsService {
       codFee: input.codFee ?? current.data.codFee ?? 0,
       enabled: input.enabled ?? current.data.enabled ?? true
     })
-    return this.getCodRules(merchantId)
+    return this.getCodRules(db, merchantId)
   }
 
   /* --------------------------- checkout settings --------------------------- */
 
-  static async getCheckoutSettings(merchantId: string) {
+  static async getCheckoutSettings(db: DB, merchantId: string) {
     const [row] = await db
       .select()
       .from(checkoutSettings)
@@ -568,6 +579,7 @@ export class SettingsService {
   }
 
   static async updateCheckoutSettings(
+    db: DB,
     merchantId: string,
     input: {
       codEnabled?: boolean
@@ -578,9 +590,9 @@ export class SettingsService {
       defaultShippingDays?: number
     }
   ) {
-    const current = await this.getCheckoutSettings(merchantId)
+    const current = await this.getCheckoutSettings(db, merchantId)
 
-    await upsert(checkoutSettings, merchantId, {
+    await upsert(db, checkoutSettings, merchantId, {
       codEnabled: input.codEnabled ?? current.data.codEnabled ?? true,
       codMinValue: input.codMinValue ?? current.data.codMinValue ?? 0,
       codMaxValue:
@@ -590,7 +602,7 @@ export class SettingsService {
         input.serviceablePincodes ?? current.data.serviceablePincodes ?? [],
       defaultShippingDays: input.defaultShippingDays ?? current.data.defaultShippingDays ?? 5
     })
-    return this.getCheckoutSettings(merchantId)
+    return this.getCheckoutSettings(db, merchantId)
   }
 
   /* --------------------------- serviceability --------------------------- */
@@ -599,7 +611,7 @@ export class SettingsService {
    * Resolve whether a pincode is serviceable and COD availability.
    * This is the ServiceabilityProvider seam — swap in a real provider later.
    */
-  static async checkServiceability(merchantId: string, pincode: string) {
+  static async checkServiceability(db: DB, merchantId: string, pincode: string) {
     const [checkout] = await db
       .select()
       .from(checkoutSettings)
@@ -629,11 +641,12 @@ export class SettingsService {
 
   /* ------------------------------ carriers ------------------------------ */
 
-  static async listCarriers(merchantId: string) {
+  static async listCarriers(db: DB, merchantId: string) {
     return db.select().from(carriers).where(eq(carriers.merchantId, merchantId))
   }
 
   static async createCarrier(
+    db: DB,
     merchantId: string,
     input: {
       name: string
@@ -658,6 +671,7 @@ export class SettingsService {
   }
 
   static async updateCarrier(
+    db: DB,
     merchantId: string,
     id: string,
     input: {
@@ -668,7 +682,7 @@ export class SettingsService {
       config?: Record<string, unknown>
     }
   ) {
-    await this.assertCarrierOwned(merchantId, id)
+    await this.assertCarrierOwned(db, merchantId, id)
     const [row] = await db
       .update(carriers)
       .set({
@@ -683,13 +697,13 @@ export class SettingsService {
     return ok(row)
   }
 
-  static async deleteCarrier(merchantId: string, id: string) {
-    await this.assertCarrierOwned(merchantId, id)
+  static async deleteCarrier(db: DB, merchantId: string, id: string) {
+    await this.assertCarrierOwned(db, merchantId, id)
     await db.delete(carriers).where(and(eq(carriers.id, id), eq(carriers.merchantId, merchantId)))
     return ok({ deleted: true })
   }
 
-  private static async assertCarrierOwned(merchantId: string, id: string) {
+  private static async assertCarrierOwned(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select({ id: carriers.id })
       .from(carriers)

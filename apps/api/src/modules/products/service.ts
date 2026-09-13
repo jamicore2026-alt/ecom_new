@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, gte, ilike, inArray, lte, sql } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { categories, inventoryLogs, productImages, products, productVariants } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { productSearchCondition } from '../../shared/product-search'
@@ -31,7 +31,7 @@ interface ProductQuery {
 export class ProductsService {
   /* ------------------------------- helpers ------------------------------- */
 
-  private static async uniqueSlug(merchantId: string, base: string) {
+  private static async uniqueSlug(db: DB, merchantId: string, base: string) {
     const slug = slugify(base)
     const existing = await db
       .select({ slug: products.slug })
@@ -43,7 +43,7 @@ export class ProductsService {
     return `${slug}-${i}`
   }
 
-  private static async categoryMap(ids: string[]) {
+  private static async categoryMap(db: DB, ids: string[]) {
     if (!ids.length) return new Map<string, typeof categories.$inferSelect>()
     const rows = await db.select().from(categories).where(inArray(categories.id, ids))
     return new Map(rows.map((c) => [c.id, c]))
@@ -70,7 +70,7 @@ export class ProductsService {
       .returning()
   }
 
-  private static async imagesFor(ids: string[]) {
+  private static async imagesFor(db: DB, ids: string[]) {
     if (!ids.length) return new Map<string, typeof productImages.$inferSelect[]>()
     const rows = await db
       .select()
@@ -84,7 +84,7 @@ export class ProductsService {
     return map
   }
 
-  private static async enrich(rows: typeof products.$inferSelect[]) {
+  private static async enrich(db: DB, rows: typeof products.$inferSelect[]) {
     if (!rows.length) return []
     const ids = rows.map((r) => r.id)
     const agg = await db
@@ -98,9 +98,10 @@ export class ProductsService {
       .groupBy(productVariants.productId)
     const aggMap = new Map(agg.map((a) => [a.productId, a]))
     const catMap = await this.categoryMap(
+      db,
       [...new Set(rows.map((r) => r.categoryId).filter((v): v is string => !!v))]
     )
-    const imageMap = await this.imagesFor(ids)
+    const imageMap = await this.imagesFor(db, ids)
     return rows.map((p) => ({
       ...p,
       stock: Number(aggMap.get(p.id)?.stock ?? 0),
@@ -113,7 +114,7 @@ export class ProductsService {
 
   /* -------------------------------- products ------------------------------ */
 
-  static async list(merchantId: string, q: ProductQuery) {
+  static async list(db: DB, merchantId: string, q: ProductQuery) {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [eq(products.merchantId, merchantId)]
 
@@ -150,10 +151,10 @@ export class ProductsService {
       .limit(limit)
       .offset(offset)
 
-    return ok({ items: await this.enrich(rows), meta: makeMeta(page, limit, Number(total)) })
+    return ok({ items: await this.enrich(db, rows), meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(db: DB, merchantId: string, id: string) {
     const [product] = await db
       .select()
       .from(products)
@@ -187,6 +188,7 @@ export class ProductsService {
   }
 
   static async create(
+    db: DB,
     merchantId: string,
     input: {
       name: string
@@ -223,7 +225,7 @@ export class ProductsService {
       if (!cat) throw badRequest('BAD_REQUEST', 'Category does not exist')
     }
 
-    const slug = await this.uniqueSlug(merchantId, input.slug ?? input.name)
+    const slug = await this.uniqueSlug(db, merchantId, input.slug ?? input.name)
     const result = await db.transaction(async (tx) => {
       const [product] = await tx
         .insert(products)
@@ -292,6 +294,7 @@ export class ProductsService {
   }
 
   static async update(
+    db: DB,
     merchantId: string,
     id: string,
     input: Record<string, unknown>
@@ -311,7 +314,7 @@ export class ProductsService {
     }
 
     const slug = input.slug
-      ? await this.uniqueSlug(merchantId, input.slug as string)
+      ? await this.uniqueSlug(db, merchantId, input.slug as string)
       : undefined
 
     const values: Partial<NewProduct> = {}
@@ -384,7 +387,7 @@ export class ProductsService {
     })
   }
 
-  static async archive(merchantId: string, id: string) {
+  static async archive(db: DB, merchantId: string, id: string) {
     const [product] = await db
       .select()
       .from(products)
@@ -402,6 +405,7 @@ export class ProductsService {
   }
 
   static async bulkEdit(
+    db: DB,
     merchantId: string,
     input: { ids: string[]; action: string; value: string | number | null }
   ) {
@@ -476,7 +480,7 @@ export class ProductsService {
 
   /* ------------------------------- categories ------------------------------ */
 
-  static async listCategories(merchantId: string) {
+  static async listCategories(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(categories)
@@ -505,13 +509,14 @@ export class ProductsService {
   }
 
   static async createCategory(
+    db: DB,
     merchantId: string,
     input: { name: string; slug?: string; parentId?: string | null; image?: string; sortOrder?: number; status?: string }
   ) {
     if (input.parentId) {
-      await this.assertCategoryParent(merchantId, input.parentId)
+      await this.assertCategoryParent(db, merchantId, input.parentId)
     }
-    const slug = await this.uniqueCategorySlug(merchantId, input.slug ?? input.name)
+    const slug = await this.uniqueCategorySlug(db, merchantId, input.slug ?? input.name)
     const [created] = await db
       .insert(categories)
       .values({
@@ -527,7 +532,7 @@ export class ProductsService {
     return ok(created)
   }
 
-  private static async uniqueCategorySlug(merchantId: string, base: string) {
+  private static async uniqueCategorySlug(db: DB, merchantId: string, base: string) {
     const slug = slugify(base)
     const existing = await db
       .select({ slug: categories.slug })
@@ -540,6 +545,7 @@ export class ProductsService {
   }
 
   static async updateCategory(
+    db: DB,
     merchantId: string,
     id: string,
     input: { name?: string; slug?: string; parentId?: string | null; image?: string; sortOrder?: number; status?: string }
@@ -553,7 +559,7 @@ export class ProductsService {
     if (input.parentId !== undefined) {
       const newParent = input.parentId
       if (newParent && newParent !== cat.id) {
-        await this.assertCategoryParent(merchantId, newParent, cat.id)
+        await this.assertCategoryParent(db, merchantId, newParent, cat.id)
       } else if (newParent === cat.id) {
         throw badRequest('BAD_REQUEST', 'A category cannot be its own parent')
       }
@@ -565,7 +571,7 @@ export class ProductsService {
     if (input.sortOrder !== undefined) values.sortOrder = input.sortOrder
     if (input.status !== undefined) values.status = input.status
     if (input.parentId !== undefined) values.parentId = input.parentId ?? null
-    if (input.slug) values.slug = await this.uniqueCategorySlug(merchantId, input.slug)
+    if (input.slug) values.slug = await this.uniqueCategorySlug(db, merchantId, input.slug)
 
     if (Object.keys(values).length === 0) return ok(cat)
 
@@ -579,6 +585,7 @@ export class ProductsService {
 
   /** Ensure a proposed parent belongs to this merchant and is not a descendant of the category. */
   private static async assertCategoryParent(
+    db: DB,
     merchantId: string,
     parentId: string,
     excludeId?: string
@@ -608,7 +615,7 @@ export class ProductsService {
     }
   }
 
-  static async deleteCategory(merchantId: string, id: string) {
+  static async deleteCategory(db: DB, merchantId: string, id: string) {
     const [cat] = await db
       .select()
       .from(categories)
@@ -624,7 +631,7 @@ export class ProductsService {
 
   /* -------------------------------- variants ------------------------------ */
 
-  private static async findProduct(merchantId: string, productId: string) {
+  private static async findProduct(db: DB, merchantId: string, productId: string) {
     const [p] = await db
       .select()
       .from(products)
@@ -632,7 +639,7 @@ export class ProductsService {
     return p
   }
 
-  private static async findVariant(merchantId: string, variantId: string) {
+  private static async findVariant(db: DB, merchantId: string, variantId: string) {
     const [v] = await db
       .select({ variant: productVariants, product: products })
       .from(productVariants)
@@ -641,8 +648,8 @@ export class ProductsService {
     return v
   }
 
-  static async listVariants(merchantId: string, productId: string) {
-    const product = await this.findProduct(merchantId, productId)
+  static async listVariants(db: DB, merchantId: string, productId: string) {
+    const product = await this.findProduct(db, merchantId, productId)
     if (!product) throw notFound('NOT_FOUND', 'Product not found')
     const rows = await db
       .select()
@@ -652,6 +659,7 @@ export class ProductsService {
   }
 
   static async addVariant(
+    db: DB,
     merchantId: string,
     productId: string,
     input: {
@@ -663,7 +671,7 @@ export class ProductsService {
       image?: string
     }
   ) {
-    const product = await this.findProduct(merchantId, productId)
+    const product = await this.findProduct(db, merchantId, productId)
     if (!product) throw notFound('NOT_FOUND', 'Product not found')
     if ((input.inventory ?? 0) < 0) throw badRequest('BAD_REQUEST', 'Variant inventory cannot be negative')
     const [variant] = await db.transaction(async (tx) =>
@@ -684,6 +692,7 @@ export class ProductsService {
   }
 
   static async updateVariant(
+    db: DB,
     merchantId: string,
     variantId: string,
     input: {
@@ -695,7 +704,7 @@ export class ProductsService {
       image?: string
     }
   ) {
-    const found = await this.findVariant(merchantId, variantId)
+    const found = await this.findVariant(db, merchantId, variantId)
     if (!found) throw notFound('NOT_FOUND', 'Variant not found')
     const { variant } = found
     if ((input.inventory ?? variant.inventory) < 0) {
@@ -737,8 +746,8 @@ export class ProductsService {
     return ok(updated)
   }
 
-  static async deleteVariant(merchantId: string, variantId: string) {
-    const found = await this.findVariant(merchantId, variantId)
+  static async deleteVariant(db: DB, merchantId: string, variantId: string) {
+    const found = await this.findVariant(db, merchantId, variantId)
     if (!found) throw notFound('NOT_FOUND', 'Variant not found')
     await db.delete(productVariants).where(eq(productVariants.id, variantId))
     return ok({ deleted: true })
@@ -746,7 +755,7 @@ export class ProductsService {
 
   /* ----------------------------- csv export ------------------------------ */
 
-  static async exportCsv(merchantId: string): Promise<string> {
+  static async exportCsv(db: DB, merchantId: string): Promise<string> {
     const productRows = await db
       .select()
       .from(products)
@@ -819,7 +828,7 @@ export class ProductsService {
 
   /* ----------------------------- csv import ------------------------------ */
 
-  static async importCsv(merchantId: string, text: string) {
+  static async importCsv(db: DB, merchantId: string, text: string) {
     const parsed = parseCsv(text)
     if (parsed.length < 2) {
       throw badRequest('BAD_REQUEST', 'CSV needs a header row and at least one data row')
@@ -928,7 +937,7 @@ export class ProductsService {
               merchantId,
               sku,
               name,
-              slug: await this.uniqueSlug(merchantId, name),
+              slug: await this.uniqueSlug(tx as unknown as DB, merchantId, name),
               description: description ?? '',
               price,
               compareAtPrice: compareAtPrice ?? null,

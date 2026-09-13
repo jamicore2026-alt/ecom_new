@@ -12,7 +12,7 @@ export const profitModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(requirePermission('reports.read'))
   .get('/profit', async ({ auth, query }) =>
-    ProfitService.report(auth.merchant.id, {
+    ProfitService.report(auth.db, auth.merchant.id, {
       from: query.from ? new Date(query.from) : undefined,
       to: query.to ? new Date(query.to) : undefined
     }), { query: rangeQuery })

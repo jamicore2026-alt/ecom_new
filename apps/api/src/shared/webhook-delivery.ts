@@ -4,6 +4,7 @@ import { webhookDeliveries, webhookEndpoints } from '../database/schema'
 import { signWebhookPayload } from './outbound-webhook'
 import { decryptJson } from './crypto'
 import { buildOutboundUrl } from './outbound-url'
+import type { DB } from '../database/client'
 
 /**
  * Process pending webhook deliveries with exponential backoff.
@@ -172,8 +173,11 @@ export const processWebhookDeliveries = async (): Promise<number> => {
 
 /**
  * Queue an outbound webhook event for delivery to all matching endpoints.
+ * `db` is the tenant-scoped connection when called from an authenticated
+ * request, so RLS confines the scan to the merchant's endpoints.
  */
 export const dispatchWebhookEvent = async (
+  db: DB,
   merchantId: string,
   event: string,
   payload: Record<string, unknown>

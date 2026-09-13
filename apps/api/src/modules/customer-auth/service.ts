@@ -506,7 +506,7 @@ export class CustomerAuthService {
       expiresAt
     })
 
-    void EmailsService.shopperAuthEmail(merchantId, {
+    void EmailsService.shopperAuthEmail(db, merchantId, {
       to: customer.email,
       kind: 'reset_password',
       token: raw,
@@ -603,7 +603,7 @@ export class CustomerAuthService {
       expiresAt
     })
 
-    void EmailsService.shopperAuthEmail(merchant.id, {
+    void EmailsService.shopperAuthEmail(db, merchant.id, {
       to: customer.email,
       kind: 'email_verification',
       token: raw,

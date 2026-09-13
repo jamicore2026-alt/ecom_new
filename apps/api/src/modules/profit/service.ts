@@ -1,5 +1,5 @@
 import { and, eq, gte, inArray, lte } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { merchants, orderItems, orders, products, refunds } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { PAID_PAYMENT_STATUSES } from '../../shared/revenue'
@@ -10,7 +10,7 @@ export class ProfitService {
    *  in a range. Partially/fully refunded orders stay in revenue and are netted
    *  by their completed refunds (a fully refunded order nets to zero instead of
    *  vanishing from the report). COGS follows the original items. */
-  static async report(merchantId: string, range: { from?: Date; to?: Date }) {
+  static async report(db: DB, merchantId: string, range: { from?: Date; to?: Date }) {
     const [merchant] = await db
       .select({ currency: merchants.currency })
       .from(merchants)

@@ -3,6 +3,7 @@ import { orders } from '../database/schema'
 import { isAdmin, type AuthContext } from '../plugins/auth'
 import { HttpError } from './errors'
 import { resolveMerchantContext, type MerchantContext } from './merchant-context'
+import type { DB } from '../database/client'
 import type { Scope } from './types'
 
 /**
@@ -57,8 +58,9 @@ export const branchScopeIds = (
  * callers get `null` (merchant-wide); OUTLET/OWN callers are limited to their
  * assigned outlets.
  */
-export const branchScopeOf = async (auth: AuthContext): Promise<string[] | null> => {
+export const branchScopeOf = async (db: DB, auth: AuthContext): Promise<string[] | null> => {
   const context = await resolveMerchantContext(
+    db,
     auth.user.id,
     auth.merchant.id,
     isAdmin(auth),

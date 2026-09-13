@@ -1,5 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { customers, customerSegments, orders } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
@@ -10,7 +10,7 @@ export type SegmentDefinition = {
 }
 
 export class SegmentsService {
-  static async list(merchantId: string) {
+  static async list(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(customerSegments)
@@ -19,7 +19,7 @@ export class SegmentsService {
     return ok({ items: rows })
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select()
       .from(customerSegments)
@@ -28,8 +28,8 @@ export class SegmentsService {
     return ok(row)
   }
 
-  static async create(merchantId: string, input: { name: string; definition: SegmentDefinition }) {
-    const members = await this.listMembers(merchantId, input.definition)
+  static async create(db: DB, merchantId: string, input: { name: string; definition: SegmentDefinition }) {
+    const members = await this.listMembers(db, merchantId, input.definition)
     const [row] = await db
       .insert(customerSegments)
       .values({
@@ -42,9 +42,9 @@ export class SegmentsService {
     return ok(row)
   }
 
-  static async update(merchantId: string, id: string, input: { name?: string; definition?: SegmentDefinition }) {
-    await this.get(merchantId, id)
-    const members = input.definition ? await this.listMembers(merchantId, input.definition) : undefined
+  static async update(db: DB, merchantId: string, id: string, input: { name?: string; definition?: SegmentDefinition }) {
+    await this.get(db, merchantId, id)
+    const members = input.definition ? await this.listMembers(db, merchantId, input.definition) : undefined
     const [row] = await db
       .update(customerSegments)
       .set({
@@ -57,16 +57,16 @@ export class SegmentsService {
     return ok(row)
   }
 
-  static async delete(merchantId: string, id: string) {
-    await this.get(merchantId, id)
+  static async delete(db: DB, merchantId: string, id: string) {
+    await this.get(db, merchantId, id)
     await db
       .delete(customerSegments)
       .where(and(eq(customerSegments.id, id), eq(customerSegments.merchantId, merchantId)))
     return ok({ deleted: true })
   }
 
-  static async preview(merchantId: string, definition: SegmentDefinition) {
-    const members = await this.listMembers(merchantId, definition)
+  static async preview(db: DB, merchantId: string, definition: SegmentDefinition) {
+    const members = await this.listMembers(db, merchantId, definition)
     return ok({ count: members.length })
   }
 
@@ -76,6 +76,7 @@ export class SegmentsService {
    * minOrders: customer paid order count >= value.
    */
   static async listMembers(
+    db: DB,
     merchantId: string,
     def: SegmentDefinition
   ): Promise<{ id: string; email: string }[]> {

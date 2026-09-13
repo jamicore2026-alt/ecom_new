@@ -39,7 +39,7 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
     async ({ body, accessJwt, refreshJwt, cookie, request }) => {
       const result = await AuthService.login(body)
       const { user, merchant } = result.data
-      auditFromRequest({ user, merchant }, request, {
+      await auditFromRequest({ user, merchant }, request, {
         action: 'auth.login',
         entityType: 'auth',
         entityId: user.id

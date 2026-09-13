@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, ilike, or, sql } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { customers, orders, refunds, publicCustomerColumns } from '../../database/schema'
 import { parseCsv, toCsv } from '../../shared/csv'
 import { emit } from '../../shared/event-dispatch'
@@ -15,6 +15,7 @@ const SORTABLE: Record<string, typeof customers.totalSpent | typeof customers.or
 
 export class CustomersService {
   static async list(
+    db: DB,
     merchantId: string,
     q: { page?: string; limit?: string; search?: string; tag?: string; sortBy?: string; sortOrder?: string }
   ) {
@@ -52,7 +53,7 @@ export class CustomersService {
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(db: DB, merchantId: string, id: string) {
     const [customer] = await db
       .select(publicCustomerColumns)
       .from(customers)
@@ -77,7 +78,7 @@ export class CustomersService {
     })
   }
 
-  static async orders(merchantId: string, customerId: string, q: { page?: string; limit?: string }) {
+  static async orders(db: DB, merchantId: string, customerId: string, q: { page?: string; limit?: string }) {
     const { page, limit, offset } = parsePagination(q)
 
     const [customer] = await db
@@ -101,7 +102,7 @@ export class CustomersService {
 
   /* ------------------------------ csv export ------------------------------ */
 
-  static async exportCsv(merchantId: string): Promise<string> {
+  static async exportCsv(db: DB, merchantId: string): Promise<string> {
     const rows = await db
       .select(publicCustomerColumns)
       .from(customers)
@@ -135,7 +136,7 @@ export class CustomersService {
 
   /* ------------------------------ csv import ------------------------------ */
 
-  static async importCsv(merchantId: string, text: string) {
+  static async importCsv(db: DB, merchantId: string, text: string) {
     const parsed = parseCsv(text)
     if (parsed.length < 2) {
       throw badRequest('BAD_REQUEST', 'CSV needs a header row and at least one data row')

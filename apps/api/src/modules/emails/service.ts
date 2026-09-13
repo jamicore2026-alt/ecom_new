@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { createLogger } from '../../shared/logger'
 
 const log = createLogger('emails')
@@ -27,7 +27,7 @@ interface Identity {
 export class EmailsService {
   /* ------------------------------ settings ------------------------------- */
 
-  private static async identity(merchantId: string): Promise<Identity | null> {
+  private static async identity(db: DB, merchantId: string): Promise<Identity | null> {
     const [row] = await db
       .select({
         settings: notificationSettings,
@@ -61,16 +61,19 @@ export class EmailsService {
   /* -------------------------------- sending ------------------------------ */
 
   /** Queues a transactional email. Never throws — notifications must not break checkout. */
-  static async queue(input: {
-    merchantId: string
-    orderId?: string | null
-    to: string
-    template: EmailTemplateId
-    subject: string
-    html: string
-  }): Promise<void> {
+  static async queue(
+    db: DB,
+    input: {
+      merchantId: string
+      orderId?: string | null
+      to: string
+      template: EmailTemplateId
+      subject: string
+      html: string
+    }
+  ): Promise<void> {
     try {
-      const identity = await this.identity(input.merchantId)
+      const identity = await this.identity(db, input.merchantId)
       if (!identity) return
       const [settingsRow] = await db
         .select({ templates: notificationSettings.templates })
@@ -90,7 +93,7 @@ export class EmailsService {
         .returning()
 
       // Fire-and-forget delivery — the response has already been sent.
-      void this.deliver(log.id, {
+      void this.deliver(db, log.id, {
         from: identity.from,
         to: input.to,
         subject: input.subject,
@@ -101,7 +104,7 @@ export class EmailsService {
     }
   }
 
-  private static async deliver(logId: string, input: Parameters<ReturnType<typeof getMailer>['send']>[0]) {
+  private static async deliver(db: DB, logId: string, input: Parameters<ReturnType<typeof getMailer>['send']>[0]) {
     try {
       const result = await getMailer().send(input)
       await db
@@ -133,6 +136,7 @@ export class EmailsService {
    * the merchant's notification settings + from-name/from-email identity.
    */
   static async shopperAuthEmail(
+    db: DB,
     merchantId: string,
     input: {
       to: string
@@ -147,7 +151,7 @@ export class EmailsService {
       ? `${process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'}/${input.slug}/account/${input.kind === 'reset_password' ? 'reset' : 'verify'}/${encodeURIComponent(input.token)}`
       : `${process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5479'}/account/${input.kind === 'reset_password' ? 'reset' : 'verify'}/${encodeURIComponent(input.token)}`
 
-    await this.queue({
+    await this.queue(db, {
       merchantId,
       to: input.to,
       template: input.kind,
@@ -158,7 +162,7 @@ export class EmailsService {
           input.kind === 'reset_password'
             ? 'We received a request to reset your password. Click below to set a new one. If you did not request this, you can safely ignore this email.'
             : 'Confirm that this is your email address to keep your account secure.',
-        storeName: (await this.identity(merchantId))?.storeName ?? 'Our store',
+        storeName: (await this.identity(db, merchantId))?.storeName ?? 'Our store',
         cta: {
           label: input.kind === 'reset_password' ? 'Reset password' : 'Verify email',
           url
@@ -169,7 +173,7 @@ export class EmailsService {
 
   /* ------------------------------- triggers ------------------------------ */
 
-  private static async recipientFor(order: Order): Promise<string | null> {
+  private static async recipientFor(db: DB, order: Order): Promise<string | null> {
     if (!order.customerId) return null
     const [customer] = await db
       .select({ email: customers.email })
@@ -178,22 +182,22 @@ export class EmailsService {
     return customer?.email ?? null
   }
 
-  private static async itemsFor(orderId: string) {
+  private static async itemsFor(db: DB, orderId: string) {
     return db
       .select({ name: orderItems.name, quantity: orderItems.quantity, total: orderItems.total })
       .from(orderItems)
       .where(eq(orderItems.orderId, orderId))
   }
 
-  static async orderPlaced(order: Order): Promise<void> {
+  static async orderPlaced(db: DB, order: Order): Promise<void> {
     try {
-      const identity = await this.identity(order.merchantId)
-      const to = await this.recipientFor(order)
+      const identity = await this.identity(db, order.merchantId)
+      const to = await this.recipientFor(db, order)
       if (!identity || !to) return
-      const items = await this.itemsFor(order.id)
+      const items = await this.itemsFor(db, order.id)
       const paid = order.paymentStatus === 'paid'
       const total = this.formatMoney(Number(order.total), order.currency)
-      await this.queue({
+      await this.queue(db, {
         merchantId: order.merchantId,
         orderId: order.id,
         to,
@@ -222,14 +226,14 @@ export class EmailsService {
     }
   }
 
-  static async orderPaid(merchantId: string, orderId: string): Promise<void> {
+  static async orderPaid(db: DB, merchantId: string, orderId: string): Promise<void> {
     try {
       const [order] = await db.select().from(orders).where(eq(orders.id, orderId))
       if (!order) return
-      const identity = await this.identity(merchantId)
-      const to = await this.recipientFor(order)
+      const identity = await this.identity(db, merchantId)
+      const to = await this.recipientFor(db, order)
       if (!identity || !to) return
-      await this.queue({
+      await this.queue(db, {
         merchantId,
         orderId,
         to,
@@ -250,14 +254,14 @@ export class EmailsService {
     }
   }
 
-  static async refundProcessed(merchantId: string, orderId: string, amount: number): Promise<void> {
+  static async refundProcessed(db: DB, merchantId: string, orderId: string, amount: number): Promise<void> {
     try {
       const [order] = await db.select().from(orders).where(eq(orders.id, orderId))
       if (!order) return
-      const identity = await this.identity(merchantId)
-      const to = await this.recipientFor(order)
+      const identity = await this.identity(db, merchantId)
+      const to = await this.recipientFor(db, order)
       if (!identity || !to) return
-      await this.queue({
+      await this.queue(db, {
         merchantId,
         orderId,
         to,

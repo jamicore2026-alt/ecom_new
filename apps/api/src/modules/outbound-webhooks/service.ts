@@ -1,6 +1,6 @@
 import { Type } from '@sinclair/typebox'
 import { and, desc, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { backgroundJobs, webhookDeliveries, webhookEndpoints } from '../../database/schema'
 import { badRequest, notFound } from '../../shared/errors'
 import { encryptJson, decryptJson, maskSecret } from '../../shared/crypto'
@@ -37,7 +37,7 @@ export class OutboundWebhooksService {
     secret: maskSecret(row.secret)
   })
 
-  static listEndpoints = async (merchantId: string) => {
+  static listEndpoints = async (db: DB, merchantId: string) => {
     const rows = await db
       .select()
       .from(webhookEndpoints)
@@ -46,7 +46,7 @@ export class OutboundWebhooksService {
     return rows.map(this.maskEndpoint)
   }
 
-  static getEndpoint = async (merchantId: string, id: string) => {
+  static getEndpoint = async (db: DB, merchantId: string, id: string) => {
     const [row] = await db
       .select()
       .from(webhookEndpoints)
@@ -56,7 +56,7 @@ export class OutboundWebhooksService {
   }
 
   /** Returns the raw (decrypted) endpoint for internal use only (webhook delivery). */
-  static getEndpointRaw = async (merchantId: string, id: string) => {
+  static getEndpointRaw = async (db: DB, merchantId: string, id: string) => {
     const [row] = await db
       .select()
       .from(webhookEndpoints)
@@ -66,6 +66,7 @@ export class OutboundWebhooksService {
   }
 
   static createEndpoint = async (
+    db: DB,
     merchantId: string,
     input: {
       name: string
@@ -94,6 +95,7 @@ export class OutboundWebhooksService {
   }
 
   static updateEndpoint = async (
+    db: DB,
     merchantId: string,
     id: string,
     input: {
@@ -104,7 +106,7 @@ export class OutboundWebhooksService {
       events?: (typeof WEBHOOK_EVENTS)[number][]
     }
   ) => {
-    await this.getEndpoint(merchantId, id)
+    await this.getEndpoint(db, merchantId, id)
     const [row] = await db
       .update(webhookEndpoints)
       .set({
@@ -120,8 +122,8 @@ export class OutboundWebhooksService {
     return this.maskEndpoint(row)
   }
 
-  static deleteEndpoint = async (merchantId: string, id: string) => {
-    await this.getEndpoint(merchantId, id)
+  static deleteEndpoint = async (db: DB, merchantId: string, id: string) => {
+    await this.getEndpoint(db, merchantId, id)
     const [row] = await db
       .delete(webhookEndpoints)
       .where(and(eq(webhookEndpoints.id, id), eq(webhookEndpoints.merchantId, merchantId)))
@@ -129,7 +131,7 @@ export class OutboundWebhooksService {
     return row
   }
 
-  static listDeliveries = async (merchantId: string, query?: { status?: string }) => {
+  static listDeliveries = async (db: DB, merchantId: string, query?: { status?: string }) => {
     const conditions = [eq(webhookDeliveries.merchantId, merchantId)]
     if (query?.status) conditions.push(eq(webhookDeliveries.status, query.status))
     return db
@@ -140,7 +142,7 @@ export class OutboundWebhooksService {
       .limit(100)
   }
 
-  static getDelivery = async (merchantId: string, id: string) => {
+  static getDelivery = async (db: DB, merchantId: string, id: string) => {
     const [row] = await db
       .select()
       .from(webhookDeliveries)
@@ -149,9 +151,9 @@ export class OutboundWebhooksService {
     return row
   }
 
-  static retryDelivery = async (merchantId: string, id: string) => {
-    const delivery = await this.getDelivery(merchantId, id)
-    const endpoint = await this.getEndpoint(merchantId, delivery.endpointId)
+  static retryDelivery = async (db: DB, merchantId: string, id: string) => {
+    const delivery = await this.getDelivery(db, merchantId, id)
+    const endpoint = await this.getEndpoint(db, merchantId, delivery.endpointId)
     if (!endpoint.enabled) throw badRequest('ENDPOINT_DISABLED', 'Webhook endpoint is disabled')
 
     const [updated] = await db
@@ -162,7 +164,7 @@ export class OutboundWebhooksService {
     return updated
   }
 
-  static listJobs = async (merchantId: string) => {
+  static listJobs = async (db: DB, merchantId: string) => {
     return db
       .select()
       .from(backgroundJobs)
@@ -170,7 +172,7 @@ export class OutboundWebhooksService {
       .orderBy(desc(backgroundJobs.createdAt))
   }
 
-  static getJob = async (merchantId: string, id: string) => {
+  static getJob = async (db: DB, merchantId: string, id: string) => {
     const [row] = await db
       .select()
       .from(backgroundJobs)

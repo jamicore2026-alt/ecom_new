@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import { db } from '../../database/client'
+import { PUBLIC_STATUSES } from '../../shared/merchant-lifecycle'
 import { createLogger } from '../../shared/logger'
 
 const log = createLogger('storefront')
@@ -215,7 +216,7 @@ export class StorefrontService {
     const [merchant] = await db
       .select()
       .from(merchants)
-      .where(and(eq(merchants.slug, slug), eq(merchants.status, 'active')))
+      .where(and(eq(merchants.slug, slug), inArray(merchants.status, PUBLIC_STATUSES)))
     if (!merchant) throw notFound('STORE_NOT_FOUND', 'Store not found')
 
     const [settings] = await db
@@ -826,7 +827,7 @@ export class StorefrontService {
     } | null = null
     let discountTotal = 0
     if (body.couponCode?.trim()) {
-      const { data } = await DiscountsService.validateCoupon(
+      const { data } = await DiscountsService.validateCoupon(db, 
         store.merchant.id,
         body.couponCode,
         subtotal,
@@ -844,7 +845,7 @@ export class StorefrontService {
 
     // Server-side promotion resolution (P0-05) — the best active promotion is
     // applied automatically, before coupons, and never trusts client totals.
-    const promo = await DiscountsService.resolvePromotion(
+    const promo = await DiscountsService.resolvePromotion(db, 
       store.merchant.id,
       currency,
       items.map((l) => ({
@@ -1328,7 +1329,7 @@ export class StorefrontService {
         throw err
       }
 
-      void EmailsService.orderPlaced(result)
+      void EmailsService.orderPlaced(db, result)
       emit(summary.store.merchant.id, 'order.created', {
         orderId: result.id,
         orderNumber: result.orderNumber,
@@ -1338,7 +1339,7 @@ export class StorefrontService {
 
       // Convert the tracked shopping cart (if the shopper had one) into an order.
       if (body.cartId) {
-        void CartsService.markConverted(summary.store.merchant.id, body.cartId, result.id)
+        void CartsService.markConverted(db, summary.store.merchant.id, body.cartId, result.id)
       }
 
       return ok({
@@ -1370,7 +1371,7 @@ export class StorefrontService {
       promotionId: summary.promotion?.id ?? null
     }, { paymentStatus })
 
-    void EmailsService.orderPlaced(result)
+    void EmailsService.orderPlaced(db, result)
     emit(summary.store.merchant.id, 'order.created', {
       orderId: result.id,
       orderNumber: result.orderNumber,
@@ -1380,7 +1381,7 @@ export class StorefrontService {
 
     // Convert the tracked shopping cart (if the shopper had one) into an order.
     if (body.cartId) {
-      void CartsService.markConverted(summary.store.merchant.id, body.cartId, result.id)
+      void CartsService.markConverted(db, summary.store.merchant.id, body.cartId, result.id)
     }
 
     return ok({
@@ -1475,7 +1476,7 @@ export class StorefrontService {
       throw err
     }
 
-    void EmailsService.orderPlaced(order)
+    void EmailsService.orderPlaced(db, order)
     emit(store.merchant.id, 'order.created', {
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -1485,7 +1486,7 @@ export class StorefrontService {
 
     // Convert the tracked shopping cart (if the shopper had one) into an order.
     if (body.cartId) {
-      void CartsService.markConverted(store.merchant.id, body.cartId, order.id)
+      void CartsService.markConverted(db, store.merchant.id, body.cartId, order.id)
     }
 
     const urls = this.orderUrls(slug, providerId, order.orderNumber)
@@ -1549,7 +1550,7 @@ export class StorefrontService {
    *  shared cancellation (claim + restock + coupon restore).
    *  Returns false when another path (webhook, sweep, sync) already resolved the order. */
   private static async cancelPendingOrder(order: typeof orders.$inferSelect): Promise<boolean> {
-    return runCancelPendingOrder(order)
+    return runCancelPendingOrder(db, order)
   }
 
   /** Server-side re-verification used by the storefront return page. */
@@ -1607,7 +1608,7 @@ export class StorefrontService {
       providerRef: txn?.providerRef ?? undefined
     })
 
-    const applied = await OrdersService.applyPaymentResult(store.merchant.id, order.paymentProvider, result)
+    const applied = await OrdersService.applyPaymentResult(db, store.merchant.id, order.paymentProvider, result)
     const [fresh] = await db.select().from(orders).where(eq(orders.id, order.id))
     return ok({
       orderNumber: fresh.orderNumber,

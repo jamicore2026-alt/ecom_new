@@ -11,7 +11,7 @@ export const userOutletsModule = new Elysia({ prefix: '/api' })
   .get(
     '/user-outlets/:userId',
     async ({ params, auth }) =>
-      UserOutletsService.listForUser(auth.merchant.id, params.userId),
+      UserOutletsService.listForUser(auth.db, auth.merchant.id, params.userId),
     { params: userParams, detail: { summary: 'List explicit outlet assignments for a user' } }
   )
   .use(outletGuard({ permissions: ['staff.manage'] }))
@@ -19,11 +19,12 @@ export const userOutletsModule = new Elysia({ prefix: '/api' })
     '/user-outlets/:userId',
     async ({ params, body, auth, request }) => {
       const result = await UserOutletsService.assign(
+        auth.db,
         auth.merchant.id,
         params.userId,
         body.outletIds
       )
-      auditFromRequest(auth, request, {
+      await auditFromRequest(auth, request, {
         action: 'user_outlets.assign',
         entityType: 'user',
         entityId: params.userId,

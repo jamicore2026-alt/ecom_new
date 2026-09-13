@@ -5,6 +5,7 @@ import { merchants, roles, users, storeSettings } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { unauthorized, forbidden, badRequest } from '../../shared/errors'
 import { resolveMerchantContext } from '../../shared/merchant-context'
+import { isOperational } from '../../shared/merchant-lifecycle'
 import { normalizePermissions } from '../../shared/types'
 import { loginAttempts } from './login-attempts'
 import type { Merchant, Role, User } from '../../database/schema'
@@ -43,7 +44,8 @@ const publicMerchant = (merchant: Merchant) => ({
   id: merchant.id,
   name: merchant.name,
   slug: merchant.slug,
-  currency: merchant.currency
+  currency: merchant.currency,
+  status: merchant.status
 })
 
 export class AuthService {
@@ -126,7 +128,7 @@ export class AuthService {
     if (user.status !== 'active') {
       throw forbidden('This account has been disabled')
     }
-    if (!merchant || merchant.status !== 'active') {
+    if (!merchant || !isOperational(merchant.status)) {
       throw forbidden('This store is not active')
     }
 
@@ -140,7 +142,7 @@ export class AuthService {
     if (!user || user.status !== 'active') throw unauthorized('User no longer exists or is disabled')
 
     const [merchant] = await db.select().from(merchants).where(eq(merchants.id, user.merchantId))
-    if (!merchant || merchant.status !== 'active') {
+    if (!merchant || !isOperational(merchant.status)) {
       throw unauthorized('Store is not active')
     }
 
@@ -151,6 +153,7 @@ export class AuthService {
 
     const role = await loadUserRole(user)
     const context = await resolveMerchantContext(
+      db,
       user.id,
       merchant.id,
       user.role === 'owner' || user.role === 'admin',

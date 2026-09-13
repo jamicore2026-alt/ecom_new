@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 import { t } from 'elysia'
+import { db } from '../../database/client'
 import { authPlugin, requirePermission } from '../../plugins/auth'
 import { CartsService } from './service'
 
@@ -32,7 +33,7 @@ export const cartsModule = new Elysia({ prefix: '/api' })
   // Public storefront cart persistence (fires from the client-side cart)
   .post(
     '/store/:slug/cart',
-    ({ params, body }) => CartsService.saveCart(params.slug, body),
+    ({ params, body }) => CartsService.saveCart(db, params.slug, body),
     {
       params: storeParams,
       body: saveCartBody,
@@ -41,7 +42,7 @@ export const cartsModule = new Elysia({ prefix: '/api' })
   )
   .get(
     '/store/:slug/cart/recover/:code',
-    ({ params }) => CartsService.recoverCart(params.slug, params.code),
+    ({ params }) => CartsService.recoverCart(db, params.slug, params.code),
     {
       params: t.Object({ slug: t.String(), code: t.String() }),
       detail: { tags: ['Storefront'], summary: 'Recover an abandoned cart via recovery code' }
@@ -53,7 +54,7 @@ export const cartsModule = new Elysia({ prefix: '/api' })
   .use(requirePermission('customers.read'))
   .get(
     '/carts',
-    ({ auth, query }) => CartsService.list(auth.merchant.id, query),
+    ({ auth, query }) => CartsService.list(auth.db, auth.merchant.id, query),
     {
       query: cartQuery,
       detail: { tags: ['Carts'], summary: 'List carts (abandoned/converted)' }

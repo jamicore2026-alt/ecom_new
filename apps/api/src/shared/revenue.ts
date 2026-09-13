@@ -1,7 +1,7 @@
 import { and, eq, gte, inArray, sql } from 'drizzle-orm'
-import { db } from '../database/client'
 import { orders, refunds } from '../database/schema'
 import { branchOrderCondition } from './outlet-scope'
+import type { DB } from '../database/client'
 
 /**
  * Payment states that mean money was actually collected for an order.
@@ -37,6 +37,7 @@ const inWindow = (merchantId: string, since: Date, branchIds: string[] | null = 
 
 /** Net revenue in a window: collected order totals minus completed refunds. */
 export async function netRevenue(
+  db: DB,
   merchantId: string,
   since: Date,
   branchIds: string[] | null = null
@@ -57,6 +58,7 @@ export async function netRevenue(
  * separate refund day in the same series.
  */
 export async function netRevenueByDay(
+  db: DB,
   merchantId: string,
   since: Date,
   branchIds: string[] | null = null

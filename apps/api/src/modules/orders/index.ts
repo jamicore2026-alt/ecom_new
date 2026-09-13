@@ -12,7 +12,7 @@ import {
   updateStatusBody
 } from './model'
 
-const scopeOf = async (auth: AuthContext) => branchScopeOf(auth)
+const scopeOf = async (auth: AuthContext) => branchScopeOf(auth.db, auth)
 
 export const ordersModule = new Elysia({ prefix: '/api' })
   // Outlet scope: reads are filtered by the caller's branch scope
@@ -21,7 +21,7 @@ export const ordersModule = new Elysia({ prefix: '/api' })
   // merchant-wide. docs/outlet-isolation.md
   .use(authPlugin)
   .get('/orders', async ({ query, auth }) =>
-    OrdersService.list(auth.merchant.id, query, await scopeOf(auth)),
+    OrdersService.list(auth.db, auth.merchant.id, query, await scopeOf(auth)),
     {
       query: orderQuery
     }
@@ -30,7 +30,7 @@ export const ordersModule = new Elysia({ prefix: '/api' })
   .get(
     '/orders/export',
     async ({ auth, set }) => {
-      const csv = await OrdersService.exportCsv(auth.merchant.id, await scopeOf(auth))
+      const csv = await OrdersService.exportCsv(auth.db, auth.merchant.id, await scopeOf(auth))
       set.headers['content-type'] = 'text/csv; charset=utf-8'
       set.headers['content-disposition'] = `attachment; filename="orders-${auth.merchant.slug}-${new Date().toISOString().slice(0, 10)}.csv"`
       return csv
@@ -38,25 +38,26 @@ export const ordersModule = new Elysia({ prefix: '/api' })
     { detail: { summary: 'Export orders as CSV' } }
   )
   .get('/orders/:id', async ({ params, auth }) =>
-    OrdersService.get(auth.merchant.id, params.id, await scopeOf(auth))
+    OrdersService.get(auth.db, auth.merchant.id, params.id, await scopeOf(auth))
   )
   .get('/returns', async ({ query, auth }) =>
-    OrdersService.listReturns(auth.merchant.id, query.orderId, await scopeOf(auth))
+    OrdersService.listReturns(auth.db, auth.merchant.id, query.orderId, await scopeOf(auth))
   )
   .get('/refunds', async ({ query, auth }) =>
-    OrdersService.listRefunds(auth.merchant.id, query.orderId, await scopeOf(auth))
+    OrdersService.listRefunds(auth.db, auth.merchant.id, query.orderId, await scopeOf(auth))
   )
   .use(requirePermission('orders.create', 'orders.update', 'orders.cancel'))
   .patch(
     '/orders/:id/status',
     async ({ params, body, auth, request }) => {
       const result = await OrdersService.updateStatus(
+        auth.db,
         auth.merchant.id,
         params.id,
         body,
         await scopeOf(auth)
       )
-      auditFromRequest(auth, request, {
+      await auditFromRequest(auth, request, {
         action: 'order.status_change',
         entityType: 'order',
         entityId: params.id,
@@ -67,23 +68,23 @@ export const ordersModule = new Elysia({ prefix: '/api' })
     { body: updateStatusBody }
   )
   .post('/orders/:id/cancel', async ({ params, auth }) =>
-    OrdersService.cancel(auth.merchant.id, params.id, await scopeOf(auth))
+    OrdersService.cancel(auth.db, auth.merchant.id, params.id, await scopeOf(auth))
   )
   .post('/returns', async ({ body, auth }) =>
-    OrdersService.createReturn(auth.merchant.id, body, await scopeOf(auth)),
+    OrdersService.createReturn(auth.db, auth.merchant.id, body, await scopeOf(auth)),
     {
       body: createReturnBody
     }
   )
   .patch('/returns/:id', async ({ params, body, auth }) =>
-    OrdersService.updateReturn(auth.merchant.id, params.id, body, await scopeOf(auth)), { body: updateReturnBody }
+    OrdersService.updateReturn(auth.db, auth.merchant.id, params.id, body, await scopeOf(auth)), { body: updateReturnBody }
   )
   .post('/refunds', async ({ body, auth }) =>
-    OrdersService.createRefund(auth.merchant.id, body, await scopeOf(auth)),
+    OrdersService.createRefund(auth.db, auth.merchant.id, body, await scopeOf(auth)),
     {
       body: createRefundBody
     }
   )
   .post('/refunds/:id/retry', async ({ params, auth }) =>
-    OrdersService.retryRefund(auth.merchant.id, params.id, await scopeOf(auth))
+    OrdersService.retryRefund(auth.db, auth.merchant.id, params.id, await scopeOf(auth))
   )

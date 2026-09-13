@@ -168,7 +168,7 @@ describe('transactional emails', () => {
     createdOrderIds.push(order.id)
     expect(order.paymentStatus).toBe('unpaid')
 
-    await EmailsService.orderPaid(order.merchantId, order.id)
+    await EmailsService.orderPaid(db, order.merchantId, order.id)
     const log = await waitForLog(order.id, 'order_paid')
     expect(log).not.toBeNull()
     expect(log!.status).toBe('skipped')
@@ -178,7 +178,7 @@ describe('transactional emails', () => {
   it('emails the customer after a refund is processed', async () => {
     const order = await placeCardOrder('mail-refund@example.com')
 
-    await OrdersService.createRefund(order.merchantId, {
+    await OrdersService.createRefund(db, order.merchantId, {
       orderId: order.id,
       amount: Number(order.total)
     })

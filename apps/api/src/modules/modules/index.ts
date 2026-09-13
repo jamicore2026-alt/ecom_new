@@ -7,13 +7,13 @@ import { moduleParams, setModuleEnabledBody } from './model'
 
 export const modulesModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
-  .get('/modules', async ({ auth }) => ModulesService.list(auth.merchant.id))
+  .get('/modules', async ({ auth }) => ModulesService.list(auth.db, auth.merchant.id))
   .use(outletGuard({ permissions: ['settings.manage'] }))
   .put(
     '/modules/:module',
     async ({ params, body, auth, request }) => {
-      const result = await ModulesService.setEnabled(auth.merchant.id, params.module, body.enabled)
-      auditFromRequest(auth, request, {
+      const result = await ModulesService.setEnabled(auth.db, auth.merchant.id, params.module, body.enabled)
+      await auditFromRequest(auth, request, {
         action: 'module.set_enabled',
         entityType: 'module',
         entityId: params.module,

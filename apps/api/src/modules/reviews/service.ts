@@ -1,5 +1,5 @@
 import { and, count, desc, eq, inArray, sql } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { customers, products, reviews } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
@@ -7,6 +7,7 @@ import { makeMeta, parsePagination } from '../../shared/pagination'
 
 export class ReviewsService {
   static async list(
+    db: DB,
     merchantId: string,
     q: { page?: string; limit?: string; status?: string; productId?: string; rating?: string }
   ) {
@@ -51,7 +52,7 @@ export class ReviewsService {
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
   }
 
-  static async update(merchantId: string, id: string, body: { status: string }) {
+  static async update(db: DB, merchantId: string, id: string, body: { status: string }) {
     const [existing] = await db
       .select({ id: reviews.id })
       .from(reviews)
@@ -66,7 +67,7 @@ export class ReviewsService {
     return ok(updated)
   }
 
-  static async remove(merchantId: string, id: string) {
+  static async remove(db: DB, merchantId: string, id: string) {
     const [deleted] = await db
       .delete(reviews)
       .where(and(eq(reviews.id, id), eq(reviews.merchantId, merchantId)))
@@ -76,7 +77,7 @@ export class ReviewsService {
   }
 
   /** Approved-rating aggregates for a set of products (storefront summaries). */
-  static async summaryFor(merchantId: string, productIds: string[]) {
+  static async summaryFor(db: DB, merchantId: string, productIds: string[]) {
     const map = new Map<string, { average: number; count: number }>()
     if (productIds.length === 0) return map
     const rows = await db

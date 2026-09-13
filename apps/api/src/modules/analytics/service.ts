@@ -1,5 +1,5 @@
 import { and, count, eq, gte, inArray, lte, sql } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import {
   categories,
   customers,
@@ -46,7 +46,7 @@ const intervalTruncExpressions: Record<AnalyticsInterval, ReturnType<typeof sql.
 export class AnalyticsService {
   /* --------------------------------- sales -------------------------------- */
 
-  static async sales(merchantId: string, q: Query, branchIds: string[] | null = null) {
+  static async sales(db: DB, merchantId: string, q: Query, branchIds: string[] | null = null) {
     const { start, end } = parseRange(q.from, q.to)
     const interval: AnalyticsInterval = q.interval ?? 'day'
     const length = end.getTime() - start.getTime()
@@ -135,7 +135,7 @@ export class AnalyticsService {
 
   /* -------------------------------- products ------------------------------ */
 
-  static async products(merchantId: string, q: Query, branchIds: string[] | null = null) {
+  static async products(db: DB, merchantId: string, q: Query, branchIds: string[] | null = null) {
     const { start, end } = parseRange(q.from, q.to)
     const scope = branchOrderCondition(branchIds)
 
@@ -220,11 +220,11 @@ export class AnalyticsService {
       top,
       categoryBreakdown,
       lowPerformers,
-      totalProducts: await this.countProducts(merchantId)
+      totalProducts: await this.countProducts(db, merchantId)
     })
   }
 
-  private static async countProducts(merchantId: string) {
+  private static async countProducts(db: DB, merchantId: string) {
     const [row] = await db
       .select({ total: count() })
       .from(products)
@@ -234,7 +234,7 @@ export class AnalyticsService {
 
   /* -------------------------------- customers ------------------------------ */
 
-  static async customers(merchantId: string, q: Query, branchIds: string[] | null = null) {
+  static async customers(db: DB, merchantId: string, q: Query, branchIds: string[] | null = null) {
     const { start, end } = parseRange(q.from, q.to)
     const scope = branchOrderCondition(branchIds)
 
@@ -306,7 +306,7 @@ export class AnalyticsService {
 
   /* ------------------------------- conversion ------------------------------ */
 
-  static async conversion(merchantId: string, q: Query) {
+  static async conversion(db: DB, merchantId: string, q: Query) {
     const { start, end } = parseRange(q.from, q.to)
     const length = end.getTime() - start.getTime()
     const prevStart = new Date(start.getTime() - length)

@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, ilike, inArray } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import {
   orders,
   foodOrderItems,
@@ -68,7 +68,7 @@ const assertOrderInScope = (scope: OutletScope, outletId: string | null | undefi
 }
 
 export class FoodOrdersService {
-  static async list(merchantId: string, query: { orderType?: string; status?: string; outletId?: string; search?: string; page?: string | number; limit?: string | number }, scope: OutletScope) {
+  static async list(db: DB, merchantId: string, query: { orderType?: string; status?: string; outletId?: string; search?: string; page?: string | number; limit?: string | number }, scope: OutletScope) {
     const { page, limit, offset } = parsePagination(query)
     const conds = [eq(orders.merchantId, merchantId), inArray(orders.orderType, ['DINE_IN', 'TAKEAWAY', 'DELIVERY', 'QR', 'POS', 'SCHEDULED'])]
 
@@ -108,7 +108,7 @@ export class FoodOrdersService {
     return ok({ items: rows, meta: makeMeta(page, limit, total) })
   }
 
-  static async get(merchantId: string, id: string, scope: OutletScope) {
+  static async get(db: DB, merchantId: string, id: string, scope: OutletScope) {
     const [row] = await db
       .select({ ...ORDER_COLUMNS, outletName: outlets.name })
       .from(orders)
@@ -121,7 +121,7 @@ export class FoodOrdersService {
     return ok({ ...row, items })
   }
 
-  static async create(merchantId: string, input: {
+  static async create(db: DB, merchantId: string, input: {
     orderType: string
     outletId: string
     items: { menuItemId: string; quantity: number; modifiers?: { modifierId: string; quantity?: number }[] }[]
@@ -145,7 +145,7 @@ export class FoodOrdersService {
             eq(orders.idempotencyKey, input.idempotencyKey)
           )
         )
-      if (existing) return this.get(merchantId, existing.id, scope)
+      if (existing) return this.get(db, merchantId, existing.id, scope)
     }
 
     assertOrderInScope(scope, input.outletId)
@@ -174,7 +174,7 @@ export class FoodOrdersService {
       .where(and(eq(menuItems.merchantId, merchantId), inArray(menuItems.id, menuIds)))
     const byId = new Map(loaded.map((m) => [m.id, m]))
 
-    const ctx = await this.buildResolver(merchantId, menuIds)
+    const ctx = await this.buildResolver(db, merchantId, menuIds)
     const orderNumber = `#F${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`
 
     const { order } = await db.transaction(async (tx) => {
@@ -195,17 +195,17 @@ export class FoodOrdersService {
         idempotencyKey: input.idempotencyKey ?? null
       }).returning()
 
-      const { subtotal, taxTotal, lines } = this.computeLines(merchantId, order.id, byId, ctx, input.items)
+      const { subtotal, taxTotal, lines } = this.computeLines(db, merchantId, order.id, byId, ctx, input.items)
       await tx.insert(foodOrderItems).values(lines)
       const total = round2(subtotal + taxTotal)
       const [updated] = await tx.update(orders).set({ subtotal, taxTotal, total }).where(eq(orders.id, order.id)).returning()
       return { order: updated, lines }
     })
 
-    return this.get(merchantId, order.id, scope)
+    return this.get(db, merchantId, order.id, scope)
   }
 
-  static async transition(merchantId: string, id: string, nextStatus: string, scope: OutletScope) {
+  static async transition(db: DB, merchantId: string, id: string, nextStatus: string, scope: OutletScope) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Food order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
@@ -220,12 +220,12 @@ export class FoodOrdersService {
     return ok(updated)
   }
 
-  static async cancel(merchantId: string, id: string, scope: OutletScope) {
+  static async cancel(db: DB, merchantId: string, id: string, scope: OutletScope) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Food order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
     if (order.status === 'COMPLETED') throw conflict('INVALID_TRANSITION', 'A completed order cannot be cancelled')
-    return this.transition(merchantId, id, 'CANCELLED', scope)
+    return this.transition(db, merchantId, id, 'CANCELLED', scope)
   }
 
   /**
@@ -236,7 +236,7 @@ export class FoodOrdersService {
    * tender). A real `payment_transactions` row is always written so refunds,
    * journals and reporting see the payment.
    */
-  static async pay(merchantId: string, id: string, scope: OutletScope, paymentMethod?: string, cashReceived?: number) {
+  static async pay(db: DB, merchantId: string, id: string, scope: OutletScope, paymentMethod?: string, cashReceived?: number) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Food order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
@@ -279,11 +279,11 @@ export class FoodOrdersService {
       })
     })
 
-    const refetched = await this.get(merchantId, id, scope)
+    const refetched = await this.get(db, merchantId, id, scope)
     return refetched
   }
 
-  static async update(merchantId: string, id: string, input: { items?: { menuItemId: string; quantity: number; modifiers?: { modifierId: string; quantity?: number }[] }[]; notes?: string; scheduledFor?: string }, scope: OutletScope) {
+  static async update(db: DB, merchantId: string, id: string, input: { items?: { menuItemId: string; quantity: number; modifiers?: { modifierId: string; quantity?: number }[] }[]; notes?: string; scheduledFor?: string }, scope: OutletScope) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Food order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
@@ -307,8 +307,8 @@ export class FoodOrdersService {
         .innerJoin(products, eq(menuItems.productId, products.id))
         .where(and(eq(menuItems.merchantId, merchantId), inArray(menuItems.id, menuIds)))
       const byId = new Map(loaded.map((m) => [m.id, m]))
-      const ctx = await this.buildResolver(merchantId, menuIds)
-      const { subtotal, taxTotal, lines } = this.computeLines(merchantId, id, byId, ctx, input.items)
+      const ctx = await this.buildResolver(db, merchantId, menuIds)
+      const { subtotal, taxTotal, lines } = this.computeLines(db, merchantId, id, byId, ctx, input.items)
 
       await db.transaction(async (tx) => {
         await tx.delete(foodOrderItems).where(eq(foodOrderItems.orderId, id))
@@ -317,10 +317,10 @@ export class FoodOrdersService {
       })
     }
 
-    return this.get(merchantId, id, scope)
+    return this.get(db, merchantId, id, scope)
   }
 
-  private static async buildResolver(merchantId: string, menuIds: string[]): Promise<ResolverCtx> {
+  private static async buildResolver(db: DB, merchantId: string, menuIds: string[]): Promise<ResolverCtx> {
     const links = await db
       .select({ menuItemId: menuItemModifiers.menuItemId, modifierGroupId: menuItemModifiers.modifierGroupId })
       .from(menuItemModifiers)
@@ -338,6 +338,7 @@ export class FoodOrdersService {
   }
 
   private static computeLines(
+    db: DB,
     merchantId: string,
     orderId: string,
     byId: Map<string, { id: string; available: boolean; status: string; taxRate: number; productId: string; productName: string; productPrice: number }>,

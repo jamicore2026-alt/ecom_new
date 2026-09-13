@@ -1,5 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm'
-import { db } from '../../database/client'
+import type { DB } from '../../database/client'
 import { campaigns, customers, merchants } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { notFound } from '../../shared/errors'
@@ -9,7 +9,7 @@ const log = createLogger('campaigns')
 import { getMailer, renderEmail } from '../../shared/mailer'
 
 export class CampaignsService {
-  static async list(merchantId: string) {
+  static async list(db: DB, merchantId: string) {
     const rows = await db
       .select()
       .from(campaigns)
@@ -18,7 +18,7 @@ export class CampaignsService {
     return ok({ items: rows })
   }
 
-  static async get(merchantId: string, id: string) {
+  static async get(db: DB, merchantId: string, id: string) {
     const [row] = await db
       .select()
       .from(campaigns)
@@ -28,6 +28,7 @@ export class CampaignsService {
   }
 
   static async create(
+    db: DB,
     merchantId: string,
     input: {
       name: string
@@ -58,12 +59,12 @@ export class CampaignsService {
     return ok(row)
   }
 
-  static async send(merchantId: string, id: string) {
-    const campaign = (await this.get(merchantId, id)).data
+  static async send(db: DB, merchantId: string, id: string) {
+    const campaign = (await this.get(db, merchantId, id)).data
 
     // Resolve audience: parse segment definition or a direct email list.
     const audience = (campaign.audience as Record<string, unknown>) ?? {}
-    const emails = await this.resolveAudience(merchantId, audience)
+    const emails = await this.resolveAudience(db, merchantId, audience)
 
     const [merchant] = await db
       .select({ name: merchants.name })
@@ -102,6 +103,7 @@ export class CampaignsService {
   }
 
   static async update(
+    db: DB,
     merchantId: string,
     id: string,
     input: {
@@ -113,7 +115,7 @@ export class CampaignsService {
       scheduledAt?: string
     }
   ) {
-    await this.get(merchantId, id)
+    await this.get(db, merchantId, id)
     const [row] = await db
       .update(campaigns)
       .set({
@@ -129,15 +131,15 @@ export class CampaignsService {
     return ok(row)
   }
 
-  static async delete(merchantId: string, id: string) {
-    await this.get(merchantId, id)
+  static async delete(db: DB, merchantId: string, id: string) {
+    await this.get(db, merchantId, id)
     await db
       .delete(campaigns)
       .where(and(eq(campaigns.id, id), eq(campaigns.merchantId, merchantId)))
     return ok({ deleted: true })
   }
 
-  private static async resolveAudience(merchantId: string, _audience: Record<string, unknown>) {
+  private static async resolveAudience(db: DB, merchantId: string, _audience: Record<string, unknown>) {
     const all = await db
       .select({ email: customers.email })
       .from(customers)
