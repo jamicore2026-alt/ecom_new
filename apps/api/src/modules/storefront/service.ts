@@ -317,8 +317,8 @@ export class StorefrontService {
 
   /* --------------------------------- sitemap ------------------------------- */
 
-  static async sitemap(slug: string) {
-    const store = await this.resolveStore(slug)
+  static async sitemap(db: DB, slug: string) {
+    const store = await this.resolveStore(db, slug)
     const productRows = await db
       .select({ slug: products.slug })
       .from(products)
@@ -370,8 +370,8 @@ export class StorefrontService {
 
   /* -------------------------------- categories ----------------------------- */
 
-  static async categories(slug: string) {
-    const store = await this.resolveStore(slug)
+  static async categories(db: DB, slug: string) {
+    const store = await this.resolveStore(db, slug)
     const rows = await db
       .select()
       .from(categories)
@@ -413,7 +413,7 @@ export class StorefrontService {
 
   /* -------------------------------- products ------------------------------- */
 
-  private static async categoryAndDescendants(merchantId: string, categorySlug: string) {
+  private static async categoryAndDescendants(db: DB, merchantId: string, categorySlug: string) {
     const [cat] = await db
       .select()
       .from(categories)
@@ -440,6 +440,7 @@ export class StorefrontService {
   }
 
   private static async enrich(
+    db: DB,
     merchantId: string,
     rows: typeof products.$inferSelect[]
   ): Promise<PublicProduct[]> {
@@ -507,8 +508,8 @@ export class StorefrontService {
     })
   }
 
-  static async products(slug: string, q: StorefrontQuery) {
-    const store = await this.resolveStore(slug)
+  static async products(db: DB, slug: string, q: StorefrontQuery) {
+    const store = await this.resolveStore(db, slug)
     const { page, limit, offset } = parsePagination(q)
     const conditions = [
       eq(products.merchantId, store.merchant.id),
@@ -526,7 +527,7 @@ export class StorefrontService {
     if (q.categoryId) {
       conditions.push(eq(products.categoryId, q.categoryId))
     } else if (q.category) {
-      const ids = await this.categoryAndDescendants(store.merchant.id, q.category)
+      const ids = await this.categoryAndDescendants(db, store.merchant.id, q.category)
       conditions.push(inArray(products.categoryId, ids))
     }
 
@@ -557,13 +558,13 @@ export class StorefrontService {
       .offset(offset)
 
     return ok({
-      items: await this.enrich(store.merchant.id, rows),
+      items: await this.enrich(db, store.merchant.id, rows),
       meta: makeMeta(page, limit, Number(total))
     })
   }
 
-  static async product(slug: string, productSlug: string) {
-    const store = await this.resolveStore(slug)
+  static async product(db: DB, slug: string, productSlug: string) {
+    const store = await this.resolveStore(db, slug)
     const [product] = await db
       .select()
       .from(products)
@@ -629,7 +630,7 @@ export class StorefrontService {
       image,
       images: gallery,
       stock,
-      rating: await this.ratingSummary(store.merchant.id, product.id),
+      rating: await this.ratingSummary(db, store.merchant.id, product.id),
       variants: variants.map((v) => ({
         id: v.id,
         sku: v.sku,
@@ -642,12 +643,12 @@ export class StorefrontService {
       category: category
         ? { id: category.id, name: category.name, slug: category.slug, image: category.image }
         : null,
-      related: await this.enrich(store.merchant.id, relatedRows)
+      related: await this.enrich(db, store.merchant.id, relatedRows)
     })
   }
 
   /** Approved-review aggregate for a single product. */
-  private static async ratingSummary(merchantId: string, productId: string) {
+  private static async ratingSummary(db: DB, merchantId: string, productId: string) {
     const [row] = await db
       .select({
         average: sql<string>`avg(${reviews.rating})`.as('average'),
@@ -664,11 +665,12 @@ export class StorefrontService {
 
   /** Public approved reviews for a product, with verified-purchase flags. */
   static async productReviews(
+    db: DB,
     slug: string,
     productSlug: string,
     q: { page?: string; limit?: string }
   ) {
-    const store = await this.resolveStore(slug)
+    const store = await this.resolveStore(db, slug)
     const [product] = await db
       .select({ id: products.id })
       .from(products)
@@ -734,8 +736,8 @@ export class StorefrontService {
     })
   }
 
-  static async search(slug: string, q: StorefrontQuery) {
-    return this.products(slug, q)
+  static async search(db: DB, slug: string, q: StorefrontQuery) {
+    return this.products(db, slug, q)
   }
 
   /* -------------------------------- checkout ------------------------------- */

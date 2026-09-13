@@ -32,7 +32,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .get(
     '/:slug/categories',
-    ({ params }) => StorefrontService.categories(params.slug),
+    async ({ params }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.categories(db, params.slug)
+      } finally {
+        await end()
+      }
+    },
     {
       params: storeParams,
       detail: { tags: ['Storefront'], summary: 'Public category tree' }
@@ -41,7 +49,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .get(
     '/:slug/sitemap',
-    ({ params }) => StorefrontService.sitemap(params.slug),
+    async ({ params }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.sitemap(db, params.slug)
+      } finally {
+        await end()
+      }
+    },
     {
       params: storeParams,
       detail: { tags: ['Storefront'], summary: 'Public sitemap URLs' }
@@ -60,7 +76,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .get(
     '/:slug/products',
-    ({ params, query }) => StorefrontService.products(params.slug, query),
+    async ({ params, query }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.products(db, params.slug, query)
+      } finally {
+        await end()
+      }
+    },
     {
       params: storeParams,
       query: storefrontQuery,
@@ -70,7 +94,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .get(
     '/:slug/products/:productSlug',
-    ({ params }) => StorefrontService.product(params.slug, params.productSlug),
+    async ({ params }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.product(db, params.slug, params.productSlug)
+      } finally {
+        await end()
+      }
+    },
     {
       params: productSlugParams,
       detail: { tags: ['Storefront'], summary: 'Public product detail' }
@@ -79,7 +111,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .get(
     '/:slug/products/:productSlug/reviews',
-    ({ params, query }) => StorefrontService.productReviews(params.slug, params.productSlug, query),
+    async ({ params, query }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.productReviews(db, params.slug, params.productSlug, query)
+      } finally {
+        await end()
+      }
+    },
     {
       params: productSlugParams,
       query: productReviewsQuery,
@@ -89,7 +129,15 @@ export const storefrontModule = new Elysia({ prefix: '/api/store' })
 
   .get(
     '/:slug/search',
-    ({ params, query }) => StorefrontService.search(params.slug, query),
+    async ({ params, query }) => {
+      const merchantId = await StorefrontService.resolveMerchantId(params.slug)
+      const { db, end } = await createTenantConnection(merchantId)
+      try {
+        return await StorefrontService.search(db, params.slug, query)
+      } finally {
+        await end()
+      }
+    },
     {
       params: storeParams,
       query: storefrontQuery,
