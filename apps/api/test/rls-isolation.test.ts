@@ -45,6 +45,13 @@ function runtimeUrl(): string {
 const connect = () => postgres(runtimeUrl(), { max: 1 })
 
 beforeAll(async () => {
+  // Idempotent across repeated runs against the same database: clear orphaned
+  // rows from any previous run before seeding fresh ones.
+  await connection.unsafe(
+    `DELETE FROM orders WHERE id IN ('ord_rls_a1', 'ord_rls_a2', 'ord_rls_b1', 'ord_rls_leak')`
+  )
+  await connection.unsafe(`DELETE FROM merchants WHERE slug = 'rls-second-store'`)
+
   const [a] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
   merchantA = a.id
 

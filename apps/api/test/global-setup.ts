@@ -1,5 +1,6 @@
 import { beforeAll } from 'bun:test'
 import { connection } from '../src/database/client'
+import { ensureRls } from './rls-bootstrap'
 import { seed } from '../src/database/seed'
 
 // Isolate each test file against a clean seeded database. Bun runs test files
@@ -10,6 +11,7 @@ import { seed } from '../src/database/seed'
 // assume. Files run serially (--no-threads) so reseeds can't clobber each other.
 beforeAll(
   async () => {
+    await ensureRls()
     await seed()
   },
   { timeout: 120_000 }
