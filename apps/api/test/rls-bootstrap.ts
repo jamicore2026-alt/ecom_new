@@ -28,6 +28,11 @@ const migrationPath = (): string => {
   throw new Error('Could not locate drizzle/0029_enable_rls.sql for RLS test bootstrap')
 }
 
+/**
+ * SQL single-quoted literal (role passwords can technically contain quotes).
+ */
+const quoteLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`
+
 const provision = async (): Promise<void> => {
   // Create (or repair) the tenant roles. ALTER ROLE forces the right flags even
   // when a prior setup created one of them with wrong attributes.
@@ -58,6 +63,24 @@ const provision = async (): Promise<void> => {
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_admin;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_admin;
   `)
+
+  // Make the tenant role authenticate with ALWAYS the password the app is
+  // configured with (APP_RUNTIME_DATABASE_URL). A manual role created earlier
+  // with a different password is the classic cause of instant auth failures.
+  const runtimeUrl = process.env.APP_RUNTIME_DATABASE_URL
+  if (runtimeUrl) {
+    let password = ''
+    try {
+      password = decodeURIComponent(new URL(runtimeUrl).password ?? '')
+    } catch {
+      password = ''
+    }
+    if (password) {
+      await connection.unsafe(
+        `ALTER ROLE app_runtime WITH LOGIN PASSWORD ${quoteLiteral(password)}`
+      )
+    }
+  }
 
   // Enable + FORCE RLS and create per-table policies from migration 0029.
   // Enabling alone is not enough: RLS must be FORCED, otherwise the table owner

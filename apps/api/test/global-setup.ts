@@ -1,3 +1,7 @@
+// Load the repo-root .env FIRST so every app module below (client, seed,
+// tenant-context) sees APP_RUNTIME_DATABASE_URL and the API under test
+// genuinely runs as the non-BYPASSRLS tenant role.
+import './load-env'
 import { beforeAll } from 'bun:test'
 import { connection } from '../src/database/client'
 import { ensureRls } from './rls-bootstrap'
