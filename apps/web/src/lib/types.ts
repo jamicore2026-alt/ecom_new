@@ -571,6 +571,46 @@ export interface AuditEntry {
 	createdAt: string
 }
 
+// ---- platform (super admin) ----
+
+export const MERCHANT_STATUSES = [
+	'pending',
+	'trialing',
+	'active',
+	'past_due',
+	'suspended',
+	'cancelled',
+	'archived'
+] as const
+
+export type MerchantStatus = (typeof MERCHANT_STATUSES)[number]
+
+export interface PlatformMerchantSummary {
+	id: string
+	name: string
+	slug: string
+	email: string
+	status: MerchantStatus
+	currency: string
+	timezone: string
+	createdAt: string
+}
+
+export interface PlatformMerchantDetail extends PlatformMerchantSummary {
+	phone: string | null
+}
+
+export interface PlatformMerchantDetailResponse {
+	merchant: PlatformMerchantDetail
+	allowedNextStatuses: MerchantStatus[]
+	recentAudit: Paginated<AuditEntry>
+}
+
+export interface PlatformLoginResponse {
+	success: boolean
+	data: { email: string }
+}
+
 export interface MenuProductLite {
 	id: string
 	name: string

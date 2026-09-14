@@ -1,0 +1,20 @@
+import { t } from 'elysia'
+
+export const platformLoginBody = t.Object({
+  email: t.String({ format: 'email', minLength: 3, maxLength: 255 }),
+  password: t.String({ minLength: 1, maxLength: 255 })
+})
+
+export const platformStatusBody = t.Object({
+  to: t.String({ minLength: 1, maxLength: 20 }),
+  reason: t.String({ minLength: 3, maxLength: 500 })
+})
+
+export const platformListQuery = t.Object({
+  status: t.Optional(t.String({ maxLength: 20 })),
+  search: t.Optional(t.String({ maxLength: 255 })),
+  page: t.Optional(t.String()),
+  limit: t.Optional(t.String())
+})
+
+export const platformIdParams = t.Object({ id: t.String({ minLength: 1 }) })

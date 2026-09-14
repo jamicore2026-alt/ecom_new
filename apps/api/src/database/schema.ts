@@ -43,6 +43,17 @@ export const merchants = pgTable('merchants', {
   createdAt: timestamp('created_at').defaultNow().notNull()
 })
 
+/** Platform admins — the operators who can see every merchant and move their
+ *  lifecycle status (see modules/platform). Deliberately cross-tenant: no RLS,
+ *  no merchant_id, real auth of its own. Not seeded by the merchant seed so a
+ *  `db:seed` can never wipe a real admin row. */
+export const platformAdmins = pgTable('platform_admins', {
+  id: id('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull()
+})
+
 export const users = pgTable(
   'users',
   {
@@ -2195,3 +2206,5 @@ export type Campaign = typeof campaigns.$inferSelect
 export type NewCampaign = typeof campaigns.$inferInsert
 export type CustomerTag = typeof customerTags.$inferSelect
 export type NewCustomerTag = typeof customerTags.$inferInsert
+export type PlatformAdmin = typeof platformAdmins.$inferSelect
+export type NewPlatformAdmin = typeof platformAdmins.$inferInsert

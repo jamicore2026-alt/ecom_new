@@ -44,6 +44,7 @@ import { foodOrdersModule } from './modules/food-orders'
 import { tablesModule, tableQrModule } from './modules/tables'
 import { kitchenModule } from './modules/kitchen'
 import { deliveryModule, driverSelfModule } from './modules/delivery'
+import { platformModule } from './modules/platform'
 
 await initializeRateLimitStore()
 
@@ -165,5 +166,6 @@ export const app = new Elysia({
   .use(kitchenModule)
   .use(deliveryModule)
   .use(driverSelfModule)
+  .use(platformModule)
 
 export type App = typeof app

@@ -17,6 +17,8 @@ export interface CounterStore {
 const WINDOW_MS = 60_000
 
 const RULES: Rule[] = [
+  { test: (p) => p === '/api/platform/auth/login', max: 10 },
+  { test: (p) => p.startsWith('/api/platform'), max: 120 },
   { test: (p) => p === '/api/auth/login', max: 10 },
   { test: (p) => p === '/api/auth/refresh' || p === '/api/auth/logout', max: 60 },
   { test: (p) => /^\/api\/store\/[^/]+\/auth\/(register|login|password)$/.test(p), max: 10 },

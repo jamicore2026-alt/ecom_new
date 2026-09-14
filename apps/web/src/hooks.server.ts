@@ -3,6 +3,8 @@ import type { Handle } from '@sveltejs/kit'
 
 const REFRESH_COOKIE = 'md.refresh'
 
+const PLATFORM_COOKIE = 'pd.session'
+
 const PROTECTED_PREFIXES = [
 	'/dashboard',
 	'/analytics',
@@ -30,6 +32,12 @@ export const handle: Handle = ({ event, resolve }) => {
 
 	if (isProtected && !hasSession) redirect(302, '/login')
 	if (pathname === '/login' && hasSession) redirect(302, '/dashboard')
+
+	const hasPlatform = event.cookies.get(PLATFORM_COOKIE) !== undefined
+	const isPlatformProtected = pathname === '/platform/merchants' || pathname.startsWith('/platform/merchants/')
+
+	if (isPlatformProtected && !hasPlatform) redirect(302, '/platform/login')
+	if (pathname === '/platform/login' && hasPlatform) redirect(302, '/platform/merchants')
 
 	const locale = event.cookies.get('locale') === 'ar' ? 'ar' : 'en'
 	const dir = locale === 'ar' ? 'rtl' : 'ltr'
