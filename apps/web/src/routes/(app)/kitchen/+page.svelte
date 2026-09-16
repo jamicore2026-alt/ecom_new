@@ -11,6 +11,11 @@
 	import type { KitchenStation, KitchenTicket, KotStatus } from '$lib/types'
 
 	const canManage = $derived(session.can('kitchen.manage'))
+	const canGenerate = $derived(session.can('kitchen.manage') || session.can('kds.manage'))
+
+	interface TicketRow extends KitchenTicket {
+		orderId: string
+	}
 
 	const STATUS_TONE: Record<string, string> = {
 		NEW: 'bg-warning/10 text-warning ring-warning',
@@ -27,12 +32,18 @@
 	}
 
 	let stations = $state<KitchenStation[]>([])
-	let tickets = $state<KitchenTicket[]>([])
+	let tickets = $state<TicketRow[]>([])
 	let loading = $state(true)
 
 	let statusFilter = $state('')
 	let stationFilter = $state('')
-	let selected = $state<KitchenTicket | null>(null)
+	let selected = $state<TicketRow | null>(null)
+
+	// KOT generation
+	let showKot = $state(false)
+	let kotOrderId = $state('')
+	let kotOrderNumber = $state('')
+	let kotPriority = $state<'LOW' | 'NORMAL' | 'HIGH'>('NORMAL')
 
 	// station management
 	let showManage = $state(false)
@@ -49,14 +60,14 @@
 		try {
 			const [s, t] = await Promise.all([
 				api.get<{ success: boolean; data: KitchenStation[] }>('/api/kitchen-stations'),
-				api.get<{ success: boolean; data: KitchenTicket[] }>('/api/kitchen/tickets', {
+				api.get<{ success: boolean; data: { items: TicketRow[]; meta: unknown } }>('/api/kitchen/tickets', {
 					status: statusFilter,
 					stationId: stationFilter,
 					limit: 200
 				})
 			])
 			stations = s.data
-			tickets = t.data
+			tickets = t.data.items
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -65,6 +76,27 @@
 	}
 
 	const filteredTickets = $derived(tickets)
+
+	function openKot(t: TicketRow) {
+		kotOrderId = t.orderId
+		kotOrderNumber = t.orderNumber
+		kotPriority = 'NORMAL'
+		showKot = true
+	}
+
+	async function generateKot() {
+		if (!kotOrderId) return
+		try {
+			await api.post<{ success: boolean; data: { items: unknown[]; meta: unknown } }>(`/api/kitchen/orders/${kotOrderId}/tickets`, {
+				priority: kotPriority
+			})
+			toast.success('KOT generated')
+			showKot = false
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
 
 	async function openManage() {
 		showManage = true
@@ -213,6 +245,7 @@
 								<th class="pb-2 font-semibold">Priority</th>
 								<th class="pb-2 font-semibold">Age</th>
 								<th class="pb-2 font-semibold">Received</th>
+								<th class="pb-2 font-semibold"></th>
 							</tr>
 						</thead>
 						<tbody>
@@ -224,6 +257,20 @@
 									<td class="py-2"><span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {PRIORITY_TONE[t.priority]}">{t.priority}</span></td>
 									<td class="py-2 font-mono-label text-mono-label text-on-surface-variant">{Math.floor(t.ageSec / 60)}m</td>
 									<td class="py-2 text-secondary">{dateTime(t.receivedAt)}</td>
+									<td class="py-2 text-right">
+										{#if canGenerate}
+											<button
+												type="button"
+												class="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
+												onclick={(e) => {
+													e.stopPropagation()
+													openKot(t)
+												}}
+											>
+												Generate KOT
+											</button>
+										{/if}
+									</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -269,6 +316,7 @@
 			</div>
 
 			<div class="flex flex-wrap gap-2">
+				<Button variant="secondary" onclick={() => openKot(selected!)}>Generate KOT</Button>
 				{#if selected.status === 'NEW'}
 					<Button onclick={() => transition('ACCEPTED')}>Accept</Button>
 				{/if}
@@ -279,6 +327,23 @@
 					<Button variant="danger" onclick={() => transition('CANCELLED')}>Cancel</Button>
 				{/if}
 			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if showKot && canGenerate}
+	<Modal open={true} title={`Generate KOT — Order #${kotOrderNumber}`} onClose={() => (showKot = false)}>
+		<div class="space-y-4">
+			<p class="text-sm text-on-surface-variant">Creates one ticket per kitchen station for this order. New tickets start as NEW, ready for the kitchen board.</p>
+			<div>
+				<label for="kt-priority" class="field-label">Priority</label>
+				<select id="kt-priority" class="field" bind:value={kotPriority}>
+					<option value="NORMAL">Normal</option>
+					<option value="HIGH">High</option>
+					<option value="LOW">Low</option>
+				</select>
+			</div>
+			<Button onclick={generateKot}>Generate KOT</Button>
 		</div>
 	</Modal>
 {/if}

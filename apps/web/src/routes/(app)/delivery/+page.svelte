@@ -49,8 +49,9 @@
 	let newOrderId = $state('')
 	let newZoneId = $state('')
 
-	// zone mgmt modal
+	// zone mgmt modal (create + edit)
 	let showZone = $state(false)
+	let editingZone = $state<string | null>(null)
 	let zoneName = $state('')
 	let zoneOutlet = $state('')
 	let zoneLat = $state('40.7128')
@@ -58,7 +59,22 @@
 	let zoneRadius = $state('10')
 	let zoneFee = $state('5')
 	let zoneMinOrder = $state('0')
+	let zoneFreeThreshold = $state('')
 	let zoneEta = $state('30')
+	let zoneStatus = $state<'active' | 'inactive'>('active')
+
+	// driver mgmt modal (create + edit)
+	let showDriver = $state(false)
+	let editingDriver = $state<string | null>(null)
+	let driverForm = $state({
+		userId: '',
+		name: '',
+		phone: '',
+		email: '',
+		vehicleType: '',
+		vehiclePlate: '',
+		assignedOutletId: ''
+	})
 
 	const deliveryStatuses: DeliveryStatus[] = [
 		'UNASSIGNED', 'ASSIGNED', 'ARRIVED_AT_PICKUP', 'PICKED_UP',
@@ -149,22 +165,116 @@
 		}
 	}
 
-	async function addZone() {
+	function openAddZone() {
+		editingZone = null
+		zoneName = ''
+		zoneOutlet = ''
+		zoneLat = '40.7128'
+		zoneLng = '-74.006'
+		zoneRadius = '10'
+		zoneFee = '5'
+		zoneMinOrder = '0'
+		zoneFreeThreshold = ''
+		zoneEta = '30'
+		zoneStatus = 'active'
+		showZone = true
+	}
+
+	function openEditZone(zone: DeliveryZone) {
+		editingZone = zone.id
+		zoneName = zone.name
+		zoneOutlet = zone.outletId ?? ''
+		zoneLat = String(zone.centerLat)
+		zoneLng = String(zone.centerLng)
+		zoneRadius = String(zone.radiusKm)
+		zoneFee = String(zone.deliveryFee)
+		zoneMinOrder = String(zone.minOrder)
+		zoneFreeThreshold = zone.freeDeliveryThreshold != null ? String(zone.freeDeliveryThreshold) : ''
+		zoneEta = String(zone.etaMin)
+		zoneStatus = zone.status
+		showZone = true
+	}
+
+	async function saveZone() {
 		if (!zoneName) return toast.error('Enter a zone name')
+		const freeThreshold = zoneFreeThreshold === '' ? undefined : Number(zoneFreeThreshold)
+		const payload = {
+			name: zoneName,
+			outletId: zoneOutlet || undefined,
+			centerLat: Number(zoneLat) || 0,
+			centerLng: Number(zoneLng) || 0,
+			radiusKm: Number(zoneRadius) || 5,
+			deliveryFee: Number(zoneFee) || 0,
+			minOrder: Number(zoneMinOrder) || 0,
+			freeDeliveryThreshold: freeThreshold,
+			etaMin: Number(zoneEta) || 30,
+			status: zoneStatus
+		}
 		try {
-			await api.post<{ success: boolean }>('/api/delivery-zones', {
-				name: zoneName,
-				outletId: zoneOutlet || undefined,
-				centerLat: Number(zoneLat) || 0,
-				centerLng: Number(zoneLng) || 0,
-				radiusKm: Number(zoneRadius) || 5,
-				deliveryFee: Number(zoneFee) || 0,
-				minOrder: Number(zoneMinOrder) || 0,
-				etaMin: Number(zoneEta) || 30
-			})
-			toast.success('Zone added')
-			zoneName = ''
+			if (editingZone) {
+				await api.put<{ success: boolean }>(`/api/delivery-zones/${editingZone}`, payload)
+				toast.success('Zone updated')
+			} else {
+				await api.post<{ success: boolean }>('/api/delivery-zones', payload)
+				toast.success('Zone added')
+			}
 			showZone = false
+			await loadAll()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	function openCreateDriver() {
+		editingDriver = null
+		driverForm = { userId: '', name: '', phone: '', email: '', vehicleType: '', vehiclePlate: '', assignedOutletId: '' }
+		showDriver = true
+	}
+
+	function openEditDriver(drv: Driver) {
+		editingDriver = drv.id
+		driverForm = {
+			userId: drv.userId,
+			name: drv.name,
+			phone: drv.phone ?? '',
+			email: drv.email ?? '',
+			vehicleType: drv.vehicleType ?? '',
+			vehiclePlate: drv.vehiclePlate ?? '',
+			assignedOutletId: drv.assignedOutletId ?? ''
+		}
+		showDriver = true
+	}
+
+	async function saveDriver() {
+		if (!driverForm.name) return toast.error('Enter a driver name')
+		const payload = {
+			name: driverForm.name,
+			phone: driverForm.phone || undefined,
+			email: driverForm.email || undefined,
+			vehicleType: driverForm.vehicleType || undefined,
+			vehiclePlate: driverForm.vehiclePlate || undefined,
+			assignedOutletId: driverForm.assignedOutletId || undefined
+		}
+		try {
+			if (editingDriver) {
+				await api.put<{ success: boolean }>(`/api/drivers/${editingDriver}`, payload)
+				toast.success('Driver updated')
+			} else {
+				await api.post<{ success: boolean }>('/api/drivers', { ...payload, userId: driverForm.userId })
+				toast.success('Driver added')
+			}
+			showDriver = false
+			await loadAll()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function removeDriver(driver: Driver) {
+		if (!confirm(`Remove driver "${driver.name}"?`)) return
+		try {
+			await api.delete<{ success: boolean }>(`/api/drivers/${driver.id}`)
+			toast.success('Driver removed')
 			await loadAll()
 		} catch (e) {
 			toast.error((e as Error).message)
@@ -295,7 +405,12 @@
 		</Card>
 	{:else if tab === 'drivers'}
 		<Card>
-			<h2 class="mb-3 text-sm font-semibold text-on-surface">Drivers</h2>
+			<div class="mb-3 flex items-center justify-between">
+				<h2 class="text-sm font-semibold text-on-surface">Drivers</h2>
+				{#if canManageDrivers}
+					<Button size="sm" onclick={openCreateDriver}>Add driver</Button>
+				{/if}
+			</div>
 			{#if drivers.length === 0}
 				<p class="py-6 text-center text-sm text-secondary">No drivers yet.</p>
 			{:else}
@@ -310,11 +425,15 @@
 								<p>{drv.vehicleType ?? '—'} · {drv.vehiclePlate ?? '—'}</p>
 								<p>Outlet: {drv.outletName ?? '—'}</p>
 							</div>
-							{#if canManageDrivers && (drv.status === 'ONLINE' || drv.status === 'OFFLINE')}
-								<div class="mt-3">
-									<Button size="sm" variant="secondary" onclick={() => toggleDriver(drv)}>
-										{drv.status === 'ONLINE' ? 'Go offline' : 'Bring online'}
-									</Button>
+							{#if canManageDrivers}
+								<div class="mt-3 flex flex-wrap gap-2">
+									{#if drv.status === 'ONLINE' || drv.status === 'OFFLINE'}
+										<Button size="sm" variant="secondary" onclick={() => toggleDriver(drv)}>
+											{drv.status === 'ONLINE' ? 'Go offline' : 'Bring online'}
+										</Button>
+									{/if}
+									<Button size="sm" variant="secondary" onclick={() => openEditDriver(drv)}>Edit</Button>
+									<Button size="sm" variant="danger" onclick={() => removeDriver(drv)}>Remove</Button>
 								</div>
 							{/if}
 						</Card>
@@ -327,7 +446,7 @@
 			<div class="mb-3 flex items-center justify-between">
 				<h2 class="text-sm font-semibold text-on-surface">Delivery zones</h2>
 				{#if canManageZones}
-					<Button size="sm" onclick={() => (showZone = true)}>Add zone</Button>
+					<Button size="sm" onclick={openAddZone}>Add zone</Button>
 				{/if}
 			</div>
 			{#if zones.length === 0}
@@ -353,11 +472,14 @@
 									<td class="py-2 font-mono-label text-mono-label text-on-surface">${(z.deliveryFee ?? 0).toFixed(2)}</td>
 									<td class="py-2 font-mono-label text-mono-label text-on-surface">${(z.minOrder ?? 0).toFixed(2)}</td>
 									<td class="py-2 text-on-surface-variant">{z.etaMin} min</td>
-									<td class="py-2 text-right">
-										{#if canManageZones}
+<td class="py-2 text-right">
+									{#if canManageZones}
+										<div class="flex justify-end gap-1">
+											<button type="button" class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditZone(z)}>Edit</button>
 											<button type="button" class="rounded p-1.5 text-xs text-error hover:bg-error-container/40" onclick={() => removeZone(z)}>Remove</button>
-										{/if}
-									</td>
+										</div>
+									{/if}
+								</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -447,18 +569,27 @@
 {/if}
 
 {#if showZone && canManageZones}
-	<Modal open={true} title="Add delivery zone" onClose={() => (showZone = false)}>
+	<Modal open={true} title={editingZone ? 'Edit delivery zone' : 'Add delivery zone'} onClose={() => (showZone = false)}>
 		<div class="space-y-4">
 			<div>
 				<label for="zn-name" class="field-label">Zone name</label>
 				<input id="zn-name" class="field" bind:value={zoneName} placeholder="e.g. Downtown" />
 			</div>
-			<div>
-				<label for="zn-outlet" class="field-label">Outlet</label>
-				<select id="zn-outlet" class="field" bind:value={zoneOutlet}>
-					<option value="">Any</option>
-					{#each outlets as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
-				</select>
+			<div class="grid grid-cols-2 gap-2">
+				<div>
+					<label for="zn-outlet" class="field-label">Outlet</label>
+					<select id="zn-outlet" class="field" bind:value={zoneOutlet}>
+						<option value="">Any</option>
+						{#each outlets as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
+					</select>
+				</div>
+				<div>
+					<label for="zn-status" class="field-label">Status</label>
+					<select id="zn-status" class="field" bind:value={zoneStatus}>
+						<option value="active">Active</option>
+						<option value="inactive">Inactive</option>
+					</select>
+				</div>
 			</div>
 			<div class="grid grid-cols-2 gap-2">
 				<div>
@@ -484,11 +615,62 @@
 					<input id="zn-min" class="field" bind:value={zoneMinOrder} type="number" min="0" />
 				</div>
 			</div>
-			<div>
-				<label for="zn-eta" class="field-label">ETA (min)</label>
-				<input id="zn-eta" class="field" bind:value={zoneEta} type="number" min="1" />
+			<div class="grid grid-cols-2 gap-2">
+				<div>
+					<label for="zn-free" class="field-label">Free delivery over</label>
+					<input id="zn-free" class="field" bind:value={zoneFreeThreshold} type="number" min="0" placeholder="Leave empty for none" />
+				</div>
+				<div>
+					<label for="zn-eta" class="field-label">ETA (min)</label>
+					<input id="zn-eta" class="field" bind:value={zoneEta} type="number" min="1" />
+				</div>
 			</div>
-			<Button onclick={addZone}>Add zone</Button>
+			<Button onclick={saveZone}>{editingZone ? 'Save changes' : 'Add zone'}</Button>
+		</div>
+	</Modal>
+{/if}
+
+{#if showDriver && canManageDrivers}
+	<Modal open={true} title={editingDriver ? 'Edit driver' : 'Add driver'} onClose={() => (showDriver = false)}>
+		<div class="space-y-4">
+			{#if !editingDriver}
+				<div>
+					<label for="dr-user" class="field-label">User id</label>
+					<input id="dr-user" class="field" bind:value={driverForm.userId} placeholder="User id" />
+				</div>
+			{/if}
+			<div>
+				<label for="dr-name" class="field-label">Name</label>
+				<input id="dr-name" class="field" bind:value={driverForm.name} placeholder="e.g. Alex Rivera" />
+			</div>
+			<div class="grid grid-cols-2 gap-2">
+				<div>
+					<label for="dr-phone" class="field-label">Phone</label>
+					<input id="dr-phone" class="field" bind:value={driverForm.phone} />
+				</div>
+				<div>
+					<label for="dr-email" class="field-label">Email</label>
+					<input id="dr-email" class="field" bind:value={driverForm.email} />
+				</div>
+			</div>
+			<div class="grid grid-cols-2 gap-2">
+				<div>
+					<label for="dr-vtype" class="field-label">Vehicle type</label>
+					<input id="dr-vtype" class="field" bind:value={driverForm.vehicleType} placeholder="e.g. Bike" />
+				</div>
+				<div>
+					<label for="dr-vplate" class="field-label">Vehicle plate</label>
+					<input id="dr-vplate" class="field" bind:value={driverForm.vehiclePlate} />
+				</div>
+			</div>
+			<div>
+				<label for="dr-outlet" class="field-label">Outlet</label>
+				<select id="dr-outlet" class="field" bind:value={driverForm.assignedOutletId}>
+					<option value="">Any</option>
+					{#each outlets as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
+				</select>
+			</div>
+			<Button onclick={saveDriver}>{editingDriver ? 'Save changes' : 'Add driver'}</Button>
 		</div>
 	</Modal>
 {/if}

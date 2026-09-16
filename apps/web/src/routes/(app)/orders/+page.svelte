@@ -7,13 +7,43 @@
 	import Badge from '$lib/components/Badge.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import Icon from '$lib/components/Icon.svelte'
-	import { currency, dateTimeFull, timeAgo } from '$lib/format'
+	import { currency, dateTime, dateTimeFull, timeAgo } from '$lib/format'
 	import { t } from '$lib/i18n'
+	import { session } from '$lib/session.svelte'
 	import type { OrderListItem, PaginationMeta } from '$lib/types'
+
+	interface ReturnRow {
+		id: string
+		orderId: string
+		orderItemId: string | null
+		quantity: number
+		amount: number
+		reason: string | null
+		status: string
+		createdAt: string
+		orderNumber: string
+	}
+
+	interface RefundRow {
+		id: string
+		orderId: string
+		returnId: string | null
+		amount: number
+		method: string
+		status: string
+		createdAt: string
+		orderNumber: string
+	}
 
 	let items = $state<OrderListItem[]>([])
 	let meta = $state<PaginationMeta>({ page: 1, limit: 20, total: 0, totalPages: 1 })
 	let loading = $state(true)
+
+	let returns = $state<ReturnRow[]>([])
+	let refunds = $state<RefundRow[]>([])
+	let rrLoading = $state(true)
+	let showReturnsRefunds = $state(true)
+	let exporting = $state(false)
 
 	let search = $state('')
 	let status = $state('')
@@ -40,7 +70,38 @@
 		}
 	}
 
-	onMount(load)
+	async function loadReturnsRefunds() {
+		rrLoading = true
+		try {
+			const [rr, rf] = await Promise.all([
+				api.get<{ success: boolean; data: ReturnRow[] }>('/api/returns'),
+				api.get<{ success: boolean; data: RefundRow[] }>('/api/refunds')
+			])
+			returns = rr.data
+			refunds = rf.data
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			rrLoading = false
+		}
+	}
+
+	async function exportCsv() {
+		exporting = true
+		try {
+			await api.download('/api/orders/export', 'orders.csv')
+			toast.success('Orders exported')
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			exporting = false
+		}
+	}
+
+	onMount(() => {
+		load()
+		loadReturnsRefunds()
+	})
 
 	function applyFilters() {
 		page = 1
@@ -62,6 +123,12 @@
 		<div>
 			<h1 class="font-display text-display text-on-surface">{t('orders.title')}</h1>
 			<p class="mt-1 text-body-sm text-secondary">{meta.total} {t('common.total')}</p>
+		</div>
+		<div class="flex flex-wrap items-center gap-2">
+			<Button variant="secondary" size="sm" onclick={exportCsv} loading={exporting}>
+				<Icon name="download" size="text-[16px]" />
+				Export CSV
+			</Button>
 		</div>
 	</div>
 
@@ -166,6 +233,96 @@
 				</table>
 			</div>
 			<Pagination {meta} {onPage} />
+		{/if}
+	</Card>
+
+	<Card>
+		<div class="flex items-center justify-between gap-3">
+			<h2 class="font-display text-xl text-on-surface">Returns & Refunds</h2>
+			<Button variant="ghost" size="sm" onclick={() => (showReturnsRefunds = !showReturnsRefunds)}>
+				<Icon name={showReturnsRefunds ? 'expand_less' : 'expand_more'} size="text-[16px]" />
+				{showReturnsRefunds ? 'Hide' : 'Show'}
+			</Button>
+		</div>
+		{#if showReturnsRefunds}
+			<div class="mt-4">
+				{#if rrLoading}
+					<div class="space-y-2">
+						{#each Array(4) as _}
+							<div class="h-10 animate-pulse rounded bg-surface-container"></div>
+						{/each}
+					</div>
+				{:else}
+					<div class="grid gap-6 lg:grid-cols-2">
+						<div>
+							<h3 class="mb-2 text-sm font-semibold text-on-surface">Returns ({returns.length})</h3>
+							{#if returns.length === 0}
+								<p class="py-6 text-center text-sm text-secondary">No returns.</p>
+							{:else}
+								<div class="overflow-x-auto">
+									<table class="w-full text-left text-sm">
+										<thead>
+											<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
+												<th class="px-table-cell-x py-table-cell-y font-semibold">Ref</th>
+												<th class="px-table-cell-x py-table-cell-y font-semibold">Order</th>
+												<th class="px-table-cell-x py-table-cell-y font-semibold">Amount</th>
+												<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
+												<th class="px-table-cell-x py-table-cell-y font-semibold">Date</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each returns as r (r.id)}
+												<tr class="border-b border-outline-variant/60">
+													<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">#R-{r.id.slice(0, 8)}</td>
+													<td class="px-table-cell-x py-table-cell-y">
+														<a href="/orders/{r.orderId}" class="inline-flex min-h-11 items-center rounded font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">#{r.orderNumber}</a>
+													</td>
+													<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{r.amount != null ? currency(r.amount, session.merchant?.currency) : '—'}</td>
+													<td class="px-table-cell-x py-table-cell-y"><Badge label={r.status} /></td>
+													<td class="px-table-cell-x py-table-cell-y text-secondary" title={dateTimeFull(r.createdAt)}>{dateTime(r.createdAt)}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{/if}
+						</div>
+						<div>
+							<h3 class="mb-2 text-sm font-semibold text-on-surface">Refunds ({refunds.length})</h3>
+							{#if refunds.length === 0}
+								<p class="py-6 text-center text-sm text-secondary">No refunds.</p>
+							{:else}
+								<div class="overflow-x-auto">
+									<table class="w-full text-left text-sm">
+										<thead>
+											<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
+												<th class="px-table-cell-x py-table-cell-y font-semibold">Ref</th>
+												<th class="px-table-cell-x py-table-cell-y font-semibold">Order</th>
+												<th class="px-table-cell-x py-table-cell-y font-semibold">Amount</th>
+												<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
+												<th class="px-table-cell-x py-table-cell-y font-semibold">Date</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each refunds as r (r.id)}
+												<tr class="border-b border-outline-variant/60">
+													<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">#RF-{r.id.slice(0, 8)}</td>
+													<td class="px-table-cell-x py-table-cell-y">
+														<a href="/orders/{r.orderId}" class="inline-flex min-h-11 items-center rounded font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">#{r.orderNumber}</a>
+													</td>
+													<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{currency(r.amount, session.merchant?.currency)}</td>
+													<td class="px-table-cell-x py-table-cell-y"><Badge label={r.status} /></td>
+													<td class="px-table-cell-x py-table-cell-y text-secondary" title={dateTimeFull(r.createdAt)}>{dateTime(r.createdAt)}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+			</div>
 		{/if}
 	</Card>
 </div>

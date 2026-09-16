@@ -2,11 +2,13 @@
 	import { onMount } from 'svelte'
 	import { api } from '$lib/api'
 	import { toast } from '$lib/toast.svelte'
+	import Button from '$lib/components/Button.svelte'
 	import Card from '$lib/components/Card.svelte'
 	import Badge from '$lib/components/Badge.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import { currency, dateTimeFull, number, timeAgo } from '$lib/format'
+	import { session } from '$lib/session.svelte'
 	import type { CustomerDetail, OrderDetail, PaginationMeta } from '$lib/types'
 	import { page } from '$app/state'
 
@@ -16,6 +18,44 @@
 	let loading = $state(true)
 	let id = $derived(page.params.id)
 	let orderPage = $state(1)
+
+	let newTag = $state('')
+	let savingTag = $state(false)
+
+	const canManageTags = () => session.can('settings.manage')
+
+	async function addTag(e: SubmitEvent) {
+		e.preventDefault()
+		const value = newTag.trim()
+		if (!value || !customer) return
+		savingTag = true
+		try {
+			const res = await api.post<{ success: boolean; data: { items: string[] } }>(`/api/customers/${id}/tags`, { tag: value })
+			customer = { ...customer, tags: res.data.items }
+			newTag = ''
+			toast.success('Tag added')
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			savingTag = false
+		}
+	}
+
+	async function removeTag(tagName: string) {
+		if (!customer) return
+		savingTag = true
+		try {
+			const res = await api.delete<{ success: boolean; data: { items: string[] } }>(
+				`/api/customers/${id}/tags/${encodeURIComponent(tagName)}`
+			)
+			customer = { ...customer, tags: res.data.items }
+			toast.success('Tag removed')
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			savingTag = false
+		}
+	}
 
 	async function load() {
 		loading = true
@@ -67,13 +107,6 @@
 				<h1 class="mt-1 font-display text-display text-on-surface">{customer.firstName ?? ''} {customer.lastName ?? ''}</h1>
 				<p class="mt-1 text-body-sm text-secondary">{customer.email}</p>
 			</div>
-			{#if customer.tags.length}
-				<div class="flex flex-wrap gap-1.5">
-					{#each customer.tags as t (t)}
-						<span class="inline-block rounded-full border border-outline-variant bg-surface-container-low px-2.5 py-1 text-xs text-on-surface-variant">{t}</span>
-					{/each}
-				</div>
-			{/if}
 		</div>
 
 		<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -94,6 +127,35 @@
 					<div class="flex justify-between gap-4"><dt class="text-secondary">Last order</dt><dd class="text-on-surface-variant">{(customer.lastOrderAt && dateTimeFull(customer.lastOrderAt)) || '—'}</dd></div>
 					<div class="flex justify-between gap-4"><dt class="text-secondary">Joined</dt><dd class="text-on-surface-variant">{dateTimeFull(customer.createdAt)}</dd></div>
 				</dl>
+			</Card>
+
+			<Card title="Tags">
+				{#if canManageTags()}
+					<form class="mb-3 flex flex-wrap gap-2" onsubmit={addTag}>
+						<input class="field flex-1" placeholder="Add a tag…" aria-label="New tag" bind:value={newTag} />
+						<Button type="submit" size="sm" loading={savingTag}>Add</Button>
+					</form>
+				{/if}
+				{#if customer.tags.length}
+					<div class="flex flex-wrap gap-1.5">
+						{#each customer.tags as t (t)}
+							<span class="inline-flex items-center gap-1 rounded-full border border-outline-variant bg-surface-container-low px-2.5 py-1 text-xs text-on-surface-variant">
+								{t}
+								{#if canManageTags()}
+									<button
+										type="button"
+										class="inline-flex h-4 w-4 items-center justify-center rounded-full text-secondary transition-colors hover:bg-surface-container hover:text-error"
+										title="Remove tag"
+										aria-label={`Remove tag ${t}`}
+										onclick={() => removeTag(t)}
+									><Icon name="close" size="text-[13px]" /></button>
+								{/if}
+							</span>
+						{/each}
+					</div>
+				{:else}
+					<p class="text-sm text-secondary">No tags yet.</p>
+				{/if}
 			</Card>
 
 			<Card title={`Order history (${meta.total})`} padded={false} class="lg:col-span-2">

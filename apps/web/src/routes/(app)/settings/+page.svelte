@@ -8,11 +8,11 @@
 	import Badge from '$lib/components/Badge.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
-	import { titleCase } from '$lib/format'
+	import { titleCase, currency } from '$lib/format'
 	import { t } from '$lib/i18n'
 	import type { Address, NotificationSettings, PaymentProviderView, PaymentSettings, Permission, ShippingSettings, StaffMember, StoreSettings, TaxSettings } from '$lib/types'
 
-	type Section = 'store' | 'payments' | 'shipping' | 'taxes' | 'notifications' | 'staff'
+	type Section = 'store' | 'payments' | 'shipping' | 'taxes' | 'notifications' | 'staff' | 'cod' | 'checkout' | 'carriers' | 'pincode'
 	let section = $state<Section>('store')
 	let saving = $state(false)
 
@@ -63,6 +63,75 @@
 	let staffPassword = $state('')
 	let staffRole = $state<'admin' | 'staff'>('staff')
 	let staffPerms = $state<Permission[]>([])
+
+	interface CodSettings {
+		merchantId: string
+		serviceablePincodes: string[]
+		blacklistPincodes: string[]
+		minOrderValue: number
+		maxOrderValue: number | null
+		codFee: number
+		enabled: boolean
+	}
+
+	interface CheckoutSettings {
+		merchantId: string
+		codEnabled: boolean
+		codMinValue: number
+		codMaxValue: number | null
+		codFee: number
+		serviceablePincodes: string[]
+		defaultShippingDays: number
+	}
+
+	interface Carrier {
+		id: string
+		merchantId: string
+		name: string
+		code: string
+		enabled: boolean
+		credentials: Record<string, unknown>
+		config: Record<string, unknown>
+		createdAt: string
+		updatedAt: string
+	}
+
+	interface ServiceabilityResult {
+		pincode: string
+		serviceable: boolean
+		codAvailable: boolean
+		estimatedDeliveryDays: number
+		shippingFee: number | null
+	}
+
+	let codSettings = $state<CodSettings | null>(null)
+	let codEnabled = $state(true)
+	let codServiceableText = $state('')
+	let codBlacklistText = $state('')
+	let codMin = $state('0')
+	let codMax = $state('')
+	let codFee = $state('0')
+
+	let checkoutSettings = $state<CheckoutSettings | null>(null)
+	let coCodEnabled = $state(true)
+	let coCodMin = $state('0')
+	let coCodMax = $state('')
+	let coCodFee = $state('0')
+	let coServiceableText = $state('')
+	let coDefaultShippingDays = $state('5')
+
+	let carriers = $state<Carrier[] | null>(null)
+	let carrierOpen = $state(false)
+	let editingCarrier = $state<Carrier | null>(null)
+	let carrierName = $state('')
+	let carrierCode = $state('')
+	let carrierEnabled = $state(true)
+	let carrierSaving = $state(false)
+	let deletingCarrierId = $state('')
+
+	let pincodeInput = $state('')
+	let pincodeResult = $state<ServiceabilityResult | null>(null)
+	let pincodeLoading = $state(false)
 
 	const PERMISSIONS: Permission[] = [
 		'products:write',
@@ -116,6 +185,14 @@
 				nEnabled = res.data.enabled
 				nFromName = res.data.fromName ?? ''
 				nFromEmail = res.data.fromEmail ?? ''
+			} else if (section === 'cod') {
+				await loadCodSettings()
+			} else if (section === 'checkout') {
+				await loadCheckoutSettings()
+			} else if (section === 'carriers') {
+				await loadCarriers()
+			} else if (section === 'pincode') {
+				pincodeResult = null
 			} else {
 				const res = await api.get<{ success: boolean; data: StaffMember[] }>('/api/settings/staff')
 				staff = res.data
@@ -125,7 +202,12 @@
 		}
 	}
 
-	onMount(load)
+	onMount(() => {
+		load()
+		loadCodSettings()
+		loadCheckoutSettings()
+		loadCarriers()
+	})
 
 	function switchSection(s: Section) {
 		section = s
@@ -346,11 +428,185 @@
 		staffPerms = staffPerms.includes(p) ? staffPerms.filter((x) => x !== p) : [...staffPerms, p]
 	}
 
+	function splitPincodes(s: string) {
+		return s.split(',').map((p) => p.trim()).filter(Boolean)
+	}
+
+	async function loadCodSettings() {
+		try {
+			const res = await api.get<{ success: boolean; data: CodSettings }>('/api/settings/cod')
+			codSettings = res.data
+			codEnabled = res.data.enabled
+			codServiceableText = res.data.serviceablePincodes.join(', ')
+			codBlacklistText = res.data.blacklistPincodes.join(', ')
+			codMin = String(res.data.minOrderValue)
+			codMax = res.data.maxOrderValue === null ? '' : String(res.data.maxOrderValue)
+			codFee = String(res.data.codFee)
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function loadCheckoutSettings() {
+		try {
+			const res = await api.get<{ success: boolean; data: CheckoutSettings }>('/api/settings/checkout')
+			checkoutSettings = res.data
+			coCodEnabled = res.data.codEnabled
+			coCodMin = String(res.data.codMinValue)
+			coCodMax = res.data.codMaxValue === null ? '' : String(res.data.codMaxValue)
+			coCodFee = String(res.data.codFee)
+			coServiceableText = res.data.serviceablePincodes.join(', ')
+			coDefaultShippingDays = String(res.data.defaultShippingDays)
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function loadCarriers() {
+		try {
+			const res = await api.get<Carrier[]>('/api/settings/carriers')
+			carriers = res
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function saveCod() {
+		saving = true
+		try {
+			const res = await api.put<{ success: boolean; data: CodSettings }>('/api/settings/cod', {
+				enabled: codEnabled,
+				serviceablePincodes: splitPincodes(codServiceableText),
+				blacklistPincodes: splitPincodes(codBlacklistText),
+				minOrderValue: Number(codMin),
+				maxOrderValue: codMax.trim() === '' ? null : Number(codMax),
+				codFee: Number(codFee)
+			})
+			codSettings = res.data
+			toast.success('COD settings saved')
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			saving = false
+		}
+	}
+
+	async function saveCheckout() {
+		saving = true
+		try {
+			const res = await api.put<{ success: boolean; data: CheckoutSettings }>('/api/settings/checkout', {
+				codEnabled: coCodEnabled,
+				codMinValue: Number(coCodMin),
+				codMaxValue: coCodMax.trim() === '' ? null : Number(coCodMax),
+				codFee: Number(coCodFee),
+				serviceablePincodes: splitPincodes(coServiceableText),
+				defaultShippingDays: Number(coDefaultShippingDays)
+			})
+			checkoutSettings = res.data
+			toast.success('Checkout settings saved')
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			saving = false
+		}
+	}
+
+	function openNewCarrier() {
+		editingCarrier = null
+		carrierName = ''
+		carrierCode = ''
+		carrierEnabled = true
+		carrierOpen = true
+	}
+
+	function openEditCarrier(c: Carrier) {
+		editingCarrier = c
+		carrierName = c.name
+		carrierCode = c.code
+		carrierEnabled = c.enabled
+		carrierOpen = true
+	}
+
+	async function saveCarrier() {
+		if (!carrierName.trim()) {
+			toast.error('Name is required')
+			return
+		}
+		if (!carrierCode.trim()) {
+			toast.error('Code is required')
+			return
+		}
+		carrierSaving = true
+		try {
+			if (editingCarrier) {
+				await api.put<{ success: boolean; data: Carrier }>(`/api/settings/carriers/${editingCarrier.id}`, {
+					name: carrierName.trim(),
+					code: carrierCode.trim(),
+					enabled: carrierEnabled,
+					credentials: editingCarrier.credentials,
+					config: editingCarrier.config
+				})
+				toast.success('Carrier updated')
+			} else {
+				const res = await api.post<{ success: boolean; data: Carrier }>('/api/settings/carriers', {
+					name: carrierName.trim(),
+					code: carrierCode.trim(),
+					enabled: carrierEnabled,
+					credentials: {},
+					config: {}
+				})
+				carriers = [...(carriers ?? []), res.data]
+				toast.success('Carrier created')
+			}
+			carrierOpen = false
+			await loadCarriers()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			carrierSaving = false
+		}
+	}
+
+	async function deleteCarrier(c: Carrier) {
+		if (!confirm(`Delete carrier ${c.name}?`)) return
+		deletingCarrierId = c.id
+		try {
+			await api.delete<{ success: boolean; data: { deleted: boolean } }>(`/api/settings/carriers/${c.id}`)
+			carriers = (carriers ?? []).filter((x) => x.id !== c.id)
+			toast.success('Carrier deleted')
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			deletingCarrierId = ''
+		}
+	}
+
+	async function checkPincode() {
+		const code = pincodeInput.trim()
+		if (!code) {
+			toast.error('Enter a pincode')
+			return
+		}
+		pincodeLoading = true
+		try {
+			const res = await api.get<{ success: boolean; data: ServiceabilityResult }>(`/api/settings/serviceability/${encodeURIComponent(code)}`)
+			pincodeResult = res.data
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			pincodeLoading = false
+		}
+	}
+
 	const sections: Array<{ id: Section; label: string }> = [
 		{ id: 'store', label: 'Store' },
 		{ id: 'payments', label: 'Payments' },
 		{ id: 'shipping', label: 'Shipping' },
 		{ id: 'taxes', label: 'Taxes' },
+		{ id: 'cod', label: 'COD' },
+		{ id: 'checkout', label: 'Checkout' },
+		{ id: 'carriers', label: 'Carriers' },
+		{ id: 'pincode', label: 'Pincode lookup' },
 		{ id: 'notifications', label: 'Notifications' },
 		{ id: 'staff', label: 'Staff' }
 	]
@@ -581,6 +837,154 @@
 					</div>
 				</form>
 			</Card>
+		{:else if section === 'cod' && codSettings}
+			<Card title="Cash on delivery" headingLevel="h2">
+				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveCod() }}>
+					<div class="flex items-center justify-between rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-3">
+						<span class="text-sm text-on-surface-variant">Enable cash on delivery</span>
+						<input type="checkbox" class="field-check" bind:checked={codEnabled} />
+					</div>
+					<div class="grid gap-3 sm:grid-cols-3">
+						<div>
+							<label for="cod-min" class="field-label">Minimum order value</label>
+							<input id="cod-min" type="number" step="0.01" min="0" class="field" bind:value={codMin} />
+						</div>
+						<div>
+							<label for="cod-max" class="field-label">Maximum order value</label>
+							<input id="cod-max" type="number" step="0.01" min="0" class="field" bind:value={codMax} placeholder="Optional" />
+						</div>
+						<div>
+							<label for="cod-fee" class="field-label">COD fee</label>
+							<input id="cod-fee" type="number" step="0.01" min="0" class="field" bind:value={codFee} />
+						</div>
+					</div>
+					<div>
+						<label for="cod-serviceable" class="field-label">Serviceable pincodes (comma separated)</label>
+						<textarea id="cod-serviceable" class="field min-h-24" bind:value={codServiceableText} placeholder="e.g. 110001, 400001"></textarea>
+					</div>
+					<div>
+						<label for="cod-blacklist" class="field-label">Blocked pincodes (comma separated)</label>
+						<textarea id="cod-blacklist" class="field min-h-24" bind:value={codBlacklistText} placeholder="e.g. 560001, 700001"></textarea>
+					</div>
+					<div class="flex justify-end">
+						<Button type="submit" loading={saving}>Save</Button>
+					</div>
+				</form>
+			</Card>
+		{:else if section === 'checkout' && checkoutSettings}
+			<Card title="Checkout" headingLevel="h2">
+				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveCheckout() }}>
+					<div class="flex items-center justify-between rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-3">
+						<span class="text-sm text-on-surface-variant">Enable cash on delivery at checkout</span>
+						<input type="checkbox" class="field-check" bind:checked={coCodEnabled} />
+					</div>
+					<div class="grid gap-3 sm:grid-cols-3">
+						<div>
+							<label for="co-min" class="field-label">Minimum order value</label>
+							<input id="co-min" type="number" step="0.01" min="0" class="field" bind:value={coCodMin} />
+						</div>
+						<div>
+							<label for="co-max" class="field-label">Maximum order value</label>
+							<input id="co-max" type="number" step="0.01" min="0" class="field" bind:value={coCodMax} placeholder="Optional" />
+						</div>
+						<div>
+							<label for="co-fee" class="field-label">COD fee</label>
+							<input id="co-fee" type="number" step="0.01" min="0" class="field" bind:value={coCodFee} />
+						</div>
+						<div>
+							<label for="co-days" class="field-label">Default shipping days</label>
+							<input id="co-days" type="number" step="1" min="0" class="field" bind:value={coDefaultShippingDays} />
+						</div>
+					</div>
+					<div>
+						<label for="co-serviceable" class="field-label">Serviceable pincodes (comma separated)</label>
+						<textarea id="co-serviceable" class="field min-h-24" bind:value={coServiceableText} placeholder="e.g. 110001, 400001"></textarea>
+					</div>
+					<div class="flex justify-end">
+						<Button type="submit" loading={saving}>Save</Button>
+					</div>
+				</form>
+			</Card>
+		{:else if section === 'carriers'}
+			<Card padded={false}>
+				<div class="flex items-center justify-between border-b border-outline-variant px-5 py-4">
+					<h2 class="text-sm font-semibold text-on-surface">Carriers</h2>
+					<Button size="sm" onclick={openNewCarrier}>Add carrier</Button>
+				</div>
+				{#if carriers === null}
+					<div class="space-y-2 p-5">
+						{#each Array(3) as _}
+							<div class="h-10 animate-pulse rounded bg-surface-container"></div>
+						{/each}
+					</div>
+				{:else if carriers.length === 0}
+					<div class="flex flex-col items-center gap-2 py-14 text-center">
+						<Icon name="local_shipping" size="text-[32px]" class="text-outline" />
+						<p class="text-sm text-secondary">No carriers configured.</p>
+					</div>
+				{:else}
+					<div class="overflow-x-auto">
+						<table class="w-full text-left text-sm">
+							<thead class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
+								<tr>
+									<th class="px-5 py-3 font-semibold">Name</th>
+									<th class="px-3 py-3 font-semibold">Code</th>
+									<th class="px-3 py-3 font-semibold">Status</th>
+									<th class="px-5 py-3 text-right font-semibold">Actions</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each carriers as c (c.id)}
+									<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
+										<td class="px-5 py-3 font-medium text-on-surface">{c.name}</td>
+										<td class="px-3 py-3 font-mono text-xs text-secondary">{c.code}</td>
+										<td class="px-3 py-3"><Badge label={c.enabled ? 'active' : 'disabled'} /></td>
+										<td class="px-5 py-3 text-right whitespace-nowrap">
+											<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditCarrier(c)}>Edit</button>
+											<span class="mx-1 text-outline">|</span>
+											<button class="rounded p-1.5 text-xs font-medium text-secondary hover:bg-surface-container hover:text-on-surface disabled:opacity-50" disabled={deletingCarrierId === c.id} onclick={() => deleteCarrier(c)}>{deletingCarrierId === c.id ? 'Deleting…' : 'Delete'}</button>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			</Card>
+		{:else if section === 'pincode'}
+			<Card title="Pincode lookup" headingLevel="h2">
+				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); checkPincode() }}>
+					<div class="flex items-end gap-2">
+						<div class="flex-1">
+							<label for="pincode-input" class="field-label">Pincode</label>
+							<input id="pincode-input" class="field" bind:value={pincodeInput} maxlength="10" placeholder="e.g. 110001" />
+						</div>
+						<Button type="submit" loading={pincodeLoading}>Check</Button>
+					</div>
+				</form>
+				{#if pincodeResult}
+					<div class="mt-5 rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
+						<div class="mb-3 flex items-center justify-between">
+							<span class="font-mono text-sm font-medium text-on-surface">{pincodeResult.pincode}</span>
+							<Badge label={pincodeResult.serviceable ? 'active' : 'inactive'} />
+						</div>
+						<div class="grid gap-3 sm:grid-cols-3">
+							<div>
+								<p class="field-label">COD available</p>
+								<div><Badge label={pincodeResult.codAvailable ? 'active' : 'inactive'} /></div>
+							</div>
+							<div>
+								<p class="field-label">Estimated delivery</p>
+								<p class="text-sm font-medium text-on-surface">{pincodeResult.estimatedDeliveryDays} days</p>
+							</div>
+							<div>
+								<p class="field-label">Shipping fee</p>
+								<p class="text-sm font-medium text-on-surface">{pincodeResult.shippingFee === null ? '—' : currency(pincodeResult.shippingFee, sCurrency || 'USD')}</p>
+							</div>
+						</div>
+					</div>
+				{/if}
+			</Card>
 		{:else if section === 'notifications' && notifications}
 			<Card title="Email notifications" headingLevel="h2">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveNotifications() }}>
@@ -706,6 +1110,29 @@
 			<div class="flex justify-end gap-2 pt-2">
 				<Button variant="secondary" onclick={() => (staffOpen = false)}>Cancel</Button>
 				<Button type="submit" loading={saving}>{editingStaff ? 'Save' : 'Create'}</Button>
+			</div>
+		</form>
+	</Modal>
+{/if}
+
+{#if carrierOpen && isAdmin()}
+	<Modal title={editingCarrier ? `Edit ${editingCarrier.name}` : 'Add carrier'} open={true} width="sm" onClose={() => (carrierOpen = false)}>
+		<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveCarrier() }}>
+			<div>
+				<label for="carrier-name" class="field-label">Name *</label>
+				<input id="carrier-name" class="field" bind:value={carrierName} placeholder="e.g. BlueDart" required />
+			</div>
+			<div>
+				<label for="carrier-code" class="field-label">Code *</label>
+				<input id="carrier-code" class="field font-mono" bind:value={carrierCode} placeholder="e.g. BLUEDART" required />
+			</div>
+			<div class="flex items-center justify-between rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-3">
+				<span class="text-sm text-on-surface-variant">Enable carrier</span>
+				<input type="checkbox" class="field-check" bind:checked={carrierEnabled} />
+			</div>
+			<div class="flex justify-end gap-2 pt-2">
+				<Button variant="secondary" onclick={() => (carrierOpen = false)}>Cancel</Button>
+				<Button type="submit" loading={carrierSaving}>{editingCarrier ? 'Save' : 'Create'}</Button>
 			</div>
 		</form>
 	</Modal>

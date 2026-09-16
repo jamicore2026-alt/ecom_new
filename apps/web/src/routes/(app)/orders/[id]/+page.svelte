@@ -34,6 +34,7 @@
 	// Same key per refund attempt: a retry after a gateway failure reuses it so
 	// the server can never double-refund (unique merchant+key).
 	let refundAttemptId = $state('')
+	let retryingRefundId = $state('')
 
 	const canWrite = () => session.can('orders:write')
 
@@ -147,6 +148,19 @@
 			toast.error((e as Error).message)
 		} finally {
 			saving = false
+		}
+	}
+
+	async function retryRefund(refundId: string) {
+		retryingRefundId = refundId
+		try {
+			await api.post<{ success: boolean }>(`/api/refunds/${refundId}/retry`)
+			toast.success('Refund retry started')
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			retryingRefundId = ''
 		}
 	}
 
@@ -353,6 +367,7 @@
 									<th class="px-table-cell-x py-table-cell-y font-semibold">Method</th>
 									<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
 									<th class="px-table-cell-x py-table-cell-y font-semibold">When</th>
+									<th class="px-table-cell-x py-table-cell-y text-right font-semibold">Actions</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -362,6 +377,21 @@
 										<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{titleCase(r.method)}</td>
 										<td class="px-table-cell-x py-table-cell-y"><Badge label={r.status} /></td>
 										<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTimeFull(r.createdAt)}</td>
+										<td class="px-table-cell-x py-table-cell-y text-right">
+											{#if canWrite() && (r.status as string) === 'failed'}
+												<button
+													class="inline-flex items-center gap-1 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
+													disabled={retryingRefundId === r.id}
+													class:opacity-40={retryingRefundId === r.id}
+													onclick={() => retryRefund(r.id)}
+												>
+													<Icon name="refresh" size="text-[16px]" />
+													Retry
+												</button>
+											{:else}
+												<span class="text-xs text-outline">—</span>
+											{/if}
+										</td>
 									</tr>
 								{/each}
 </tbody>

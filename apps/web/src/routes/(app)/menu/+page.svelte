@@ -3,11 +3,12 @@
 	import { api } from '$lib/api'
 	import { session } from '$lib/session.svelte'
 	import { toast } from '$lib/toast.svelte'
+	import { currency } from '$lib/format'
 	import Button from '$lib/components/Button.svelte'
 	import Card from '$lib/components/Card.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
-	import type { MenuItem, MenuModifierGroup, MenuProductLite } from '$lib/types'
+	import type { MenuItem, MenuModifier, MenuModifierGroup, MenuProductLite } from '$lib/types'
 
 	const canWrite = $derived(session.can('menu.manage'))
 
@@ -24,6 +25,17 @@
 	let station = $state('Grill')
 	let visible = $state(true)
 
+	let collapsed = $state<Record<string, boolean>>({})
+	let groupModal = $state<null | { mode: 'create' } | { mode: 'edit'; group: MenuModifierGroup }>(null)
+	let groupForm = $state({ name: '', minSelections: '1', maxSelections: '1', required: false })
+	let modifierModal = $state<null | { mode: 'add'; groupId: string } | { mode: 'edit'; groupId: string; modifier: MenuModifier }>(null)
+	let modifierForm = $state({ name: '', priceAdjustment: '0', available: true })
+	let bindItem = $state<MenuItem | null>(null)
+	let bindGroupId = $state('')
+
+	const boundGroupIds = $derived(new Set((bindItem?.modifierGroups ?? []).map((g) => g.id)))
+	const availableToBind = $derived(groups.filter((g) => !boundGroupIds.has(g.id)))
+
 	async function load() {
 		loading = true
 		try {
@@ -39,6 +51,8 @@
 			loading = false
 		}
 	}
+
+	onMount(load)
 
 	async function openCreate() {
 		showCreate = true
@@ -89,6 +103,136 @@
 			await api.delete<{ success: boolean }>(`/api/menu/${item.id}`)
 			toast.success('Menu item removed')
 			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	function toggleCollapsed(id: string) {
+		collapsed = { ...collapsed, [id]: !collapsed[id] }
+	}
+
+	function openCreateGroup() {
+		groupModal = { mode: 'create' }
+		groupForm = { name: '', minSelections: '1', maxSelections: '1', required: false }
+	}
+
+	function openEditGroup(group: MenuModifierGroup) {
+		groupModal = { mode: 'edit', group }
+		groupForm = {
+			name: group.name,
+			minSelections: String(group.minSelections),
+			maxSelections: String(group.maxSelections),
+			required: group.required
+		}
+	}
+
+	async function saveGroup() {
+		if (!groupForm.name.trim()) return toast.error('Enter a group name')
+		const body = {
+			name: groupForm.name.trim(),
+			minSelections: Number(groupForm.minSelections) || 0,
+			maxSelections: Number(groupForm.maxSelections) || 1,
+			required: groupForm.required
+		}
+		try {
+			if (groupModal?.mode === 'edit') {
+				await api.put<{ success: boolean }>(`/api/modifier-groups/${groupModal.group.id}`, body)
+				toast.success('Modifier group updated')
+			} else {
+				await api.post<{ success: boolean }>('/api/modifier-groups', body)
+				toast.success('Modifier group created')
+			}
+			groupModal = null
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function deleteGroup(group: MenuModifierGroup) {
+		if (!confirm(`Delete modifier group "${group.name}"? This also removes its modifiers.`)) return
+		try {
+			await api.delete<{ success: boolean; data: { id: string } }>(`/api/modifier-groups/${group.id}`)
+			toast.success('Modifier group deleted')
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	function openAddModifier(group: MenuModifierGroup) {
+		modifierModal = { mode: 'add', groupId: group.id }
+		modifierForm = { name: '', priceAdjustment: '0', available: true }
+	}
+
+	function openEditModifier(group: MenuModifierGroup, modifier: MenuModifier) {
+		modifierModal = { mode: 'edit', groupId: group.id, modifier }
+		modifierForm = {
+			name: modifier.name,
+			priceAdjustment: String(modifier.priceAdjustment),
+			available: modifier.available ?? true
+		}
+	}
+
+	async function saveModifier() {
+		if (!modifierForm.name.trim()) return toast.error('Enter a modifier name')
+		const body = {
+			name: modifierForm.name.trim(),
+			priceAdjustment: Number(modifierForm.priceAdjustment) || 0,
+			available: modifierForm.available
+		}
+		try {
+			if (modifierModal?.mode === 'edit') {
+				await api.put<{ success: boolean }>(`/api/modifiers/${modifierModal.modifier.id}`, body)
+				toast.success('Modifier updated')
+			} else if (modifierModal?.mode === 'add') {
+				await api.post<{ success: boolean }>(`/api/modifier-groups/${modifierModal.groupId}/modifiers`, body)
+				toast.success('Modifier added')
+			}
+			modifierModal = null
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function deleteModifier(modifier: MenuModifier) {
+		if (!confirm(`Delete modifier "${modifier.name}"?`)) return
+		try {
+			await api.delete<{ success: boolean; data: { id: string } }>(`/api/modifiers/${modifier.id}`)
+			toast.success('Modifier deleted')
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	function openBind(item: MenuItem) {
+		bindItem = item
+		bindGroupId = ''
+	}
+
+	async function bindGroup() {
+		if (!bindItem || !bindGroupId) return
+		try {
+			const res = await api.post<{ success: boolean; data: MenuItem }>(`/api/menu/${bindItem.id}/modifiers`, { groupId: bindGroupId })
+			toast.success('Modifier group added')
+			items = items.map((i) => (i.id === res.data.id ? res.data : i))
+			bindItem = res.data
+			bindGroupId = ''
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function unbindGroup(groupId: string) {
+		if (!bindItem) return
+		try {
+			const res = await api.delete<{ success: boolean; data: MenuItem }>(`/api/menu/${bindItem.id}/modifiers/${groupId}`)
+			toast.success('Modifier group removed')
+			items = items.map((i) => (i.id === res.data.id ? res.data : i))
+			bindItem = res.data
 		} catch (e) {
 			toast.error((e as Error).message)
 		}
@@ -153,7 +297,7 @@
 									<div class="font-medium text-on-surface">{item.product.name}</div>
 									<div class="text-xs text-outline">{item.product.sku}</div>
 								</td>
-								<td class="py-3 pr-4 font-mono-label text-mono-label text-on-surface">${Number(item.product.price).toFixed(2)}</td>
+								<td class="py-3 pr-4 font-mono-label text-mono-label text-on-surface">{currency(item.product.price)}</td>
 								<td class="py-3 pr-4 text-on-surface-variant">{item.kitchenStation ?? '—'}</td>
 								<td class="py-3 pr-4 text-on-surface-variant">{item.preparationTimeMin}m</td>
 								<td class="py-3 pr-4">
@@ -175,6 +319,12 @@
 										<button onclick={() => toggleAvailable(item)} class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40">
 											{item.available ? 'Hide' : 'Show'}
 										</button>
+										<button
+											onclick={() => openBind(item)}
+											class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
+										>
+											Modifiers ({(item.modifierGroups ?? []).length})
+										</button>
 										<button onclick={() => archive(item)} class="rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40">Remove</button>
 									{/if}
 								</td>
@@ -187,28 +337,102 @@
 	</Card>
 
 	<Card>
-		<h2 class="mb-3 text-lg font-semibold text-on-surface">Modifier groups</h2>
+		<div class="mb-3 flex items-center justify-between gap-2">
+			<h2 class="text-lg font-semibold text-on-surface">Modifier groups</h2>
+			{#if canWrite}
+				<Button size="sm" variant="secondary" onclick={openCreateGroup}><Icon name="add" size="text-[18px]" /> New group</Button>
+			{/if}
+		</div>
 		{#if groups.length === 0}
-			<p class="text-sm text-secondary">No modifier groups.</p>
+			<p class="text-sm text-secondary">No modifier groups. Create one to start adding customization options.</p>
 		{:else}
 			<div class="grid gap-4 sm:grid-cols-2">
 				{#each groups as group (group.id)}
 					<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
-						<div class="mb-2 flex items-center justify-between">
-							<span class="font-medium text-on-surface">{group.name}</span>
-							{#if group.required}
-								<span class="rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning ring-1 ring-inset ring-warning">Required</span>
+						<div class="mb-2 flex items-center justify-between gap-2">
+							<div class="flex min-w-0 items-center gap-2">
+								<button
+									class="rounded p-1 text-secondary transition-colors hover:bg-surface-container hover:text-on-surface"
+									onclick={() => toggleCollapsed(group.id)}
+									aria-label="Toggle modifier group"
+								>
+									<Icon name={collapsed[group.id] ? 'chevron_right' : 'expand_more'} size="text-[18px]" />
+								</button>
+								<span class="truncate font-medium text-on-surface">{group.name}</span>
+								{#if group.required}
+									<span class="rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning ring-1 ring-inset ring-warning">Required</span>
+								{/if}
+							</div>
+							{#if canWrite}
+								<div class="flex shrink-0 items-center gap-1">
+									<button
+										class="rounded p-1.5 text-primary transition-colors hover:bg-primary-fixed-dim/40"
+										onclick={() => openAddModifier(group)}
+										aria-label="Add modifier"
+									>
+										<Icon name="add" size="text-[18px]" />
+									</button>
+									<button
+										class="rounded p-1.5 text-secondary transition-colors hover:bg-surface-container hover:text-on-surface"
+										onclick={() => openEditGroup(group)}
+										aria-label="Edit group"
+									>
+										<Icon name="edit" size="text-[18px]" />
+									</button>
+									<button
+										class="rounded p-1.5 text-error transition-colors hover:bg-error-container/40"
+										onclick={() => deleteGroup(group)}
+										aria-label="Delete group"
+									>
+										<Icon name="delete" size="text-[18px]" />
+									</button>
+								</div>
 							{/if}
 						</div>
-						<p class="mb-3 text-xs text-secondary">Min {group.minSelections} · Max {group.maxSelections}</p>
-						<ul class="space-y-1 text-sm text-on-surface-variant">
-							{#each group.modifiers as m}
-								<li class="flex justify-between">
-									<span>{m.name}</span>
-									{#if m.priceAdjustment}<span class="font-mono-label text-mono-label text-on-surface-variant">+${Number(m.priceAdjustment).toFixed(2)}</span>{/if}
-								</li>
-							{/each}
-						</ul>
+						{#if !collapsed[group.id]}
+							<p class="mb-3 text-xs text-secondary">
+								Min {group.minSelections} · Max {group.maxSelections} · {group.modifiers.length} modifier{group.modifiers.length === 1 ? '' : 's'}
+							</p>
+							{#if group.modifiers.length === 0}
+								<p class="text-sm text-secondary">No modifiers yet.</p>
+							{:else}
+								<ul class="space-y-1 text-sm text-on-surface-variant">
+									{#each group.modifiers as m (m.id)}
+										<li class="flex items-center justify-between gap-2">
+											<div class="flex min-w-0 items-center gap-2">
+												<span class="truncate">{m.name}</span>
+												{#if m.available}
+													<span class="rounded bg-success/10 px-1.5 py-0.5 text-xs text-success">Available</span>
+												{:else}
+													<span class="rounded bg-secondary/10 px-1.5 py-0.5 text-xs text-secondary">Unavailable</span>
+												{/if}
+											</div>
+											<div class="flex shrink-0 items-center gap-1">
+												{#if m.priceAdjustment}
+													<span class="font-mono-label text-mono-label text-on-surface-variant">{m.priceAdjustment > 0 ? '+' : ''}{currency(m.priceAdjustment)}</span>
+												{/if}
+												{#if canWrite}
+													<button
+														class="rounded p-1.5 text-secondary transition-colors hover:bg-surface-container hover:text-on-surface"
+														onclick={() => openEditModifier(group, m)}
+														aria-label="Edit modifier"
+													>
+														<Icon name="edit" size="text-[16px]" />
+													</button>
+													<button
+														class="rounded p-1.5 text-error transition-colors hover:bg-error-container/40"
+														onclick={() => deleteModifier(m)}
+														aria-label="Delete modifier"
+													>
+														<Icon name="delete" size="text-[16px]" />
+													</button>
+												{/if}
+											</div>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						{/if}
 					</div>
 				{/each}
 			</div>
@@ -230,7 +454,7 @@
 					<select id="menu-product" class="field" bind:value={productId}>
 						<option value="" disabled>Select a product</option>
 						{#each products as p (p.id)}
-							<option value={p.id}>{p.name} — ${Number(p.price).toFixed(2)}</option>
+							<option value={p.id}>{p.name} — {currency(p.price)}</option>
 						{/each}
 					</select>
 				{/if}
@@ -252,6 +476,101 @@
 			<div class="flex justify-end gap-2 pt-2">
 				<Button variant="ghost" onclick={() => (showCreate = false)}>Cancel</Button>
 				<Button onclick={createItem} disabled={!productId}>Add to menu</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if groupModal && canWrite}
+	<Modal open={true} onClose={() => (groupModal = null)}>
+		<h2 class="mb-4 text-lg font-semibold text-on-surface">{groupModal.mode === 'edit' ? 'Edit modifier group' : 'New modifier group'}</h2>
+		<div class="space-y-4">
+			<div>
+				<label for="group-name" class="field-label">Name</label>
+				<input id="group-name" class="field" bind:value={groupForm.name} placeholder="Size, Extra toppings…" />
+			</div>
+			<div class="flex gap-4">
+				<div class="flex-1">
+					<label for="group-min" class="field-label">Min selections</label>
+					<input id="group-min" class="field" type="number" min="0" bind:value={groupForm.minSelections} />
+				</div>
+				<div class="flex-1">
+					<label for="group-max" class="field-label">Max selections</label>
+					<input id="group-max" class="field" type="number" min="1" bind:value={groupForm.maxSelections} />
+				</div>
+			</div>
+			<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+				<input type="checkbox" bind:checked={groupForm.required} class="field-check" />
+				Required — customer must choose from this group
+			</label>
+			<div class="flex justify-end gap-2 pt-2">
+				<Button variant="ghost" onclick={() => (groupModal = null)}>Cancel</Button>
+				<Button onclick={saveGroup}>Save</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if modifierModal && canWrite}
+	<Modal open={true} onClose={() => (modifierModal = null)}>
+		<h2 class="mb-4 text-lg font-semibold text-on-surface">{modifierModal.mode === 'edit' ? 'Edit modifier' : 'Add modifier'}</h2>
+		<div class="space-y-4">
+			<div>
+				<label for="modifier-name" class="field-label">Name</label>
+				<input id="modifier-name" class="field" bind:value={modifierForm.name} placeholder="Large, Extra cheese…" />
+			</div>
+			<div>
+				<label for="modifier-price" class="field-label">Price adjustment</label>
+				<input id="modifier-price" class="field" type="number" step="0.01" bind:value={modifierForm.priceAdjustment} />
+			</div>
+			<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+				<input type="checkbox" bind:checked={modifierForm.available} class="field-check" />
+				Available for selection
+			</label>
+			<div class="flex justify-end gap-2 pt-2">
+				<Button variant="ghost" onclick={() => (modifierModal = null)}>Cancel</Button>
+				<Button onclick={saveModifier}>Save</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if bindItem && canWrite}
+	<Modal open={true} onClose={() => (bindItem = null)}>
+		<h2 class="mb-4 text-lg font-semibold text-on-surface">Modifiers — {bindItem.product.name}</h2>
+		<div class="space-y-4">
+			<div class="space-y-2">
+				{#if (bindItem.modifierGroups ?? []).length === 0}
+					<p class="text-sm text-secondary">No modifier groups bound to this item.</p>
+				{:else}
+					{#each bindItem.modifierGroups ?? [] as g (g.id)}
+						<div class="flex items-center justify-between gap-3 rounded border border-outline-variant bg-surface-container-lowest p-3">
+							<div>
+								<div class="text-sm font-medium text-on-surface">{g.name}</div>
+								<div class="text-xs text-secondary">
+									{g.modifiers.length} modifier{g.modifiers.length === 1 ? '' : 's'} · Min {g.minSelections} · Max {g.maxSelections}
+								</div>
+							</div>
+							<Button size="sm" variant="danger" onclick={() => unbindGroup(g.id)}>Unbind</Button>
+						</div>
+					{/each}
+				{/if}
+			</div>
+			<div class="flex items-end gap-2 border-t border-outline-variant pt-3">
+				<div class="flex-1">
+					<label for="bind-group" class="field-label">Add modifier group</label>
+					{#if availableToBind.length === 0}
+						<p class="text-sm text-secondary">All modifier groups are already bound.</p>
+					{:else}
+						<select id="bind-group" class="field" bind:value={bindGroupId}>
+							<option value="" disabled>Select a group</option>
+							{#each availableToBind as g (g.id)}
+								<option value={g.id}>{g.name}</option>
+							{/each}
+						</select>
+					{/if}
+				</div>
+				<Button onclick={bindGroup} disabled={!bindGroupId}>Add</Button>
 			</div>
 		</div>
 	</Modal>

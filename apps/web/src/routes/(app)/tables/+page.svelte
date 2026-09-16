@@ -45,6 +45,13 @@
 	let newTableSeats = $state('4')
 	let sectionsByOutlet = $state<TableSection[]>([])
 
+	// merge / split / status controls
+	let showMerge = $state(false)
+	let mergeTarget = $state('')
+	let showSplit = $state(false)
+	let splitTable = $state('')
+	let splitGuests = $state('')
+
 	async function load() {
 		loading = true
 		try {
@@ -194,6 +201,50 @@
 		}
 	}
 
+	const TABLE_STATES = ['AVAILABLE', 'RESERVED', 'OCCUPIED', 'ORDERING', 'DINING', 'BILL_REQUESTED', 'PAYMENT_PENDING', 'CLEANING'] as const
+
+	const mergeOptions = $derived((Array.isArray(sessions) ? sessions : []).filter((s) => s.status === 'OPEN' && s.id !== selected?.openSession?.id))
+
+	async function doMerge() {
+		const target = mergeOptions.find((s) => s.id === mergeTarget)
+		const current = selected?.openSession
+		if (!target || !current) return
+		if (!confirm(`Merge ${selected?.name}'s party into ${target.tableName ?? 'the selected table'}?`)) return
+		try {
+			await api.post<{ success: boolean; data: TableSession }>(`/api/table-sessions/${target.id}/merge`, { sessionIds: [current.id] })
+			toast.success(`Session merged into ${target.tableName ?? 'the selected table'}`)
+			showMerge = false
+			selected = null
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function doSplit() {
+		const id = selected?.openSession?.id
+		if (!id || !splitTable) return
+		try {
+			const res = await api.post<{ success: boolean; data: { session: TableSession; splitInto: TableSession } }>(`/api/table-sessions/${id}/split`, { toTableId: splitTable, guests: Number(splitGuests) || 1 })
+			toast.success(`Split ${res.data.splitInto.guests} guests to ${res.data.splitInto.tableName ?? 'a new table'}`)
+			showSplit = false
+			selected = null
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function setTableStatus(table: DiningTable, status: string) {
+		try {
+			await api.post<{ success: boolean; data: DiningTable }>(`/api/tables/${table.id}/status`, { status })
+			toast.success(`${table.name} set to ${status}`)
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
 	onMount(load)
 </script>
 
@@ -232,22 +283,34 @@
 					{:else}
 						<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
 							{#each grp.tables as table (table.id)}
-								<button
-									type="button"
-									class="rounded-xl border border-outline-variant bg-surface-container-lowest p-3 text-left transition hover:border-primary/40 hover:shadow-sm"
-									onclick={() => (selected = table)}
-								>
-									<div class="flex items-center justify-between">
-										<span class="font-semibold text-on-surface">{table.name}</span>
-										<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[table.status]}">{table.status}</span>
-									</div>
-									<div class="mt-2 text-xs text-secondary">
-										<span>{table.code} · {table.seats} seats</span>
-										{#if table.openSession}
-											<span class="mt-0.5 block text-primary">{table.openSession.guests} guests · <span class="font-mono-label text-mono-label">${Number(table.total).toFixed(2)}</span></span>
-										{/if}
-									</div>
-								</button>
+								<div class="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest transition hover:border-primary/40 hover:shadow-sm">
+									<button type="button" class="block w-full p-3 text-left" onclick={() => (selected = table)}>
+										<div class="flex items-center justify-between">
+											<span class="font-semibold text-on-surface">{table.name}</span>
+											<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[table.status]}">{table.status}</span>
+										</div>
+										<div class="mt-2 text-xs text-secondary">
+											<span>{table.code} · {table.seats} seats</span>
+											{#if table.openSession}
+												<span class="mt-0.5 block text-primary">{table.openSession.guests} guests · <span class="font-mono-label text-mono-label">${Number(table.total).toFixed(2)}</span></span>
+											{/if}
+										</div>
+									</button>
+									{#if canManage}
+										<div class="border-t border-outline-variant px-3 py-2">
+											<select
+												class="field w-full"
+												aria-label={`Change status for ${table.name}`}
+												value={table.status}
+												onchange={(e) => setTableStatus(table, (e.currentTarget as HTMLSelectElement).value)}
+											>
+												{#each TABLE_STATES as state (state)}
+													<option value={state}>{state}</option>
+												{/each}
+											</select>
+										</div>
+									{/if}
+								</div>
 							{/each}
 						</div>
 					{/if}
@@ -273,7 +336,9 @@
 							<div class="text-xs text-secondary">Opened {dateTime(selected.openSession.openedAt)}{selected.openSession.notes ? ` · "${selected.openSession.notes}"` : ''}</div>
 						</div>
 						{#if canManage}
-							<div class="flex gap-2">
+							<div class="flex flex-wrap justify-end gap-2">
+								<Button size="sm" variant="secondary" onclick={() => { mergeTarget = ''; showMerge = true }}>Merge</Button>
+								<Button size="sm" variant="secondary" onclick={() => { splitTable = ''; splitGuests = ''; showSplit = true }}>Split</Button>
 								<Button size="sm" variant="danger" onclick={() => cancelSession(selected!.openSession!.id)}>Cancel</Button>
 								<Button size="sm" onclick={() => closeSession(selected!.openSession!.id)}>Close</Button>
 							</div>
@@ -322,6 +387,50 @@
 			<input id="seat-guests-2" class="field" bind:value={seatGuests} type="number" min="1" max={selected.seats} />
 			<div class="flex justify-end">
 				<Button onclick={openSeat}>Open table</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if showMerge && selected?.openSession && canManage}
+	<Modal open={true} title={`Merge ${selected.name}`} onClose={() => (showMerge = false)}>
+		<div class="space-y-4">
+			<p class="text-sm text-secondary">Move this session into another open session. Its orders and guests are combined, the source tables are cleared and this session closes.</p>
+			<div>
+				<label for="merge-into" class="field-label">Merge into</label>
+				<select id="merge-into" class="field" bind:value={mergeTarget}>
+					<option value="" disabled>Choose an open session</option>
+					{#each mergeOptions as s (s.id)}
+						<option value={s.id}>{s.tableName ?? 'Table'} ({s.guests} guests)</option>
+					{/each}
+				</select>
+			</div>
+			<div class="flex justify-end">
+				<Button disabled={!mergeTarget} onclick={doMerge}>Merge</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if showSplit && selected?.openSession && canManage}
+	<Modal open={true} title={`Split ${selected.name}`} onClose={() => (showSplit = false)}>
+		<div class="space-y-4">
+			<p class="text-sm text-secondary">Move some guests to a free table. A new session is opened there and this party keeps the rest.</p>
+			<div>
+				<label for="split-table" class="field-label">Destination table</label>
+				<select id="split-table" class="field" bind:value={splitTable}>
+					<option value="" disabled>Choose a free table</option>
+					{#each freeTables as t (t.id)}
+						<option value={t.id}>{t.name} ({t.sectionName ?? '—'})</option>
+					{/each}
+				</select>
+			</div>
+			<div class="w-28">
+				<label for="split-guests" class="field-label">Guests leaving</label>
+				<input id="split-guests" class="field" bind:value={splitGuests} type="number" min="1" max={(selected.openSession?.guests ?? 1) - 1} />
+			</div>
+			<div class="flex justify-end">
+				<Button disabled={!splitTable} onclick={doSplit}>Split</Button>
 			</div>
 		</div>
 	</Modal>

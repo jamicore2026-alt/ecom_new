@@ -177,11 +177,6 @@ export const storefrontApi = {
 			body: JSON.stringify(body)
 		}),
 
-	me: (fetchFn: typeof fetch, slug: string, token: string) =>
-		request<ShopperCustomer>(fetchFn, `/${slug}/auth/me`, {
-			headers: { authorization: `Bearer ${token}` }
-		}),
-
 	myOrders: (
 		fetchFn: typeof fetch,
 		slug: string,
