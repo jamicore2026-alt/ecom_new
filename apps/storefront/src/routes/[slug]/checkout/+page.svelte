@@ -8,7 +8,7 @@
 	import { money, placeholderImage, handleImageError } from '$lib/format'
 	import { t } from '$lib/i18n'
 	import { track } from '$lib/analytics'
-	import type { CheckoutSummary } from '$lib/types'
+	import type { CheckoutField, CheckoutSummary } from '$lib/types'
 	import type { PageProps } from './$types'
 
 	let { data }: PageProps = $props()
@@ -67,6 +67,25 @@
 
 	const countries = ['SA', 'AE', 'KW', 'QA', 'BH', 'OM', 'US', 'GB', 'DE', 'FR']
 
+	// Countries this merchant actually sells to: explicit shipping-zone lists
+	// win, then the merchant home country (delivery restriction), then a broad
+	// fallback for fully-unrestricted stores.
+	const merchantCountry = $derived(store.merchant.country ?? '')
+	const zoneCountries = $derived(
+		Array.from(new Set(store.shipping.zones.flatMap((z) => z.countries ?? []).filter(Boolean)))
+	)
+	const allowedCountries = $derived.by(() => {
+		if (zoneCountries.length > 0) {
+			return Array.from(new Set(merchantCountry ? [merchantCountry, ...zoneCountries] : zoneCountries))
+		}
+		if (merchantCountry) return [merchantCountry]
+		return countries
+	})
+
+	const requiredFields = $derived(store.checkout.requiredFields)
+	const fieldRequired = (field: CheckoutField) => requiredFields[field] === true
+	const requiredMark = (field: CheckoutField) => (fieldRequired(field) ? ' *' : '')
+
 	$effect(() => {
 		if (!paymentMethod) {
 			paymentMethod = onlineProviders[0]?.id ?? paymentMethods[0]?.id ?? ''
@@ -80,6 +99,13 @@
 		const fullName = [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim()
 		if (!shippingName.trim() && fullName) shippingName = fullName
 		if (!phone.trim() && customer.phone) phone = customer.phone
+	})
+
+	$effect(() => {
+		if (!allowedCountries.length) return
+		if (!allowedCountries.includes(country)) {
+			country = allowedCountries[0]
+		}
 	})
 
 	const selectedIsProvider = $derived(onlineProviders.some((p) => p.id === paymentMethod))
@@ -152,21 +178,26 @@
 	}
 
 	const validate = () => {
-		const required: Array<[string, string]> = [
-			[email, t('checkout.email')],
-			[shippingName, t('checkout.fullName')],
-			[line1, t('checkout.addressLine1')],
-			[city, t('checkout.city')],
-			[region, t('checkout.state')],
-			[postalCode, t('checkout.postalCode')]
+		const required: Array<[CheckoutField, string, string]> = [
+			['email', email, t('checkout.email')],
+			['phone', phone, t('checkout.phone')],
+			['name', shippingName, t('checkout.fullName')],
+			['line1', line1, t('checkout.addressLine1')],
+			['line2', line2, t('checkout.addressLine2')],
+			['city', city, t('checkout.city')],
+			['state', region, t('checkout.state')],
+			['postalCode', postalCode, t('checkout.postalCode')],
+			['country', country, t('checkout.country')]
 		]
-		for (const [value, label] of required) {
-			if (!value.trim()) {
+		for (const [field, value, label] of required) {
+			if (fieldRequired(field) && !value.trim()) {
 				orderError = t('checkout.requiredField', { label })
 				return false
 			}
 		}
-		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+		// Email format is only enforced when a value was provided — the merchant
+		// controls whether the field itself is mandatory via requiredFields.
+		if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
 			orderError = t('checkout.invalidEmail')
 			return false
 		}
@@ -194,16 +225,19 @@
 				})),
 				couponCode: couponCode.trim() || undefined,
 				email: email.trim(),
-				shippingAddress: {
-					name: shippingName.trim(),
-					line1: line1.trim(),
-					line2: line2.trim() || undefined,
-					city: city.trim(),
-					state: region.trim(),
-					postalCode: postalCode.trim(),
-					country,
-					phone: phone.trim() || undefined
-				},
+shippingAddress: {
+				name: shippingName.trim(),
+				line1: line1.trim(),
+				line2: line2.trim() || undefined,
+				city: city.trim(),
+				state: region.trim(),
+				postalCode: postalCode.trim(),
+				country,
+				phone: phone.trim() || undefined,
+				// Delivered inside the address so the server-side required-field
+				// check can enforce email when the merchant enables it.
+				email: email.trim() || undefined
+			},
 				paymentMethod,
 				notes: notes.trim() || undefined,
 				cartId: cart.persistedCartId,
@@ -280,7 +314,7 @@
 						</p>
 					{/if}
 					<div class="mt-4">
-						<label class="text-sm font-medium text-neutral-700" for="email">{t('checkout.email')}</label>
+						<label class="text-sm font-medium text-neutral-700" for="email">{t('checkout.email')}{requiredMark('email')}</label>
 						<input
 							id="email"
 							type="email"
@@ -295,7 +329,7 @@
 					<h2 class="text-lg font-semibold text-neutral-900">{t('checkout.address')}</h2>
 					<div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="sm:col-span-2">
-							<label class="text-sm font-medium text-neutral-700" for="shippingName">{t('checkout.fullName')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="shippingName">{t('checkout.fullName')}{requiredMark('name')}</label>
 							<input
 								id="shippingName"
 								type="text"
@@ -305,7 +339,7 @@
 							/>
 						</div>
 						<div class="sm:col-span-2">
-							<label class="text-sm font-medium text-neutral-700" for="line1">{t('checkout.address')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="line1">{t('checkout.addressLine1')}{requiredMark('line1')}</label>
 							<input
 								id="line1"
 								type="text"
@@ -315,7 +349,9 @@
 							/>
 						</div>
 						<div class="sm:col-span-2">
+							<label class="text-sm font-medium text-neutral-700" for="line2">{t('checkout.addressLine2')}{requiredMark('line2')}</label>
 							<input
+								id="line2"
 								type="text"
 								bind:value={line2}
 								placeholder={t('checkout.addressLine2')}
@@ -323,7 +359,7 @@
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-neutral-700" for="city">{t('checkout.city')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="city">{t('checkout.city')}{requiredMark('city')}</label>
 							<input
 								id="city"
 								type="text"
@@ -333,7 +369,7 @@
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-neutral-700" for="state">{t('checkout.state')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="state">{t('checkout.state')}{requiredMark('state')}</label>
 							<input
 								id="state"
 								type="text"
@@ -343,7 +379,7 @@
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-neutral-700" for="postalCode">{t('checkout.postalCode')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="postalCode">{t('checkout.postalCode')}{requiredMark('postalCode')}</label>
 							<input
 								id="postalCode"
 								type="text"
@@ -353,19 +389,19 @@
 							/>
 						</div>
 						<div>
-							<label class="text-sm font-medium text-neutral-700" for="country">{t('checkout.country')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="country">{t('checkout.country')}{requiredMark('country')}</label>
 							<select
 								id="country"
 								bind:value={country}
 								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							>
-								{#each countries as c (c)}
+								{#each allowedCountries as c (c)}
 									<option value={c}>{c}</option>
 								{/each}
 							</select>
 						</div>
 						<div class="sm:col-span-2">
-							<label class="text-sm font-medium text-neutral-700" for="phone">{t('checkout.phone')}</label>
+							<label class="text-sm font-medium text-neutral-700" for="phone">{t('checkout.phone')}{requiredMark('phone')}</label>
 							<input
 								id="phone"
 								type="tel"

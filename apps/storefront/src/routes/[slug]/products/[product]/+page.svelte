@@ -4,11 +4,11 @@
 	import { account } from '$lib/account.svelte'
 	import { storefrontApi } from '$lib/api'
 	import { money, inStock, placeholderImage, handleImageError } from '$lib/format'
-	import { t } from '$lib/i18n'
+	import { t, localized, localizedOptionValue } from '$lib/i18n'
 	import { track } from '$lib/analytics'
 	import { absoluteImageUrl, metaDescription, siteUrl } from '$lib/seo'
 	import { untrack } from 'svelte'
-	import type { ProductReview, ProductVariant } from '$lib/types'
+	import type { ProductOption, ProductReview, ProductVariant } from '$lib/types'
 	import type { PageProps } from './$types'
 
 	let { data }: PageProps = $props()
@@ -75,9 +75,13 @@
 	const price = $derived(selectedVariant?.price ?? product.price)
 	const compareAt = $derived(selectedVariant?.compareAtPrice ?? product.compareAtPrice)
 	const available = $derived(
-		inStock(selectedVariant?.inventory ?? product.stock, product.trackInventory)
+		selectedVariant?.unlimited
+			? true
+			: inStock(selectedVariant?.inventory ?? product.stock, product.trackInventory)
 	)
-	const stock = $derived(selectedVariant?.inventory ?? product.stock)
+	const stock = $derived(
+		selectedVariant?.unlimited ? Number.POSITIVE_INFINITY : selectedVariant?.inventory ?? product.stock
+	)
 	const gallery = $derived(
 		product.images?.length ? product.images : product.image ? [product.image] : []
 	)
@@ -131,13 +135,23 @@
 		if (match) selectedVariantId = match.id
 	}
 
+	/** Localized label for an option choice — the Arabic value is pulled from
+	 *  the matching variant's optionValuesAr when the locale is Arabic. */
+	const valueLabel = (name: string, value: string) => {
+		if (localized(name)) {
+			const match = product.variants.find((v) => v.optionValues?.[name] === value)
+			if (match) return localizedOptionValue(match.optionValues ?? {}, match.optionValuesAr ?? {}, name)
+		}
+		return value
+	}
+
 	const addToCart = () => {
 		if (!available) return
 		const variant = selectedVariant ?? product.variants[0]
 		cart.add({
 			productId: product.id,
 			variantId: variant?.id ?? product.id,
-			name: product.name,
+			name: localized(product.name, product.nameAr),
 			sku: variant?.sku ?? product.sku,
 			price: selectedVariant?.price ?? product.price,
 			compareAtPrice: selectedVariant?.compareAtPrice ?? product.compareAtPrice,
@@ -145,13 +159,32 @@
 			optionValues: variant?.optionValues ?? {},
 			quantity
 		})
-		notice = t('product.addedToCart', { qty: quantity, name: product.name })
+		notice = t('product.addedToCart', { qty: quantity, name: localized(product.name, product.nameAr) })
 		quantity = 1
 		setTimeout(() => (notice = ''), 3500)
 	}
 
 	const optionValues = (variant: ProductVariant, name: string) =>
 		variant.optionValues?.[name] ?? ''
+
+	// Option group metadata comes from the product's option definitions when
+	// present (localized labels, required flags) with a variant-derived fallback.
+	const optionDef = (name: string) => product.options?.find((o) => o.name === name)
+	const isRequiredOption = (name: string) => optionDef(name)?.required ?? false
+	const optionNameLabel = (name: string) => {
+		const d = optionDef(name)
+		return d ? localized(d.name, d.nameAr) : localized(name)
+	}
+	const valueAdjustment = (name: string, value: string) => {
+		const val = optionDef(name)?.values.find((v) => v.value === value)
+		return val && val.priceAdjustment ? ` · +${money(val.priceAdjustment, store.merchant.currency)}` : ''
+	}
+	const valueAvailable = (name: string, value: string) => {
+		if (!product.trackInventory) return true
+		return product.variants.some(
+			(v) => v.optionValues?.[name] === value && (v.unlimited || v.inventory > 0)
+		)
+	}
 
 	const starString = (value: number) => '★★★★★'.slice(0, Math.round(value)) + '☆☆☆☆☆'.slice(0, 5 - Math.round(value))
 
@@ -224,12 +257,12 @@
 </script>
 
 <svelte:head>
-	<title>{product.name} — {store.settings.name}</title>
+	<title>{localized(product.name, product.nameAr)} — {store.settings.name}</title>
 	<meta name="description" content={description} />
 	<link rel="canonical" href={canonicalUrl} />
 	<meta property="og:type" content="product" />
 	<meta property="og:site_name" content={store.settings.name} />
-	<meta property="og:title" content={product.name} />
+	<meta property="og:title" content={localized(product.name, product.nameAr)} />
 	<meta property="og:description" content={description} />
 	<meta property="og:url" content={canonicalUrl} />
 	{#if ogImage}
@@ -250,17 +283,17 @@
 		{#if product.category}
 			<span class="mx-2">/</span>
 			<a href={`/${data.slug}/categories/${product.category.slug}`} class="hover:text-neutral-900">
-				{product.category.name}
+				{localized(product.category.name, product.category.nameAr)}
 			</a>
 		{/if}
 		<span class="mx-2">/</span>
-		<span class="text-neutral-900">{product.name}</span>
+		<span class="text-neutral-900">{localized(product.name, product.nameAr)}</span>
 	</nav>
 
 	<div class="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-2">
 	<div class="space-y-3">
 		<div class="aspect-square overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100">
-			<img src={mainImage ?? placeholderImage()} alt={product.name} class="h-full w-full object-cover" onerror={handleImageError} />
+			<img src={mainImage ?? placeholderImage()} alt={localized(product.name, product.nameAr)} class="h-full w-full object-cover" onerror={handleImageError} />
 		</div>
 		{#if gallery.length > 1}
 			<div class="flex flex-wrap gap-2">
@@ -280,7 +313,7 @@
 	</div>
 
 		<div class="flex flex-col gap-5">
-			<h1 class="text-3xl font-bold text-neutral-900">{product.name}</h1>
+			<h1 class="text-3xl font-bold text-neutral-900">{localized(product.name, product.nameAr)}</h1>
 
 			{#if product.rating && product.rating.count > 0}
 				<a href="#reviews" class="flex items-center gap-2 text-sm">
@@ -299,18 +332,23 @@
 			{#if optionNames.length}
 				{#each optionNames as name (name)}
 					<div>
-						<p class="text-sm font-medium text-neutral-700">{name}</p>
+						<p class="text-sm font-medium text-neutral-700">
+							{optionNameLabel(name)}
+							{#if isRequiredOption(name)}<span class="text-rose-500">*</span>{/if}
+						</p>
 						<div class="mt-2 flex flex-wrap gap-2">
 							{#each [...new Set(product.variants.map((v) => optionValues(v, name)))] as value (value)}
 								<button
 									type="button"
+									disabled={!valueAvailable(name, value)}
 									class="rounded-lg border px-4 py-2 text-sm font-medium transition
 										{selectedVariant?.optionValues?.[name] === value
 											? 'border-brand-600 bg-brand-600 text-white'
-											: 'border-neutral-300 text-neutral-700 hover:border-brand-400'}"
+											: 'border-neutral-300 text-neutral-700 hover:border-brand-400'}
+										disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
 									onclick={() => chooseOption(name, value)}
 								>
-									{value}
+									{valueLabel(name, value)}{valueAdjustment(name, value)}
 								</button>
 							{/each}
 						</div>
@@ -372,7 +410,11 @@
 
 			<p class="text-sm {available ? 'text-green-600' : 'text-red-600'}">
 				{#if available}
-					{stock > 0 ? t('product.xAvailable', { stock }) : t('product.inStock')}
+					{selectedVariant?.unlimited || product.stock === Number.POSITIVE_INFINITY
+						? t('product.inStock')
+						: stock > 0
+							? t('product.xAvailable', { stock })
+							: t('product.inStock')}
 				{:else}
 					{t('product.outOfStock')}
 				{/if}
@@ -385,7 +427,7 @@
 			{#if product.description}
 				<div class="border-t border-neutral-200 pt-5">
 					<h2 class="mb-2 text-sm font-semibold text-neutral-900">{t('product.description')}</h2>
-					<p class="whitespace-pre-line text-sm leading-relaxed text-neutral-600">{product.description}</p>
+					<p class="whitespace-pre-line text-sm leading-relaxed text-neutral-600">{localized(product.description, product.descriptionAr)}</p>
 				</div>
 			{/if}
 

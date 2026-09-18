@@ -1,5 +1,6 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
-import type { DB } from '../../database/client'
+import { randomUUID } from 'node:crypto'
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm'
+import { db, type DB } from '../../database/client'
 import {
   stockTransfers,
   warehouseInventory,
@@ -9,6 +10,21 @@ import {
 } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
+
+/** Drizzle transaction type matching `db.transaction(...)` callbacks. */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+interface TransferVariant {
+  variantId: string
+  productId: string
+  productName: string
+  productSku: string | null
+  sku: string | null
+  optionValues: Record<string, string>
+  price: number | null
+  /** Global sellable inventory (unallocated pool is global − allocations elsewhere). */
+  globalInventory: number
+}
 
 export class WarehousesService {
   static async list(db: DB, merchantId: string) {
@@ -177,86 +193,380 @@ export class WarehousesService {
     }
   ) {
     if (input.quantity <= 0) throw badRequest('INVALID_QUANTITY', 'Quantity must be positive')
-    if (input.fromWarehouseId === input.toWarehouseId) {
-      throw badRequest('SAME_WAREHOUSE', 'Source and destination warehouses must differ')
+
+    const { from, to } = await this.resolveWarehouses(db, merchantId, input.fromWarehouseId, input.toWarehouseId)
+    const variant = await this.resolveTransferVariant(db, merchantId, input.variantId)
+
+    await db.transaction(async (tx) => {
+      await this.transferLineTx(tx, merchantId, {
+        variant,
+        fromWarehouseId: from.id,
+        toWarehouseId: to.id,
+        quantity: input.quantity,
+        kind: 'manual',
+        groupKey: null
+      })
+    })
+
+    return ok({ transferred: true, quantity: input.quantity, kind: 'manual' })
+  }
+
+  /**
+   * Bulk transfer — PDF-correction: "bulk products transfer, all products with
+   * all qtys. Extra option." Two modes:
+   *  - `items`: an explicit list of { variantId, quantity } lines.
+   *  - `allStock: true`: every variant held by the source warehouse (full
+   *    quantity) plus every merchant variant still sitting in the unallocated
+   *    global pool. All lines are validated, locked and applied in ONE
+   *    transaction and recorded as a single `bulk` batch sharing a groupKey.
+   */
+  static async transferBulk(
+    db: DB,
+    merchantId: string,
+    input: {
+      fromWarehouseId: string
+      toWarehouseId: string
+      items?: Array<{ variantId: string; quantity: number }>
+      allStock?: boolean
+    }
+  ) {
+    const { from, to } = await this.resolveWarehouses(db, merchantId, input.fromWarehouseId, input.toWarehouseId)
+    const items = input.items ?? []
+    if (items.length === 0 && !input.allStock) {
+      throw badRequest('EMPTY_TRANSFER', 'Provide at least one item or enable "transfer all stock"')
     }
 
+    let lines: Array<{ variant: TransferVariant; quantity: number }>
+    if (input.allStock) {
+      lines = await this.resolveAllStockLines(db, merchantId, from.id, to.id)
+      if (lines.length === 0) {
+        throw badRequest('EMPTY_TRANSFER', 'There is no stock to transfer from this warehouse')
+      }
+    } else {
+      if (items.some((i) => i.quantity <= 0)) {
+        throw badRequest('INVALID_QUANTITY', 'Quantities must be positive')
+      }
+      const variants = await Promise.all(
+        items.map((i) => this.resolveTransferVariant(db, merchantId, i.variantId))
+      )
+      lines = items.map((i, idx) => ({ variant: variants[idx], quantity: i.quantity }))
+    }
+
+    const groupKey = randomUUID()
+    await db.transaction(async (tx) => {
+      // Lock rows in a deterministic order to avoid deadlocks between
+      // concurrent bulk transfers touching overlapping line sets.
+      const sorted = [...lines].sort((a, b) => (a.variant.variantId < b.variant.variantId ? -1 : 1))
+      for (const line of sorted) {
+        await this.transferLineTx(tx, merchantId, {
+          variant: line.variant,
+          fromWarehouseId: from.id,
+          toWarehouseId: to.id,
+          quantity: line.quantity,
+          kind: 'bulk',
+          groupKey
+        })
+      }
+    })
+
+    const quantityTotal = lines.reduce((sum, l) => sum + l.quantity, 0)
+    return ok({
+      transferred: true,
+      groupKey,
+      lineCount: lines.length,
+      quantityTotal,
+      kind: 'bulk'
+    })
+  }
+
+  /** Load both warehouses and fail fast if either is missing or foreign. */
+  private static async resolveWarehouses(db: DB, merchantId: string, fromId: string, toId: string) {
+    if (fromId === toId) throw badRequest('SAME_WAREHOUSE', 'Source and destination warehouses must differ')
     const [from] = await db
       .select()
       .from(warehouses)
-      .where(and(eq(warehouses.id, input.fromWarehouseId), eq(warehouses.merchantId, merchantId)))
+      .where(and(eq(warehouses.id, fromId), eq(warehouses.merchantId, merchantId)))
     if (!from) throw notFound('WAREHOUSE_NOT_FOUND', 'Source warehouse not found')
     const [to] = await db
       .select()
       .from(warehouses)
-      .where(and(eq(warehouses.id, input.toWarehouseId), eq(warehouses.merchantId, merchantId)))
+      .where(and(eq(warehouses.id, toId), eq(warehouses.merchantId, merchantId)))
     if (!to) throw notFound('WAREHOUSE_NOT_FOUND', 'Destination warehouse not found')
+    return { from, to }
+  }
 
-    const [fromStock] = await db
+  /** Load a variant with its owning product; clean tenant errors instead of a
+   *  misleading INSUFFICIENT_STOCK when the variant is unknown or foreign. */
+  private static async resolveTransferVariant(db: DB, merchantId: string, variantId: string): Promise<TransferVariant> {
+    const [row] = await db
+      .select({
+        variantId: productVariants.id,
+        productId: products.id,
+        productName: products.name,
+        productSku: products.sku,
+        sku: productVariants.sku,
+        optionValues: productVariants.optionValues,
+        price: productVariants.price,
+        globalInventory: productVariants.inventory
+      })
+      .from(productVariants)
+      .innerJoin(products, eq(productVariants.productId, products.id))
+      .where(eq(productVariants.id, variantId))
+    if (!row || row.productId === null) throw notFound('VARIANT_NOT_FOUND', 'Variant not found')
+    const [productOwner] = await db
+      .select({ merchantId: products.merchantId })
+      .from(products)
+      .where(eq(products.id, row.productId))
+    if (!productOwner || productOwner.merchantId !== merchantId) {
+      throw badRequest('VARIANT_MERCHANT_MISMATCH', 'Variant does not belong to this merchant')
+    }
+    return {
+      variantId: row.variantId,
+      productId: row.productId,
+      productName: row.productName ?? '',
+      productSku: row.productSku,
+      sku: row.sku,
+      optionValues: (row.optionValues ?? {}) as Record<string, string>,
+      price: row.price,
+      globalInventory: row.globalInventory
+    }
+  }
+
+  /**
+   * Move a single line inside an open transaction. Locks the variant row so a
+   * concurrent move of the same variant (bulk, single, or storefront checkout)
+   * serializes against it, then re-validates availability. When the source
+   * warehouse has no allocation row, the unallocated global pool is the source:
+   * available = global inventory − allocations held in every OTHER warehouse.
+   */
+  private static async transferLineTx(
+    tx: Tx,
+    merchantId: string,
+    line: {
+      variant: TransferVariant
+      fromWarehouseId: string
+      toWarehouseId: string
+      quantity: number
+      kind: 'manual' | 'bulk'
+      groupKey: string | null
+    }
+  ) {
+    // Serialize per-variant moves (including storefront checkout locks) by
+    // locking the variant row itself.
+    await tx
+      .select({ id: productVariants.id })
+      .from(productVariants)
+      .where(eq(productVariants.id, line.variant.variantId))
+      .for('update')
+
+    const [sourceRow] = await tx
       .select()
       .from(warehouseInventory)
       .where(
-        and(eq(warehouseInventory.warehouseId, input.fromWarehouseId), eq(warehouseInventory.variantId, input.variantId))
+        and(
+          eq(warehouseInventory.warehouseId, line.fromWarehouseId),
+          eq(warehouseInventory.variantId, line.variant.variantId)
+        )
       )
-    if (!fromStock || fromStock.quantity < input.quantity) {
-      throw badRequest('INSUFFICIENT_STOCK', 'Source warehouse does not have enough stock')
+      .for('update')
+
+    let available: number
+    if (sourceRow) {
+      available = sourceRow.quantity
+    } else {
+      const otherAllocations = await this.otherAllocationsTx(
+        tx,
+        merchantId,
+        line.variant.variantId,
+        line.fromWarehouseId
+      )
+      available = Math.max(0, line.variant.globalInventory - otherAllocations)
     }
 
-    // Atomically move stock.
-    await db.transaction(async (tx) => {
-      const [locked] = await tx
-        .select()
-        .from(warehouseInventory)
-        .where(
-          and(
-            eq(warehouseInventory.warehouseId, input.fromWarehouseId),
-            eq(warehouseInventory.variantId, input.variantId)
-          )
-        )
-        .for('update')
-      if (!locked || locked.quantity < input.quantity) {
-        throw badRequest('INSUFFICIENT_STOCK', 'Source warehouse stock changed during transfer')
-      }
+    if (available < line.quantity) {
+      throw badRequest(
+        'INSUFFICIENT_STOCK',
+        `Only ${available} unit${available === 1 ? '' : 's'} of this item are available to transfer from this warehouse`
+      )
+    }
 
+    if (sourceRow) {
       await tx
         .update(warehouseInventory)
-        .set({ quantity: locked.quantity - input.quantity, updatedAt: new Date() })
-        .where(eq(warehouseInventory.id, locked.id))
+        .set({ quantity: sourceRow.quantity - line.quantity, updatedAt: new Date() })
+        .where(eq(warehouseInventory.id, sourceRow.id))
+    }
 
-      await tx
-        .insert(warehouseInventory)
-        .values({
-          merchantId,
-          warehouseId: input.toWarehouseId,
-          variantId: input.variantId,
-          quantity: input.quantity
-        })
-        .onConflictDoUpdate({
-          target: [warehouseInventory.warehouseId, warehouseInventory.variantId],
-          set: {
-            quantity: sql`${warehouseInventory.quantity} + ${input.quantity}`,
-            updatedAt: new Date()
-          }
-        })
-    })
+    await tx
+      .insert(warehouseInventory)
+      .values({
+        merchantId,
+        warehouseId: line.toWarehouseId,
+        variantId: line.variant.variantId,
+        quantity: line.quantity
+      })
+      .onConflictDoUpdate({
+        target: [warehouseInventory.warehouseId, warehouseInventory.variantId],
+        set: {
+          quantity: sql`${warehouseInventory.quantity} + ${line.quantity}`,
+          updatedAt: new Date()
+        }
+      })
 
-    await db.insert(stockTransfers).values({
+    // The ledger row lives in the same transaction as the movement so a
+    // partial failure can never leave moved stock without a record.
+    await tx.insert(stockTransfers).values({
       merchantId,
-      fromWarehouseId: input.fromWarehouseId,
-      toWarehouseId: input.toWarehouseId,
-      variantId: input.variantId,
-      quantity: input.quantity,
+      kind: line.kind,
+      groupKey: line.groupKey,
+      fromWarehouseId: line.fromWarehouseId,
+      toWarehouseId: line.toWarehouseId,
+      variantId: line.variant.variantId,
+      quantity: line.quantity,
       status: 'completed',
       completedAt: new Date()
     })
+  }
 
-    return ok({ transferred: true, quantity: input.quantity })
+  /** Sum of a variant's allocations across every warehouse except `excludedId`. */
+  private static async otherAllocationsTx(
+    tx: Tx,
+    merchantId: string,
+    variantId: string,
+    excludedId: string
+  ): Promise<number> {
+    const [row] = await tx
+      .select({ total: sql<number>`coalesce(sum(${warehouseInventory.quantity}), 0)` })
+      .from(warehouseInventory)
+      .where(
+        and(
+          eq(warehouseInventory.merchantId, merchantId),
+          eq(warehouseInventory.variantId, variantId),
+          ne(warehouseInventory.warehouseId, excludedId)
+        )
+      )
+    return Number(row?.total ?? 0)
+  }
+
+  /** Enumerate everything a source warehouse can currently hand over: its own
+   *  allocations plus the unallocated global pool (variants it doesn't hold). */
+  private static async resolveAllStockLines(
+    db: DB,
+    merchantId: string,
+    fromWarehouseId: string,
+    toWarehouseId: string
+  ): Promise<Array<{ variant: TransferVariant; quantity: number }>> {
+    if (fromWarehouseId === toWarehouseId) {
+      throw badRequest('SAME_WAREHOUSE', 'Source and destination warehouses must differ')
+    }
+
+    const sourceRows = await db
+      .select({
+        variantId: warehouseInventory.variantId,
+        quantity: warehouseInventory.quantity
+      })
+      .from(warehouseInventory)
+      .where(
+        and(
+          eq(warehouseInventory.merchantId, merchantId),
+          eq(warehouseInventory.warehouseId, fromWarehouseId),
+          sql`${warehouseInventory.quantity} > 0`
+        )
+      )
+
+    const heldVariantIds = sourceRows.map((r) => r.variantId)
+
+    // Variants the merchant owns that are NOT already allocated to the source
+    // warehouse — their transferable amount is the unallocated pool.
+    const poolCandidates = await db
+      .select({
+        variantId: productVariants.id,
+        productId: products.id,
+        productName: products.name,
+        productSku: products.sku,
+        sku: productVariants.sku,
+        optionValues: productVariants.optionValues,
+        price: productVariants.price,
+        globalInventory: productVariants.inventory
+      })
+      .from(productVariants)
+      .innerJoin(products, eq(productVariants.productId, products.id))
+      .where(and(eq(products.merchantId, merchantId), eq(products.status, 'active')))
+
+    const poolIds: string[] = poolCandidates
+      .filter((p) => p.globalInventory > 0)
+      .map((p) => p.variantId)
+
+    const allocationTotals = poolIds.length
+      ? await db
+          .select({
+            variantId: warehouseInventory.variantId,
+            total: sql<number>`sum(${warehouseInventory.quantity})`
+          })
+          .from(warehouseInventory)
+          .where(
+            and(
+              eq(warehouseInventory.merchantId, merchantId),
+              ne(warehouseInventory.warehouseId, fromWarehouseId),
+              inArray(warehouseInventory.variantId, poolIds)
+            )
+          )
+          .groupBy(warehouseInventory.variantId)
+      : []
+
+    const totalsMap = new Map(allocationTotals.map((r) => [r.variantId, Number(r.total ?? 0)]))
+
+    const lines: Array<{ variant: TransferVariant; quantity: number }> = []
+
+    for (const row of sourceRows) {
+      const candidate = poolCandidates.find((p) => p.variantId === row.variantId)
+      if (!candidate) continue
+      lines.push({
+        variant: {
+          variantId: candidate.variantId,
+          productId: candidate.productId,
+          productName: candidate.productName,
+          productSku: candidate.productSku,
+          sku: candidate.sku,
+          optionValues: (candidate.optionValues ?? {}) as Record<string, string>,
+          price: candidate.price,
+          globalInventory: candidate.globalInventory
+        },
+        quantity: row.quantity
+      })
+    }
+
+    // Unallocated pool: merchant variants not held in the source warehouse.
+    const heldIds = new Set(heldVariantIds)
+    for (const candidate of poolCandidates) {
+      if (heldIds.has(candidate.variantId)) continue
+      const pool = Math.max(0, candidate.globalInventory - (totalsMap.get(candidate.variantId) ?? 0))
+      if (pool <= 0) continue
+      lines.push({
+        variant: {
+          variantId: candidate.variantId,
+          productId: candidate.productId,
+          productName: candidate.productName,
+          productSku: candidate.productSku,
+          sku: candidate.sku,
+          optionValues: (candidate.optionValues ?? {}) as Record<string, string>,
+          price: candidate.price,
+          globalInventory: candidate.globalInventory
+        },
+        quantity: pool
+      })
+    }
+
+    lines.sort((a, b) => (a.variant.productName < b.variant.productName ? -1 : 1))
+    return lines
   }
 
   static async listTransfers(db: DB, merchantId: string) {
     const rows = await db
       .select({
         id: stockTransfers.id,
+        kind: stockTransfers.kind,
+        groupKey: stockTransfers.groupKey,
         fromWarehouseId: stockTransfers.fromWarehouseId,
         toWarehouseId: stockTransfers.toWarehouseId,
         variantId: stockTransfers.variantId,
@@ -290,6 +600,8 @@ export class WarehousesService {
     merchantId: string,
     rows: Array<{
       id: string
+      kind: string | null
+      groupKey: string | null
       fromWarehouseId: string | null
       toWarehouseId: string | null
       variantId: string
@@ -339,6 +651,8 @@ export class WarehousesService {
       const variant = variantMap.get(r.variantId)
       return {
         id: r.id,
+        kind: r.kind,
+        groupKey: r.groupKey,
         fromWarehouseId: r.fromWarehouseId,
         toWarehouseId: r.toWarehouseId,
         variantId: r.variantId,

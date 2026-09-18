@@ -42,10 +42,12 @@ const patch = (body: unknown, token?: string) => ({
 const ADDRESS = {
   name: 'State Machine Tester',
   line1: '9 Test Way',
+  line2: 'Apt 5',
   city: 'Kuala Lumpur',
   state: 'KL',
   postalCode: '50000',
-  country: 'MY'
+  country: 'MY',
+  phone: '+60 5550107'
 }
 
 describe('Order/checkout state machine hardening', () => {

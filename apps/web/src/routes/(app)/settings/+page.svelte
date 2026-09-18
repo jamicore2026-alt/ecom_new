@@ -10,7 +10,7 @@
 	import Modal from '$lib/components/Modal.svelte'
 	import { titleCase, currency } from '$lib/format'
 	import { t } from '$lib/i18n'
-	import type { Address, NotificationSettings, PaymentProviderView, PaymentSettings, Permission, ShippingSettings, StaffMember, StoreSettings, TaxSettings } from '$lib/types'
+	import type { Address, NotificationSettings, PaymentProviderView, PaymentSettings, Permission, ShippingRule, ShippingRuleType, ShippingSettings, StaffMember, StoreSettings, TaxSettings } from '$lib/types'
 
 	type Section = 'store' | 'payments' | 'shipping' | 'taxes' | 'notifications' | 'staff' | 'cod' | 'checkout' | 'carriers' | 'pincode'
 	let section = $state<Section>('store')
@@ -22,6 +22,7 @@
 	let sCurrency = $state('')
 	let sTimezone = $state('')
 	let sAnnouncement = $state('')
+	let sCountry = $state('')
 	let addr = $state<Address>({})
 
 	// payments
@@ -37,6 +38,20 @@
 	let shipping = $state<ShippingSettings | null>(null)
 	let freeShippingThreshold = $state('0')
 	let zones = $state<Array<{ name: string; countriesText: string; rate: string }>>([])
+	let rules = $state<
+		Array<{
+			id: string
+			type: ShippingRuleType
+			name: string
+			rate: string
+			enabled: boolean
+			country: string
+			state: string
+			city: string
+			postalCode: string
+			freeAbove: string
+		}>
+	>([])
 
 	// taxes
 	let taxes = $state<TaxSettings | null>(null)
@@ -82,6 +97,7 @@
 		codFee: number
 		serviceablePincodes: string[]
 		defaultShippingDays: number
+		requiredFields: Record<string, boolean>
 	}
 
 	interface Carrier {
@@ -119,6 +135,7 @@
 	let coCodFee = $state('0')
 	let coServiceableText = $state('')
 	let coDefaultShippingDays = $state('5')
+	let coRequired = $state<Record<string, boolean>>({})
 
 	let carriers = $state<Carrier[] | null>(null)
 	let carrierOpen = $state(false)
@@ -147,13 +164,17 @@
 	async function load() {
 		try {
 			if (section === 'store') {
-				const res = await api.get<{ success: boolean; data: StoreSettings }>('/api/settings/store')
-				store = res.data
-				sName = res.data.name
-				sCurrency = res.data.currency
-				sTimezone = res.data.timezone
-				sAnnouncement = res.data.announcement
-				addr = { ...res.data.address }
+				const [storeRes, merchantRes] = await Promise.all([
+					api.get<{ success: boolean; data: StoreSettings }>('/api/settings/store'),
+					api.get<{ success: boolean; data: { id: string; name: string; slug: string; currency: string; timezone: string; country: string | null } }>('/api/settings/merchant')
+				])
+				store = storeRes.data
+				sName = storeRes.data.name
+				sCurrency = storeRes.data.currency
+				sTimezone = storeRes.data.timezone
+				sAnnouncement = storeRes.data.announcement
+				sCountry = merchantRes.data.country ?? ''
+				addr = { ...storeRes.data.address }
 		} else if (section === 'payments') {
 			const [payRes, providerRes] = await Promise.all([
 				api.get<{ success: boolean; data: PaymentSettings }>('/api/settings/payments'),
@@ -174,6 +195,18 @@
 				shipping = res.data
 				freeShippingThreshold = String(res.data.freeShippingThreshold)
 				zones = res.data.zones.map((z) => ({ name: z.name, countriesText: z.countries.join(', '), rate: String(z.rate) }))
+				rules = (res.data.rules ?? []).map((r) => ({
+					id: r.id,
+					type: r.type,
+					name: r.name,
+					rate: String(r.rate),
+					enabled: r.enabled,
+					country: r.country ?? '',
+					state: r.state ?? '',
+					city: r.city ?? '',
+					postalCode: r.postalCode ?? '',
+					freeAbove: r.freeAbove === undefined ? '' : String(r.freeAbove)
+				}))
 			} else if (section === 'taxes') {
 				const res = await api.get<{ success: boolean; data: TaxSettings }>('/api/settings/taxes')
 				taxes = res.data
@@ -217,14 +250,18 @@
 	async function saveStore() {
 		saving = true
 		try {
-			const res = await api.put<{ success: boolean; data: StoreSettings }>('/api/settings/store', {
-				name: sName,
-				currency: sCurrency,
-				timezone: sTimezone,
-				announcement: sAnnouncement,
-				address: addr
-			})
-			store = res.data
+			await Promise.all([
+				api.put<{ success: boolean; data: StoreSettings }>('/api/settings/store', {
+					name: sName,
+					currency: sCurrency,
+					timezone: sTimezone,
+					announcement: sAnnouncement,
+					address: addr
+				}),
+				api.put<{ success: boolean; data: { country: string | null } }>('/api/settings/merchant', {
+					country: sCountry.trim() || null
+				})
+			])
 			toast.success('Store settings saved')
 		} catch (e) {
 			toast.error((e as Error).message)
@@ -308,6 +345,18 @@
 				name: z.name,
 				countries: z.countriesText.split(',').map((c) => c.trim()).filter(Boolean),
 				rate: Number(z.rate)
+			})),
+			rules: rules.map((r) => ({
+				id: r.id,
+				type: r.type,
+				name: r.name,
+				rate: Number(r.rate),
+				enabled: r.enabled,
+				freeAbove: r.freeAbove.trim() === '' ? undefined : Number(r.freeAbove),
+				country: r.country.trim() || undefined,
+				state: r.state.trim() || undefined,
+				city: r.city.trim() || undefined,
+				postalCode: r.type === 'pin' ? r.postalCode.trim() : undefined
 			})),
 				freeShippingThreshold: Number(freeShippingThreshold)
 			})
@@ -457,6 +506,7 @@
 			coCodFee = String(res.data.codFee)
 			coServiceableText = res.data.serviceablePincodes.join(', ')
 			coDefaultShippingDays = String(res.data.defaultShippingDays)
+			coRequired = { ...res.data.requiredFields }
 		} catch (e) {
 			toast.error((e as Error).message)
 		}
@@ -500,7 +550,8 @@
 				codMaxValue: coCodMax.trim() === '' ? null : Number(coCodMax),
 				codFee: Number(coCodFee),
 				serviceablePincodes: splitPincodes(coServiceableText),
-				defaultShippingDays: Number(coDefaultShippingDays)
+				defaultShippingDays: Number(coDefaultShippingDays),
+				requiredFields: coRequired
 			})
 			checkoutSettings = res.data
 			toast.success('Checkout settings saved')
@@ -652,6 +703,11 @@
 							<label for="store-announcement" class="field-label">Announcement</label>
 							<input id="store-announcement" class="field" bind:value={sAnnouncement} />
 						</div>
+						<div>
+							<label for="store-country" class="field-label">Home country</label>
+							<input id="store-country" class="field uppercase" bind:value={sCountry} maxlength="3" placeholder="KW" />
+							<p class="mt-1 text-[11px] text-outline">Restricts storefront delivery to this country when no shipping zone lists countries.</p>
+						</div>
 					</div>
 
 					<div>
@@ -800,6 +856,61 @@
 							{/if}
 						</div>
 					</div>
+					<div>
+						<div class="mb-2 flex items-center justify-between">
+							<p class="field-label">Delivery rules</p>
+							<button type="button" class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => rules = [...rules, { id: crypto.randomUUID(), type: 'default', name: '', rate: '0', enabled: true, country: '', state: '', city: '', postalCode: '', freeAbove: '' }]}>
+								+ Add rule
+							</button>
+						</div>
+						<p class="mb-3 text-[11px] text-outline">Matched in order: PIN → City → State → Country → Default. A PIN ending in * is a prefix match (e.g. 1100*).</p>
+						<div class="space-y-3">
+							{#each rules as r, i (r.id)}
+								<div class="rounded-lg border border-outline-variant bg-surface-container-lowest p-3">
+									<div class="flex flex-wrap gap-2">
+										<select class="field w-32" bind:value={rules[i].type}>
+											<option value="pin">PIN</option>
+											<option value="city">City</option>
+											<option value="state">State</option>
+											<option value="country">Country</option>
+											<option value="default">Default</option>
+										</select>
+										<input class="field flex-1" placeholder="Rule name" bind:value={rules[i].name} />
+										<input type="number" step="0.01" min="0" class="field w-28" placeholder="Rate" bind:value={rules[i].rate} />
+										<label class="flex items-center gap-1.5 self-center text-xs text-secondary">
+											<input type="checkbox" class="field-check" bind:checked={rules[i].enabled} />
+											Enabled
+										</label>
+										<button type="button" class="rounded p-1.5 text-sm text-outline hover:bg-error-container/40 hover:text-error" onclick={() => rules = rules.filter((_, j) => j !== i)}>×</button>
+									</div>
+									{#if rules[i].type === 'country'}
+										<input class="field mt-2 w-40 uppercase" placeholder="Country (e.g. KW)" maxlength="3" bind:value={rules[i].country} />
+									{:else if rules[i].type === 'state'}
+										<div class="mt-2 flex gap-2">
+											<input class="field flex-1" placeholder="State" bind:value={rules[i].state} />
+											<input class="field w-40 uppercase" placeholder="Country" maxlength="3" bind:value={rules[i].country} />
+										</div>
+									{:else if rules[i].type === 'city'}
+										<div class="mt-2 flex gap-2">
+											<input class="field flex-1" placeholder="City" bind:value={rules[i].city} />
+											<input class="field w-40 uppercase" placeholder="Country" maxlength="3" bind:value={rules[i].country} />
+										</div>
+									{:else if rules[i].type === 'pin'}
+										<div class="mt-2 flex gap-2">
+											<input class="field flex-1" placeholder="PIN (e.g. 1100*)" bind:value={rules[i].postalCode} />
+											<input class="field w-40 uppercase" placeholder="Country" maxlength="3" bind:value={rules[i].country} />
+										</div>
+									{:else}
+										<p class="mt-2 text-[11px] text-outline">Fallback rate when no other rule matches.</p>
+									{/if}
+									<input type="number" step="0.01" min="0" class="field mt-2 w-40" placeholder="Free above (optional)" bind:value={rules[i].freeAbove} />
+								</div>
+							{/each}
+							{#if rules.length === 0}
+								<p class="py-6 text-center text-sm text-outline">No delivery rules configured — legacy zones are used.</p>
+							{/if}
+						</div>
+					</div>
 					<div class="flex justify-end">
 						<Button type="submit" loading={saving}>Save</Button>
 					</div>
@@ -899,6 +1010,16 @@
 					<div>
 						<label for="co-serviceable" class="field-label">Serviceable pincodes (comma separated)</label>
 						<textarea id="co-serviceable" class="field min-h-24" bind:value={coServiceableText} placeholder="e.g. 110001, 400001"></textarea>
+					</div>
+					<div>
+						<p class="field-label mb-2">Required checkout fields</p>
+						{#each Object.entries({ email: 'Email', phone: 'Phone', name: 'Full name', line1: 'Address', line2: 'Apartment / suite', city: 'City', state: 'State', postalCode: 'PIN code', country: 'Country' }) as [id, label] (id)}
+							<div class="flex items-center justify-between rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-3">
+								<span class="text-sm text-on-surface-variant">{label}</span>
+								<input type="checkbox" class="field-check" checked={coRequired[id]} onchange={() => (coRequired[id] = !coRequired[id])} />
+							</div>
+						{/each}
+						<p class="mt-2 text-[11px] text-outline">Email is optional by default; the rest are required.</p>
 					</div>
 					<div class="flex justify-end">
 						<Button type="submit" loading={saving}>Save</Button>

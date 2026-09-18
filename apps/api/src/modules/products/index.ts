@@ -8,6 +8,7 @@ import {
   createProductBody,
   importCsvBody,
   productQuery,
+  saveOptionsBody,
   updateProductBody,
   variantInput
 } from './model'
@@ -31,6 +32,9 @@ export const productsModule = new Elysia({ prefix: '/api' })
   .get('/products/:id', async ({ params, auth }) => ProductsService.get(auth.db, auth.merchant.id, params.id))
   .get('/products/:id/variants', async ({ params, auth }) =>
     ProductsService.listVariants(auth.db, auth.merchant.id, params.id)
+  )
+  .get('/products/:id/options', async ({ params, auth }) =>
+    ProductsService.listOptions(auth.db, auth.merchant.id, params.id)
   )
   .get('/categories', async ({ auth }) => ProductsService.listCategories(auth.db, auth.merchant.id))
   .use(requirePermission('products.create', 'products.update', 'products.delete'))
@@ -105,6 +109,34 @@ export const productsModule = new Elysia({ prefix: '/api' })
       return result
     },
     { body: variantInput }
+  )
+  .put(
+    '/products/:id/options',
+    async ({ params, body, auth, request }) => {
+      const result = await ProductsService.saveOptions(auth.db, auth.merchant.id, params.id, body.options)
+      await auditFromRequest(auth, request, {
+        action: 'product.options.update',
+        entityType: 'product',
+        entityId: params.id,
+        metadata: { options: body.options.length }
+      })
+      return result
+    },
+    { body: saveOptionsBody }
+  )
+  .post(
+    '/products/:id/variants/generate',
+    async ({ params, auth, request }) => {
+      const result = await ProductsService.generateVariants(auth.db, auth.merchant.id, params.id)
+      await auditFromRequest(auth, request, {
+        action: 'variant.generate',
+        entityType: 'product',
+        entityId: params.id,
+        metadata: { created: result.data.created }
+      })
+      return result
+    },
+    { detail: { summary: 'Generate variant rows for the cartesian product of active option values' } }
   )
   .post('/categories', async ({ body, auth, request }) => {
     const result = await ProductsService.createCategory(auth.db, auth.merchant.id, body)

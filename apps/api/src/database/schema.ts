@@ -14,7 +14,8 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { createId } from '@paralleldrive/cuid2'
-import type { Address, DeliveryStatus, DeliveryZoneStatus, DriverStatus, FoodOrderModifier, KitchenItemStatus, KitchenPriority, KitchenStationStatus, KotStatus, ModuleId, OutletStatus, Permission, Scope, TableSessionStatus, TableState } from '../shared/types'
+import type { Address, CheckoutFieldRequirements, DeliveryStatus, DeliveryZoneStatus, DriverStatus, FoodOrderModifier, KitchenItemStatus, KitchenPriority, KitchenStationStatus, KotStatus, ModuleId, OptionType, OutletStatus, Permission, ProductVisibility, Scope, ShippingRule, TableSessionStatus, TableState } from '../shared/types'
+import { DEFAULT_CHECKOUT_REQUIRED_FIELDS } from '../shared/types'
 import type { MerchantStatus } from '../shared/merchant-lifecycle'
 
 // scale 3 supports GCC currencies with 3 decimals (KWD/BHD/OMR)
@@ -39,6 +40,9 @@ export const merchants = pgTable('merchants', {
   phone: varchar('phone', { length: 50 }),
   currency: varchar('currency', { length: 10 }).notNull().default('USD'),
   timezone: varchar('timezone', { length: 100 }).notNull().default('UTC'),
+  /** Home country of the merchant (ISO 2–3 char). Drives the storefront's
+   *  checkout country options + server-side country restriction. */
+  country: varchar('country', { length: 3 }),
   status: varchar('status', { length: 20 }).$type<MerchantStatus>().notNull().default('active'),
   createdAt: timestamp('created_at').defaultNow().notNull()
 })
@@ -184,6 +188,8 @@ export const modifierGroups = pgTable(
     id: id('id').primaryKey(),
     merchantId: merchantIdRef(),
     name: varchar('name', { length: 120 }).notNull(),
+    /** Arabic label (Mnasati bilingual pattern). Falls back to `name`. */
+    nameAr: varchar('name_ar', { length: 120 }),
     required: boolean('required').notNull().default(false),
     minSelections: integer('min_selections').notNull().default(0),
     maxSelections: integer('max_selections').notNull().default(1),
@@ -269,6 +275,8 @@ export const categories = pgTable(
       onDelete: 'set null'
     }),
     name: varchar('name', { length: 255 }).notNull(),
+    /** Arabic category label. Falls back to `name`. */
+    nameAr: varchar('name_ar', { length: 255 }),
     slug: varchar('slug', { length: 255 }).notNull(),
     image: varchar('image', { length: 1024 }),
     sortOrder: integer('sort_order').notNull().default(0),
@@ -289,14 +297,25 @@ export const products = pgTable(
     sku: varchar('sku', { length: 100 }),
     barcode: varchar('barcode', { length: 100 }),
     name: varchar('name', { length: 255 }).notNull(),
+    /** Arabic catalog title (Mnasati bilingual pattern). Falls back to `name`. */
+    nameAr: varchar('name_ar', { length: 255 }),
     slug: varchar('slug', { length: 255 }).notNull(),
     description: text('description').notNull().default(''),
+    /** Arabic catalog description. Falls back to `description`. */
+    descriptionAr: text('description_ar').notNull().default(''),
     price: money('price').notNull().default(0),
     compareAtPrice: money('compare_at_price'),
     cost: money('cost').notNull().default(0),
     trackInventory: boolean('track_inventory').notNull().default(false),
     lowStockThreshold: integer('low_stock_threshold').notNull().default(5),
     status: varchar('status', { length: 20 }).notNull().default('active'),
+    /** 'both' | 'pos' | 'website' — retail variant offered to the selected
+     *  channels. Defaults to BOTH so pre-existing catalog products keep
+     *  appearing on the storefront until a merchant explicitly restricts one. */
+    visibility: varchar('visibility', { length: 20 })
+      .$type<ProductVisibility>()
+      .notNull()
+      .default('both'),
     searchVector: tsvector('search_vector').generatedAlwaysAs(
       sql`to_tsvector('english', coalesce(name, '') || ' ' || coalesce(sku, '') || ' ' || coalesce(description, ''))`
     ),
@@ -324,10 +343,20 @@ export const productVariants = pgTable(
       .$type<Record<string, string>>()
       .notNull()
       .default({}),
+    /** Per-option Arabic value, keyed by the same option names as `optionValues`.
+     *  E.g. { "Size": "كبير", "Color": "أحمر" }. Falls back per-option to
+     *  productOptionValues via their `valueAr`. */
+    optionValuesAr: jsonb('option_values_ar')
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
     sku: varchar('sku', { length: 100 }),
     price: money('price').notNull().default(0),
     compareAtPrice: money('compare_at_price'),
     inventory: integer('inventory').notNull().default(0),
+    /** Tracked-quantity override: when true the variant is always in stock and
+     *  `inventory` is advisory (admin qty box is disabled). */
+    unlimited: boolean('unlimited').notNull().default(false),
     image: varchar('image', { length: 1024 }),
     // clock_timestamp() (volatile) is evaluated per row — batch-inserted
     // variants get distinct, insertion-ordered timestamps. now() would stamp
@@ -371,6 +400,63 @@ export const inventoryLogs = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull()
   },
   (t) => [index('inventory_logs_variant_idx').on(t.variantId)]
+)
+
+/* --------------------------- product options ----------------------------- */
+
+/** Reusable variation definition (Size / Color / Flavor…). Option values live
+ *  in productOptionValues; a variant row maps concrete `optionValues`. */
+export const productOptions = pgTable(
+  'product_options',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    productId: varchar('product_id', { length: 30 })
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 100 }).notNull(),
+    /** Arabic option label. Falls back to `name`. */
+    nameAr: varchar('name_ar', { length: 100 }),
+    type: varchar('type', { length: 20 }).$type<OptionType>().notNull().default('radio'),
+    required: boolean('required').notNull().default(false),
+    /** Checkout/POS selection bounds (min/max picks). Defaults 1..1 for radio. */
+    minSelections: integer('min_selections').notNull().default(1),
+    maxSelections: integer('max_selections').notNull().default(1),
+    /** Per-option quantity/stock flags read by the storefront: each value may
+     *  carry its own inventory when the product tracks stock. */
+    allowControl: jsonb('allow_control')
+      .$type<{ perValueQuantity: boolean; unlimited: boolean }>()
+      .notNull()
+      .default({ perValueQuantity: false, unlimited: false }),
+    sortOrder: integer('sort_order').notNull().default(0),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [index('product_options_product_idx').on(t.productId)]
+)
+
+export const productOptionValues = pgTable(
+  'product_option_values',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    optionId: varchar('option_id', { length: 30 })
+      .notNull()
+      .references(() => productOptions.id, { onDelete: 'cascade' }),
+    value: varchar('value', { length: 100 }).notNull(),
+    /** Arabic value label. Falls back to `value`. */
+    valueAr: varchar('value_ar', { length: 100 }),
+    priceAdjustment: money('price_adjustment').notNull().default(0),
+    /** Metadata for swatch/text types (hex/URL). */
+    meta: jsonb('meta').$type<Record<string, string>>().notNull().default({}),
+    /** Per-option inventory when productOptions.allowControl.perValueQuantity. */
+    quantity: integer('quantity'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (t) => [index('product_option_values_option_idx').on(t.optionId)]
 )
 
 /* -------------------------------- customers ------------------------------- */
@@ -1090,6 +1176,12 @@ export const shippingSettings = pgTable('shipping_settings', {
     >()
     .notNull()
     .default([]),
+  /** Hierarchical rules with precedence pin > city > state > country > default.
+   *  Empty array falls back to legacy `zones` flat matching. */
+  rules: jsonb('rules')
+    .$type<ShippingRule[]>()
+    .notNull()
+    .default([]),
   freeShippingThreshold: money('free_shipping_threshold').notNull().default(0),
   updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
@@ -1366,6 +1458,8 @@ export const invoices = pgTable(
     shippingTotal: money('shipping_total').notNull().default(0),
     taxTotal: money('tax_total').notNull().default(0),
     total: money('total').notNull().default(0),
+    /** Snapshot of the merchant currency at issue time (ISO 4217, e.g. KWD). */
+    currency: varchar('currency', { length: 10 }).notNull().default('USD'),
     gstin: varchar('gstin', { length: 50 }),
     hsnCodes: jsonb('hsn_codes').notNull().default({}),
     billingAddress: jsonb('billing_address').notNull().default({}),
@@ -1427,6 +1521,11 @@ export const stockTransfers = pgTable(
   {
     id: id('id').primaryKey(),
     merchantId: merchantIdRef(),
+    /** 'manual' = single row transfer; 'bulk' = one atomic batch (shared groupKey). */
+    kind: varchar('kind', { length: 20 }).notNull().default('manual'),
+    /** Ties bulk-transfer rows into one logical operation, so the UI can show
+     *  status per batch and the storefront validates atomically. */
+    groupKey: varchar('group_key', { length: 64 }),
     fromWarehouseId: varchar('from_warehouse_id', { length: 30 })
       .notNull()
       .references(() => warehouses.id, { onDelete: 'set null' }),
@@ -1886,6 +1985,39 @@ export const checkoutSettings = pgTable('checkout_settings', {
   codFee: money('cod_fee').notNull().default(0),
   serviceablePincodes: jsonb('serviceable_pincodes').$type<string[]>().notNull().default([]),
   defaultShippingDays: integer('default_shipping_days').notNull().default(5),
+  /** Merchant-configurable required fields; defaults to
+   *  DEFAULT_CHECKOUT_REQUIRED_FIELDS (email optional, everything else required). */
+  requiredFields: jsonb('required_fields')
+    .$type<CheckoutFieldRequirements>()
+    .notNull()
+    .default(DEFAULT_CHECKOUT_REQUIRED_FIELDS),
+  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+})
+
+export const invoiceSettings = pgTable('invoice_settings', {
+  merchantId: varchar('merchant_id', { length: 30 })
+    .primaryKey()
+    .references(() => merchants.id, { onDelete: 'cascade' }),
+  /** Invoice number prefix; defaults to `{sentitizedStoreName}-`. */
+  prefix: varchar('prefix', { length: 50 }).notNull().default('INV'),
+  /** Optional logo override; falls back to theme_configs.logo, then store logo. */
+  logo: varchar('logo', { length: 1024 }),
+  businessName: varchar('business_name', { length: 255 }),
+  address: jsonb('address').$type<Address>().notNull().default({}),
+  phone: varchar('phone', { length: 50 }),
+  email: varchar('email', { length: 255 }),
+  taxLabel: varchar('tax_label', { length: 100 }),
+  taxNumber: varchar('tax_number', { length: 100 }),
+  headerNote: text('header_note'),
+  footerNote: text('footer_note'),
+  /** Comma/JSON-toggled visibility + ordering of the line-item columns. */
+  displayFields: jsonb('display_fields')
+    .$type<{ columns: string[]; showDiscount: boolean; showTax: boolean }>()
+    .notNull()
+    .default({ columns: [], showDiscount: true, showTax: true }),
+  /** 'standard' | 'compact' — layout control for the PDF renderer. */
+  layout: varchar('layout', { length: 20 }).notNull().default('standard'),
+  nextNumber: integer('next_number').notNull().default(1),
   updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
 
@@ -1993,6 +2125,8 @@ export const table = {
     productVariants,
     productImages,
     inventoryLogs,
+    productOptions,
+    productOptionValues,
   customers,
   orders,
   orderItems,
@@ -2047,6 +2181,7 @@ export const table = {
   passwordResetTokens,
   verificationTokens,
   checkoutSettings,
+  invoiceSettings,
   themeConfigs,
   codRules,
   carriers,

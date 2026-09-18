@@ -8,7 +8,7 @@
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import { dateTime, number } from '$lib/format'
-	import type { InventoryRow, StockTransfer, Warehouse } from '$lib/types'
+	import type { InventoryRow, StockTransfer, Warehouse, WarehouseInventoryRow } from '$lib/types'
 
 	const canWrite = () => session.can('inventory:write')
 
@@ -30,12 +30,42 @@
 	let variants = $state<InventoryRow[]>([])
 	let fFrom = $state('')
 	let fTo = $state('')
-	let fVariant = $state('')
-	let fQty = $state('1')
+	// Quantity actually held by the selected source warehouse per variant.
+	let sourceStock = $state<Record<string, number>>({})
+	// Bulk line editor: every row is one product to move.
+	let lines = $state<Array<{ key: number; variantId: string; quantity: string }>>([])
+	// Extra option (PDF): move every product with its full quantity.
+	let fAll = $state(false)
+	let sequence = 0
 	let saving = $state(false)
 
 	let sourceText = $state('')
 	let destText = $state('')
+
+	const globalStockOf = (variantId: string) => variants.find((v) => v.id === variantId)?.inventory ?? 0
+
+	const availabilityOf = (variantId: string) => {
+		const sourceQty = sourceStock[variantId] ?? 0
+		return { sourceQty, global: globalStockOf(variantId) }
+	}
+
+	const availableLabel = (variantId: string) => {
+		const { sourceQty, global } = availabilityOf(variantId)
+		if (sourceQty > 0) return `${number(sourceQty)} in source`
+		if (global > 0) return `none in source · ${number(global)} unallocated`
+		return 'none in source'
+	}
+
+	async function loadSourceStock() {
+		sourceStock = {}
+		if (!fFrom) return
+		try {
+			const inv = await api.get<{ success: boolean; data: { items: WarehouseInventoryRow[] } }>(`/api/warehouses/${fFrom}/inventory`)
+			sourceStock = Object.fromEntries(inv.data.items.map((r) => [r.variantId, r.quantity]))
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
 
 	const filtered = $derived(
 		statusFilter ? items.filter((t) => (t.status ?? '').toLowerCase() === statusFilter) : items
@@ -60,8 +90,9 @@
 		showCreate = true
 		fFrom = ''
 		fTo = ''
-		fVariant = ''
-		fQty = '1'
+		lines = [{ key: sequence++, variantId: '', quantity: '1' }]
+		fAll = false
+		sourceStock = {}
 		try {
 			const [w, v] = await Promise.all([
 				api.get<{ success: boolean; data: { items: Warehouse[] } }>('/api/warehouses'),
@@ -74,18 +105,28 @@
 		}
 	}
 
+	function addLine() {
+		lines = [...lines, { key: sequence++, variantId: '', quantity: '1' }]
+	}
+
+	function removeLine(key: number) {
+		lines = lines.filter((l) => l.key !== key)
+	}
+
 	async function create() {
-		if (!fFrom || !fTo || !fVariant) return toast.error('Select source, destination and item')
+		if (!fFrom || !fTo) return toast.error('Select source and destination')
 		if (fFrom === fTo) return toast.error('Source and destination must differ')
+		const items = lines
+			.filter((l) => l.variantId)
+			.map((l) => ({ variantId: l.variantId, quantity: Number(l.quantity) || 1 }))
+		if (!fAll && items.length === 0) return toast.error('Select at least one item or enable "Move all stock"')
 		saving = true
 		try {
-			await api.post<{ success: boolean }>('/api/transfers', {
-				fromWarehouseId: fFrom,
-				toWarehouseId: fTo,
-				variantId: fVariant,
-				quantity: Number(fQty) || 1
-			})
-			toast.success('Transfer created')
+			const payload = fAll
+				? { fromWarehouseId: fFrom, toWarehouseId: fTo, allStock: true }
+				: { fromWarehouseId: fFrom, toWarehouseId: fTo, items }
+			await api.post<{ success: boolean }>('/api/transfers/bulk', payload)
+			toast.success(fAll ? 'All stock transferred' : `Transfer created (${items.length} item${items.length === 1 ? '' : 's'})`)
 			showCreate = false
 			load()
 		} catch (e) {
@@ -188,6 +229,9 @@
 									<a href="/transfers/{t.id}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-mono-label text-mono-label font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">
 										#{t.id.slice(0, 8).toUpperCase()}
 									</a>
+									{#if t.kind === 'bulk'}
+										<span class="ml-2 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-info ring-1 ring-inset ring-info/30">Bulk</span>
+									{/if}
 								</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{t.sourceName ?? '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{t.destinationName ?? '—'}</td>
@@ -216,7 +260,12 @@
 		<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); create() }}>
 			<div>
 				<label for="tr-from" class="field-label">Source warehouse</label>
-				<select id="tr-from" class="field" bind:value={fFrom} onchange={() => (sourceText = warehouses.find((w) => w.id === fFrom)?.name ?? '')}>
+				<select
+					id="tr-from"
+					class="field"
+					bind:value={fFrom}
+					onchange={() => { sourceText = warehouses.find((w) => w.id === fFrom)?.name ?? ''; loadSourceStock() }}
+				>
 					<option value="" disabled>Select source</option>
 					{#each warehouses as w (w.id)}<option value={w.id}>{w.name} ({w.code})</option>{/each}
 				</select>
@@ -228,25 +277,43 @@
 					{#each warehouses as w (w.id)}<option value={w.id} disabled={w.id === fFrom}>{w.name} ({w.code})</option>{/each}
 				</select>
 			</div>
-			<div>
-				<label for="tr-item" class="field-label">Item</label>
-				<select id="tr-item" class="field" bind:value={fVariant}>
-					<option value="" disabled>Select item</option>
-					{#each variants as v (v.id)}
-						<option value={v.id}>{variantLabel(v)} — {number(v.inventory)} in stock</option>
-					{/each}
-				</select>
-			</div>
-			<div>
-				<label for="tr-qty" class="field-label">Quantity</label>
-				<input id="tr-qty" class="field" type="number" min="1" bind:value={fQty} required />
-			</div>
+
+			<label class="flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm text-on-surface-variant max-sm:min-h-11">
+				<input type="checkbox" class="field-check" bind:checked={fAll} />
+				<span><span class="font-medium text-on-surface">Move all stock</span> — every product this warehouse holds, each with its full quantity</span>
+			</label>
+
+			{#if !fAll}
+				<div>
+					<div class="mb-2 flex items-center justify-between">
+						<p class="field-label">Items</p>
+						<button type="button" class="text-xs font-medium text-primary hover:underline" onclick={addLine}>+ Add item</button>
+					</div>
+					<div class="space-y-2">
+						{#each lines as line (line.key)}
+							<div class="grid grid-cols-[1fr_90px_auto] items-center gap-2">
+								<select class="field" bind:value={line.variantId}>
+									<option value="" disabled>Select item</option>
+									{#each variants as v (v.id)}
+										<option value={v.id}>{variantLabel(v)} — {availableLabel(v.id)}</option>
+									{/each}
+								</select>
+								<input class="field" type="number" min="1" bind:value={line.quantity} placeholder="Qty" />
+								<button type="button" class="rounded p-1.5 text-secondary hover:bg-surface-container hover:text-error" aria-label="Remove" onclick={() => removeLine(line.key)}>
+									<Icon name="close" size="text-[16px]" />
+								</button>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
 			<p class="text-xs text-secondary">
-				{sourceText && destText ? `Moving stock from ${sourceText} to ${destText}.` : 'A transfer moves stock between two of your warehouses.'}
+				{sourceText && destText ? `Moving stock from ${sourceText} to ${destText}${fAll ? ' (entire stock)' : ''}.` : 'A transfer moves stock between two of your warehouses. Stock not yet allocated to the source is drawn from the global pool.'}
 			</p>
 			<div class="flex justify-end gap-2 pt-2">
 				<Button variant="secondary" onclick={() => (showCreate = false)}>Cancel</Button>
-				<Button type="submit" loading={saving}>Create transfer</Button>
+				<Button type="submit" loading={saving}>{fAll ? 'Transfer all stock' : 'Create transfer'}</Button>
 			</div>
 		</form>
 	</Modal>

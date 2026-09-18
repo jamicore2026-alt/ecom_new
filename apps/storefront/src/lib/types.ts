@@ -4,7 +4,27 @@ export interface StoreMerchant {
 	slug: string
 	currency: string
 	timezone: string
+	country: string | null
 }
+
+export type ShippingRuleType = 'pin' | 'city' | 'state' | 'country' | 'default'
+
+export interface ShippingRule {
+	id: string
+	name: string
+	type: ShippingRuleType
+	country?: string
+	state?: string
+	city?: string
+	postalCode?: string
+	rate: number
+	freeAbove?: number
+	enabled: boolean
+}
+
+export type CheckoutField = 'email' | 'phone' | 'name' | 'line1' | 'line2' | 'city' | 'state' | 'postalCode' | 'country'
+
+export type CheckoutFieldRequirements = Partial<Record<CheckoutField, boolean>>
 
 export interface StoreSettings {
 	name: string
@@ -23,13 +43,15 @@ export interface StoreInfo {
 		currency: string
 		providers?: Array<{ id: string; label: string }>
 	}
-	shipping: { zones: Array<{ name: string; countries: string[]; rate: number; freeAbove?: number }>; freeShippingThreshold: number }
+	shipping: { zones: Array<{ name: string; countries: string[]; rate: number; freeAbove?: number }>; rules: ShippingRule[]; freeShippingThreshold: number }
+	checkout: { requiredFields: CheckoutFieldRequirements }
 	taxes: { autoCalculate: boolean; rates: Array<{ region: string; rate: number }> }
 }
 
 export interface Category {
 	id: string
 	name: string
+	nameAr: string | null
 	slug: string
 	image: string | null
 	sortOrder: number
@@ -40,6 +62,7 @@ export interface Category {
 export interface CategoryRef {
 	id: string
 	name: string
+	nameAr: string | null
 	slug: string
 	image: string | null
 }
@@ -48,8 +71,10 @@ export interface ProductSummary {
 	id: string
 	merchantId: string
 	name: string
+	nameAr: string | null
 	slug: string
 	description: string
+	descriptionAr: string
 	price: number
 	compareAtPrice: number | null
 	sku: string | null
@@ -67,15 +92,38 @@ export interface ProductVariant {
 	price: number
 	compareAtPrice: number | null
 	inventory: number
+	unlimited: boolean
 	optionValues: Record<string, string>
+	optionValuesAr: Record<string, string>
 	image: string | null
+}
+
+export interface ProductOptionValue {
+	value: string
+	valueAr: string | null
+	priceAdjustment: number
+	quantity: number | null
+}
+
+export interface ProductOption {
+	id: string
+	name: string
+	nameAr: string | null
+	type: 'radio' | 'checkbox'
+	required: boolean
+	minSelections: number
+	maxSelections: number
+	perValueQuantity: boolean
+	values: ProductOptionValue[]
 }
 
 export interface ProductDetail {
 	id: string
 	name: string
+	nameAr: string | null
 	slug: string
 	description: string
+	descriptionAr: string
 	price: number
 	compareAtPrice: number | null
 	sku: string | null
@@ -86,6 +134,7 @@ export interface ProductDetail {
 	stock: number
 	rating?: { average: number; count: number } | null
 	variants: ProductVariant[]
+	options?: ProductOption[]
 	category: CategoryRef | null
 	related: ProductSummary[]
 }

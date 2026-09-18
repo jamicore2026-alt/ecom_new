@@ -6,6 +6,7 @@ import {
   carrierBody,
   checkoutBody,
   codRulesBody,
+  merchantBody,
   notificationsBody,
   paymentBody,
   providerBody,
@@ -33,6 +34,10 @@ export const settingsModule = new Elysia({ prefix: '/api' })
       .get('/store', async ({ auth }) => SettingsService.getStore(auth.db, auth.merchant.id))
       .put('/store', async ({ body, auth }) => SettingsService.updateStore(auth.db, auth.merchant.id, body), {
         body: storeBody
+      })
+      .get('/merchant', async ({ auth }) => SettingsService.getMerchant(auth.db, auth.merchant.id))
+      .put('/merchant', async ({ body, auth }) => SettingsService.updateMerchant(auth.db, auth.merchant.id, body), {
+        body: merchantBody
       })
       .get('/payments', async ({ auth }) => SettingsService.getPayments(auth.db, auth.merchant.id))
       .put('/payments', async ({ body, auth }) => SettingsService.updatePayments(auth.db, auth.merchant.id, body), {

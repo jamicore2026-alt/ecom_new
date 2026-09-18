@@ -23,6 +23,8 @@ import type { ResolvedProviderConfig } from '../../payments/types'
 import type { User } from '../../database/schema'
 import type { Permission } from '../../shared/types'
 import { normalizePermissions } from '../../shared/types'
+import { DEFAULT_CHECKOUT_REQUIRED_FIELDS } from '../../shared/types'
+import type { CheckoutFieldRequirements, ShippingRule } from '../../shared/types'
 
 const upsert = <T extends { merchantId: string }>(
   db: DB,
@@ -275,6 +277,7 @@ export class SettingsService {
       settings ?? {
         merchantId,
         zones: [],
+        rules: [],
         freeShippingThreshold: 0
       }
     )
@@ -285,6 +288,7 @@ export class SettingsService {
     merchantId: string,
     input: {
       zones?: Array<{ name: string; countries: string[]; rate: number; freeAbove?: number }>
+      rules?: ShippingRule[]
       freeShippingThreshold?: number
     }
   ) {
@@ -292,6 +296,7 @@ export class SettingsService {
 
     await upsert(db, shippingSettings, merchantId, {
       zones: input.zones ?? current.data.zones,
+      rules: input.rules ?? current.data.rules,
       freeShippingThreshold: input.freeShippingThreshold ?? current.data.freeShippingThreshold
     })
     return this.getShipping(db, merchantId)
@@ -573,7 +578,8 @@ export class SettingsService {
         codMaxValue: null,
         codFee: 0,
         serviceablePincodes: [],
-        defaultShippingDays: 5
+        defaultShippingDays: 5,
+        requiredFields: DEFAULT_CHECKOUT_REQUIRED_FIELDS
       }
     )
   }
@@ -588,6 +594,7 @@ export class SettingsService {
       codFee?: number
       serviceablePincodes?: string[]
       defaultShippingDays?: number
+      requiredFields?: CheckoutFieldRequirements
     }
   ) {
     const current = await this.getCheckoutSettings(db, merchantId)
@@ -600,9 +607,39 @@ export class SettingsService {
       codFee: input.codFee ?? current.data.codFee ?? 0,
       serviceablePincodes:
         input.serviceablePincodes ?? current.data.serviceablePincodes ?? [],
-      defaultShippingDays: input.defaultShippingDays ?? current.data.defaultShippingDays ?? 5
+      defaultShippingDays: input.defaultShippingDays ?? current.data.defaultShippingDays ?? 5,
+      requiredFields:
+        input.requiredFields ?? current.data.requiredFields ?? DEFAULT_CHECKOUT_REQUIRED_FIELDS
     })
     return this.getCheckoutSettings(db, merchantId)
+  }
+
+  /* --------------------------- merchant / country --------------------------- */
+
+  static async getMerchant(db: DB, merchantId: string) {
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.id, merchantId))
+    if (!merchant) throw notFound('NOT_FOUND', 'Merchant not found')
+    return ok({
+      id: merchant.id,
+      name: merchant.name,
+      slug: merchant.slug,
+      currency: merchant.currency,
+      timezone: merchant.timezone,
+      country: merchant.country
+    })
+  }
+
+  static async updateMerchant(
+    db: DB,
+    merchantId: string,
+    input: { country?: string | null }
+  ) {
+    const current = await this.getMerchant(db, merchantId)
+    await db
+      .update(merchants)
+      .set({ country: input.country === undefined ? current.data.country : (input.country?.toUpperCase() ?? null) })
+      .where(eq(merchants.id, merchantId))
+    return this.getMerchant(db, merchantId)
   }
 
   /* --------------------------- serviceability --------------------------- */

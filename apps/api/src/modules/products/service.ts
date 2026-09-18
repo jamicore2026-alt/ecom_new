@@ -1,6 +1,14 @@
 import { and, asc, count, desc, eq, gte, ilike, inArray, lte, sql } from 'drizzle-orm'
 import type { DB } from '../../database/client'
-import { categories, inventoryLogs, productImages, products, productVariants } from '../../database/schema'
+import {
+  categories,
+  inventoryLogs,
+  productImages,
+  productOptions,
+  productOptionValues,
+  products,
+  productVariants
+} from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { productSearchCondition } from '../../shared/product-search'
 import { setVariantInventoryTx } from '../../shared/inventory'
@@ -177,9 +185,11 @@ export class ProductsService {
       : []
 
     const stock = variants.reduce((sum, v) => sum + v.inventory, 0)
+    const { data } = await this.listOptions(db, merchantId, id)
     return ok({
       ...product,
       variants,
+      options: data.items,
       category: category ?? null,
       stock,
       images,
@@ -192,10 +202,12 @@ export class ProductsService {
     merchantId: string,
     input: {
       name: string
+      nameAr?: string
       sku?: string
       barcode?: string
       slug?: string
       description?: string
+      descriptionAr?: string
       price: number
       compareAtPrice?: number
       cost?: number
@@ -203,12 +215,15 @@ export class ProductsService {
       trackInventory?: boolean
       lowStockThreshold?: number
       status?: string
+      visibility?: string
       variants?: Array<{
         sku?: string
         optionValues?: Record<string, string>
+        optionValuesAr?: Record<string, string>
         price?: number
         compareAtPrice?: number
         inventory?: number
+        unlimited?: boolean
         image?: string
       }>
       images?: Array<{ url: string; altText?: string; sortOrder?: number }>
@@ -232,17 +247,20 @@ export class ProductsService {
         .values({
           merchantId,
           name: input.name,
+          nameAr: input.nameAr ?? null,
           slug,
           sku: input.sku ?? null,
           barcode: input.barcode ?? null,
           description: input.description ?? '',
+          descriptionAr: input.descriptionAr ?? '',
           price: input.price,
           compareAtPrice: input.compareAtPrice ?? null,
           cost: input.cost ?? 0,
           categoryId: input.categoryId ?? null,
           trackInventory: input.trackInventory ?? false,
           lowStockThreshold: input.lowStockThreshold ?? 5,
-          status: input.status ?? 'active'
+          status: input.status ?? 'active',
+          visibility: (input.visibility ?? 'both') as 'both' | 'pos' | 'website'
         })
         .returning()
 
@@ -274,9 +292,11 @@ export class ProductsService {
     inputs: Array<{
       sku?: string
       optionValues?: Record<string, string>
+      optionValuesAr?: Record<string, string>
       price?: number
       compareAtPrice?: number
       inventory?: number
+      unlimited?: boolean
       image?: string
     }>,
     defaultPrice: number
@@ -285,9 +305,11 @@ export class ProductsService {
       productId,
       sku: v.sku ?? null,
       optionValues: v.optionValues ?? {},
+      optionValuesAr: v.optionValuesAr ?? {},
       price: v.price ?? defaultPrice,
       compareAtPrice: v.compareAtPrice ?? null,
       inventory: v.inventory ?? 0,
+      unlimited: v.unlimited ?? false,
       image: v.image ?? null
     }))
     return executor.insert(productVariants).values(values).returning()
@@ -320,16 +342,19 @@ export class ProductsService {
     const values: Partial<NewProduct> = {}
     for (const key of [
       'name',
+      'nameAr',
       'sku',
       'barcode',
       'description',
+      'descriptionAr',
       'price',
       'compareAtPrice',
       'cost',
       'categoryId',
       'trackInventory',
       'lowStockThreshold',
-      'status'
+      'status',
+      'visibility'
     ] as const) {
       if (input[key] !== undefined) values[key] = input[key] as never
     }
@@ -511,7 +536,7 @@ export class ProductsService {
   static async createCategory(
     db: DB,
     merchantId: string,
-    input: { name: string; slug?: string; parentId?: string | null; image?: string; sortOrder?: number; status?: string }
+    input: { name: string; nameAr?: string; slug?: string; parentId?: string | null; image?: string; sortOrder?: number; status?: string }
   ) {
     if (input.parentId) {
       await this.assertCategoryParent(db, merchantId, input.parentId)
@@ -522,6 +547,7 @@ export class ProductsService {
       .values({
         merchantId,
         name: input.name,
+        nameAr: input.nameAr ?? null,
         slug,
         parentId: input.parentId ?? null,
         image: input.image ?? null,
@@ -548,7 +574,7 @@ export class ProductsService {
     db: DB,
     merchantId: string,
     id: string,
-    input: { name?: string; slug?: string; parentId?: string | null; image?: string; sortOrder?: number; status?: string }
+    input: { name?: string; nameAr?: string | null; slug?: string; parentId?: string | null; image?: string; sortOrder?: number; status?: string }
   ) {
     const [cat] = await db
       .select()
@@ -567,6 +593,7 @@ export class ProductsService {
 
     const values: Record<string, unknown> = {}
     if (input.name !== undefined) values.name = input.name
+    if (input.nameAr !== undefined) values.nameAr = input.nameAr ?? null
     if (input.image !== undefined) values.image = input.image ?? null
     if (input.sortOrder !== undefined) values.sortOrder = input.sortOrder
     if (input.status !== undefined) values.status = input.status
@@ -658,6 +685,178 @@ export class ProductsService {
     return ok(rows)
   }
 
+  /* ----------------------------- options ------------------------------- */
+
+  /** Option definitions for a product, each with its values. */
+  static async listOptions(db: DB, merchantId: string, productId: string) {
+    const product = await this.findProduct(db, merchantId, productId)
+    if (!product) throw notFound('NOT_FOUND', 'Product not found')
+    const opts = await db
+      .select()
+      .from(productOptions)
+      .where(eq(productOptions.productId, productId))
+      .orderBy(asc(productOptions.sortOrder), asc(productOptions.createdAt))
+    if (!opts.length) return ok({ items: [] })
+    const values = await db
+      .select()
+      .from(productOptionValues)
+      .where(inArray(productOptionValues.optionId, opts.map((o) => o.id)))
+      .orderBy(asc(productOptionValues.sortOrder), asc(productOptionValues.createdAt))
+    return ok({
+      items: opts.map((o) => ({
+        ...o,
+        values: values.filter((v) => v.optionId === o.id)
+      }))
+    })
+  }
+
+  /** Replace the full option set (and their values) of a product atomically. */
+  static async saveOptions(
+    db: DB,
+    merchantId: string,
+    productId: string,
+    input: Array<{
+      name: string
+      nameAr?: string
+      type?: string
+      required?: boolean
+      minSelections?: number
+      maxSelections?: number
+      perValueQuantity?: boolean
+      unlimited?: boolean
+      sortOrder?: number
+      status?: string
+      values?: Array<{
+        value: string
+        valueAr?: string
+        priceAdjustment?: number
+        quantity?: number
+        meta?: Record<string, string>
+        sortOrder?: number
+        status?: string
+      }>
+    }>
+  ) {
+    const product = await this.findProduct(db, merchantId, productId)
+    if (!product) throw notFound('NOT_FOUND', 'Product not found')
+    const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
+
+    await db.transaction(async (tx) => {
+      const existing = await tx
+        .select()
+        .from(productOptions)
+        .where(eq(productOptions.productId, productId))
+      if (existing.length) {
+        await tx
+          .delete(productOptionValues)
+          .where(inArray(productOptionValues.optionId, existing.map((o) => o.id)))
+        await tx.delete(productOptions).where(eq(productOptions.productId, productId))
+      }
+
+      for (const [i, o] of input.entries()) {
+        const perValueQuantity = o.perValueQuantity ?? false
+        const [opt] = await tx
+          .insert(productOptions)
+          .values({
+            merchantId,
+            productId,
+            name: o.name,
+            nameAr: o.nameAr ?? null,
+            type: (o.type ?? 'radio') as 'radio' | 'checkbox',
+            required: o.required ?? false,
+            minSelections: clamp(o.minSelections ?? 1, 0, 99),
+            maxSelections: clamp(o.maxSelections ?? 1, 1, 99),
+            allowControl: { perValueQuantity, unlimited: o.unlimited ?? false },
+            sortOrder: o.sortOrder ?? i,
+            status: o.status ?? 'active'
+          })
+          .returning()
+        for (const [j, v] of (o.values ?? []).entries()) {
+          await tx.insert(productOptionValues).values({
+            merchantId,
+            optionId: opt.id,
+            value: v.value,
+            valueAr: v.valueAr ?? null,
+            priceAdjustment: v.priceAdjustment ?? 0,
+            meta: v.meta ?? {},
+            quantity: perValueQuantity ? clamp(v.quantity ?? 0, 0, 999999) : null,
+            sortOrder: v.sortOrder ?? j,
+            status: v.status ?? 'active'
+          })
+        }
+      }
+    })
+    return this.listOptions(db, merchantId, productId)
+  }
+
+  /** Expand the cartesian product of active option values into variant rows.
+   *  Existing variants matching a combination are kept untouched (their SKU,
+   *  price, inventory survive); only missing combinations are created. */
+  static async generateVariants(db: DB, merchantId: string, productId: string) {
+    const product = await this.findProduct(db, merchantId, productId)
+    if (!product) throw notFound('NOT_FOUND', 'Product not found')
+
+    const opts = await db
+      .select()
+      .from(productOptions)
+      .where(and(eq(productOptions.productId, productId), eq(productOptions.status, 'active')))
+      .orderBy(asc(productOptions.sortOrder), asc(productOptions.createdAt))
+    if (!opts.length) return ok({ items: [], created: 0 })
+
+    const values = await db
+      .select()
+      .from(productOptionValues)
+      .where(
+        and(
+          inArray(productOptionValues.optionId, opts.map((o) => o.id)),
+          eq(productOptionValues.status, 'active')
+        )
+      )
+      .orderBy(asc(productOptionValues.sortOrder), asc(productOptionValues.createdAt))
+
+    let combos: Array<Record<string, string>> = [{}]
+    for (const opt of opts) {
+      const optsValues = values.filter((v) => v.optionId === opt.id)
+      if (!optsValues.length) continue
+      const next: Array<Record<string, string>> = []
+      for (const combo of combos) {
+        for (const v of optsValues) next.push({ ...combo, [opt.name]: v.value })
+      }
+      combos = next
+    }
+
+    const existing = await db
+      .select()
+      .from(productVariants)
+      .where(eq(productVariants.productId, productId))
+    const have = new Set(existing.map((v) => JSON.stringify(v.optionValues ?? {})))
+    const toInsert = combos
+      .filter((c) => !have.has(JSON.stringify(c)))
+      .map((c) => ({
+        productId,
+        sku: null,
+        optionValues: c,
+        optionValuesAr: {},
+        price: product.price,
+        compareAtPrice: null,
+        inventory: 0,
+        unlimited: false,
+        image: null
+      }))
+
+    let created = 0
+    if (toInsert.length) {
+      created = (
+        await db.transaction((tx) => tx.insert(productVariants).values(toInsert).returning())
+      ).length
+    }
+    const all = await db
+      .select()
+      .from(productVariants)
+      .where(eq(productVariants.productId, productId))
+    return ok({ items: all, created })
+  }
+
   static async addVariant(
     db: DB,
     merchantId: string,
@@ -665,9 +864,11 @@ export class ProductsService {
     input: {
       sku?: string
       optionValues?: Record<string, string>
+      optionValuesAr?: Record<string, string>
       price?: number
       compareAtPrice?: number
       inventory?: number
+      unlimited?: boolean
       image?: string
     }
   ) {
@@ -681,9 +882,11 @@ export class ProductsService {
           productId,
           sku: input.sku ?? null,
           optionValues: input.optionValues ?? {},
+          optionValuesAr: input.optionValuesAr ?? {},
           price: input.price ?? product.price,
           compareAtPrice: input.compareAtPrice ?? null,
           inventory: input.inventory ?? 0,
+          unlimited: input.unlimited ?? false,
           image: input.image ?? null
         })
         .returning()
@@ -698,9 +901,11 @@ export class ProductsService {
     input: {
       sku?: string
       optionValues?: Record<string, string>
+      optionValuesAr?: Record<string, string>
       price?: number
       compareAtPrice?: number
       inventory?: number
+      unlimited?: boolean
       image?: string
     }
   ) {
@@ -714,8 +919,10 @@ export class ProductsService {
     const values: Partial<NewProductVariant> = {}
     if (input.sku !== undefined) values.sku = input.sku ?? null
     if (input.optionValues !== undefined) values.optionValues = input.optionValues
+    if (input.optionValuesAr !== undefined) values.optionValuesAr = input.optionValuesAr
     if (input.price !== undefined) values.price = input.price
     if (input.compareAtPrice !== undefined) values.compareAtPrice = input.compareAtPrice ?? null
+    if (input.unlimited !== undefined) values.unlimited = input.unlimited
     if (input.image !== undefined) values.image = input.image ?? null
 
     if (Object.keys(values).length === 0) return ok(variant)

@@ -50,13 +50,20 @@ function currentIsAdmin(): boolean {
 	return user?.isAdmin === true
 }
 
+/** Effective permissions from the server (role perms + user perms, aliases expanded). */
+function grantedPermissions(): string[] {
+	return user?.effectivePermissions && user.effectivePermissions.length > 0
+		? user.effectivePermissions
+		: (user?.permissions ?? [])
+}
+
 function navVisible(item: NavItem): boolean {
 	if (item.module && !enabledModules.includes(item.module)) return false
 	if (!item.permission) return true
 	if (!user) return false
 	if (currentIsAdmin()) return true
 	const perms = Array.isArray(item.permission) ? item.permission : [item.permission]
-	return perms.some((p) => user!.permissions.includes(p))
+	return perms.some((p) => grantedPermissions().includes(p))
 }
 
 /** Navigation filtered by enabled modules + permissions (UX only; API enforces security). */
@@ -117,7 +124,7 @@ export const session = {
 	can(perm: Permission) {
 		if (!user) return false
 		if (currentIsAdmin()) return true
-		return user.permissions.includes(perm)
+		return grantedPermissions().includes(perm)
 	},
 	async bootstrap() {
 		if (!getAccessToken()) {

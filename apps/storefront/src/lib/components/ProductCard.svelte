@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ProductSummary } from '$lib/types'
 	import { money, inStock, placeholderImage, handleImageError } from '$lib/format'
-	import { t } from '$lib/i18n'
+	import { t, localized } from '$lib/i18n'
 
 	interface Props {
 		product: ProductSummary
@@ -21,7 +21,7 @@
 	<div class="relative aspect-square overflow-hidden bg-neutral-100">
 		<img
 			src={product.image ?? placeholderImage()}
-			alt={product.name}
+			alt={localized(product.name, product.nameAr)}
 			class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
 			loading="lazy"
 			onerror={handleImageError}
@@ -36,9 +36,9 @@
 	</div>
 
 	<div class="flex flex-1 flex-col gap-1 p-4">
-		<p class="text-xs text-neutral-500">{product.category?.name ?? t('productCard.general')}</p>
+		<p class="text-xs text-neutral-500">{product.category?.nameAr ? localized(product.category.name, product.category.nameAr) : (product.category?.name ?? t('productCard.general'))}</p>
 		<h2 class="line-clamp-2 text-sm font-medium text-neutral-900 group-hover:underline">
-			{product.name}
+			{localized(product.name, product.nameAr)}
 		</h2>
 		<div class="mt-auto flex items-baseline gap-2 pt-2">
 			<span class="text-base font-semibold text-neutral-900">{money(product.price, currency)}</span>

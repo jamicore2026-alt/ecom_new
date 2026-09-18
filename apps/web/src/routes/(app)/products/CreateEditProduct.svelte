@@ -17,9 +17,11 @@
 	let fieldErrors = $state<Record<string, string>>({})
 
 	let name = $state(product?.name ?? '')
+	let nameAr = $state(product?.nameAr ?? '')
 	let sku = $state(product?.sku ?? '')
 	let barcode = $state(product?.barcode ?? '')
 	let description = $state(product?.description ?? '')
+	let descriptionAr = $state(product?.descriptionAr ?? '')
 	let price = $state(String(product?.price ?? ''))
 	let compareAtPrice = $state(product?.compareAtPrice != null ? String(product.compareAtPrice) : '')
 	let cost = $state(String(product?.cost ?? '0'))
@@ -27,6 +29,7 @@
 	let trackInventory = $state(product?.trackInventory ?? true)
 	let lowStockThreshold = $state(String(product?.lowStockThreshold ?? 5))
 	let status = $state(product?.status ?? 'active')
+	let visibility = $state(product?.visibility ?? 'both')
 	let images = $state<ProductImage[]>([...(product?.images ?? [])])
 
 	async function submit() {
@@ -35,9 +38,11 @@
 		try {
 			const body: Record<string, unknown> = {
 				name,
+				nameAr: nameAr || undefined,
 				sku: sku || undefined,
 				barcode: barcode || undefined,
 				description: description || undefined,
+				descriptionAr: descriptionAr || undefined,
 				price: Number(price),
 				compareAtPrice: compareAtPrice ? Number(compareAtPrice) : undefined,
 				cost: Number(cost || 0),
@@ -45,6 +50,7 @@
 				trackInventory,
 				lowStockThreshold: Number(lowStockThreshold || 0),
 				status,
+				visibility,
 				images: images.map((img, i) => ({
 					url: img.url,
 					altText: img.altText || undefined,
@@ -80,10 +86,14 @@
 		class="space-y-4"
 	>
 		<div class="grid gap-4 sm:grid-cols-2">
-			<div class="sm:col-span-2">
+			<div>
 				<label for="product-name" class="field-label">Name *</label>
 				<input id="product-name" class="field" bind:value={name} required />
 				{#if fieldErrors.name}<p class="field-error">{fieldErrors.name}</p>{/if}
+			</div>
+			<div>
+				<label for="product-name-ar" class="field-label">Name (Arabic)</label>
+				<input id="product-name-ar" class="field" bind:value={nameAr} dir="rtl" />
 			</div>
 
 			<div>
@@ -100,7 +110,7 @@
 				<input id="price" type="number" step="0.01" min="0" class="field" bind:value={price} required />
 			</div>
 			<div>
-				<label for="compare-at-price" class="field-label">Compare-at price</label>
+				<label for="compare-at-price" class="field-label">Sale price</label>
 				<input id="compare-at-price" type="number" step="0.01" min="0" class="field" bind:value={compareAtPrice} />
 			</div>
 			<div>
@@ -120,6 +130,19 @@
 			<div class="sm:col-span-2">
 				<label for="description" class="field-label">Description</label>
 				<textarea id="description" rows="3" class="field" bind:value={description}></textarea>
+			</div>
+			<div class="sm:col-span-2">
+				<label for="description-ar" class="field-label">Description (Arabic)</label>
+				<textarea id="description-ar" rows="3" class="field" bind:value={descriptionAr} dir="rtl"></textarea>
+			</div>
+
+			<div class="sm:col-span-2">
+				<label for="visibility" class="field-label">Visibility</label>
+				<select id="visibility" class="field" bind:value={visibility}>
+					<option value="both">Online store &amp; POS</option>
+					<option value="website">Online store only</option>
+					<option value="pos">POS only</option>
+				</select>
 			</div>
 
 			<div class="sm:col-span-2">

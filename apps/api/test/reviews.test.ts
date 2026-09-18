@@ -54,7 +54,7 @@ describe('Product reviews', () => {
         json({
           items: [{ productId: product.id, variantId, quantity: 1 }],
           email: REVIEWER,
-          shippingAddress: { name: 'Rev Iewer', line1: '1 Star Rd', city: 'Dubai', state: 'DU', postalCode: '00000', country: 'AE' },
+          shippingAddress: { name: 'Rev Iewer', line1: '1 Star Rd', line2: 'Apt 9', city: 'Dubai', state: 'DU', postalCode: '00000', country: 'AE', phone: '+971 5550104' },
           paymentMethod: 'cod'
         })
       )

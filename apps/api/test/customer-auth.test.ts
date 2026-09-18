@@ -64,7 +64,7 @@ describe('Storefront customer accounts', () => {
       json({
         items: [{ productId: product.id, variantId, quantity: 1 }],
         email: EMAIL,
-        shippingAddress: { name: 'Shop Er', line1: '9 Elm St', city: 'Riyadh', state: 'RI', postalCode: '12345', country: 'SA' },
+        shippingAddress: { name: 'Shop Er', line1: '9 Elm St', line2: 'Bldg 3', city: 'Riyadh', state: 'RI', postalCode: '12345', country: 'SA', phone: '+966 5550103' },
         paymentMethod: 'cod'
       })
     )

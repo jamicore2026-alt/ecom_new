@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, like } from 'drizzle-orm'
 import { app } from '../src/app'
 import { db } from '../src/database/client'
-import { users } from '../src/database/schema'
+import { productVariants, products, users } from '../src/database/schema'
 import {
   normalizePermissions,
   PERMISSION_ALIASES,
@@ -45,6 +45,18 @@ describe('permission convergence (P2-2)', () => {
   afterAll(async () => {
     for (const email of createdStaffEmails) {
       await db.delete(users).where(eq(users.email, email)).catch(() => null)
+    }
+    // The product created in "staff can still create a product" has no clean-up
+    // of its own and otherwise leaks into the seeded merchant's catalog across
+    // suite runs, breaking the exact-20 seeded-product assertions elsewhere.
+    const [leaked] = await db
+      .select()
+      .from(products)
+      .where(and(like(products.sku, 'CONV-%'), eq(products.status, 'active')))
+      .limit(1)
+    if (leaked) {
+      await db.delete(productVariants).where(eq(productVariants.productId, leaked.id)).catch(() => null)
+      await db.delete(products).where(eq(products.id, leaked.id)).catch(() => null)
     }
   })
 

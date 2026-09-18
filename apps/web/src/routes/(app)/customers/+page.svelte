@@ -9,7 +9,7 @@
 	import { currency, dateTime, number, timeAgo } from '$lib/format'
 	import { t } from '$lib/i18n'
 	import { session } from '$lib/session.svelte'
-	import type { Customer, PaginationMeta, Permission } from '$lib/types'
+	import type { Customer, PaginationMeta } from '$lib/types'
 
 	let items = $state<Customer[]>([])
 	let meta = $state<PaginationMeta>({ page: 1, limit: 20, total: 0, totalPages: 1 })
@@ -36,7 +36,7 @@
 	const visibleItems = $derived(activeTag ? items.filter((c) => c.tags.includes(activeTag)) : items)
 
 	const canRead = () => session.can('customers.read')
-	const canImport = () => session.can('customers.write' as unknown as Permission)
+	const canImport = () => session.can('customers.write')
 
 	async function exportCsv() {
 		exporting = true

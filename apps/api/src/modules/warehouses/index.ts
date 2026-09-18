@@ -25,6 +25,22 @@ const transferBody = t.Object({
   quantity: t.Integer({ minimum: 1 })
 })
 
+const bulkTransferBody = t.Object({
+  fromWarehouseId: t.String(),
+  toWarehouseId: t.String(),
+  items: t.Optional(
+    t.Array(
+      t.Object({
+        variantId: t.String(),
+        quantity: t.Integer({ minimum: 1 })
+      })
+    )
+  ),
+  /** Extra option (PDF-correction): move every product the source holds, each
+   *  with its full quantity, plus the unallocated global pool. */
+  allStock: t.Optional(t.Boolean())
+})
+
 export const warehousesModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(requirePermission('inventory.read'))
@@ -42,3 +58,4 @@ export const warehousesModule = new Elysia({ prefix: '/api' })
   .post('/warehouses', async ({ auth, body }) => WarehousesService.create(auth.db, auth.merchant.id, body), { body: warehouseBody })
   .put('/warehouses/:id', async ({ auth, params, body }) => WarehousesService.update(auth.db, auth.merchant.id, params.id, body), { params: warehouseParams, body: warehouseBody })
   .post('/transfers', async ({ auth, body }) => WarehousesService.transfer(auth.db, auth.merchant.id, body), { body: transferBody })
+  .post('/transfers/bulk', async ({ auth, body }) => WarehousesService.transferBulk(auth.db, auth.merchant.id, body), { body: bulkTransferBody })

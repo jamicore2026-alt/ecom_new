@@ -28,7 +28,9 @@ export interface AuthUser {
 	name: string
 	email: string
 	role: 'owner' | 'admin' | 'staff'
+	roleId: string | null
 	permissions: string[]
+	effectivePermissions: string[]
 	status: string
 	isAdmin: boolean
 }
@@ -83,6 +85,7 @@ export type ReturnStatus = 'pending' | 'approved' | 'rejected' | 'restocked'
 export type RefundMethod = 'original'
 export type RefundStatus = 'pending' | 'completed'
 export type ProductStatus = 'active' | 'draft' | 'archived'
+export type ProductVisibility = 'both' | 'pos' | 'website'
 export type CouponType = 'percentage' | 'fixed' | 'free_shipping'
 export type PromotionType = 'discount_on_products' | 'buy_x_get_y'
 export type InventoryReason = 'sale' | 'adjustment' | 'purchase' | 'return' | 'cancel'
@@ -139,6 +142,7 @@ export type Permission =
 	| 'staff.read'
 	| 'staff.manage'
 	| 'customers.read'
+	| 'customers.write'
 	| 'settings.read'
 	| 'settings.manage'
 
@@ -149,14 +153,17 @@ export interface Product {
 	sku: string | null
 	barcode: string | null
 	name: string
+	nameAr: string | null
 	slug: string
 	description: string
+	descriptionAr: string
 	price: number
 	compareAtPrice: number | null
 	cost: number
 	trackInventory: boolean
 	lowStockThreshold: number
 	status: ProductStatus
+	visibility: ProductVisibility
 	createdAt: string
 	updatedAt: string
 }
@@ -174,12 +181,41 @@ export interface ProductVariant {
 	id: string
 	productId: string
 	optionValues: Record<string, string>
+	optionValuesAr: Record<string, string>
 	sku: string | null
 	price: number
 	compareAtPrice: number | null
 	inventory: number
+	unlimited?: boolean
 	image: string | null
 	createdAt: string
+}
+
+export interface ProductOptionValue {
+	id: string
+	optionId: string
+	value: string
+	valueAr: string | null
+	priceAdjustment: number
+	meta: Record<string, string>
+	quantity: number | null
+	sortOrder: number
+	status: string
+}
+
+export interface ProductOption {
+	id: string
+	productId: string
+	name: string
+	nameAr: string | null
+	type: 'radio' | 'checkbox'
+	required: boolean
+	minSelections: number
+	maxSelections: number
+	allowControl: { perValueQuantity: boolean; unlimited: boolean }
+	sortOrder: number
+	status: string
+	values: ProductOptionValue[]
 }
 
 export interface Category {
@@ -187,6 +223,7 @@ export interface Category {
 	merchantId: string
 	parentId: string | null
 	name: string
+	nameAr: string | null
 	slug: string
 	image: string | null
 	sortOrder: number
@@ -205,6 +242,7 @@ export interface ProductListItem extends Product {
 
 export interface ProductDetail extends Product {
 	variants: ProductVariant[]
+	options?: ProductOption[]
 	category: Category | null
 	stock: number
 	images?: ProductImage[]
@@ -416,9 +454,25 @@ export interface PaymentProviderView {
 	updatedAt: string | null
 }
 
+export type ShippingRuleType = 'pin' | 'city' | 'state' | 'country' | 'default'
+
+export interface ShippingRule {
+	id: string
+	name: string
+	type: ShippingRuleType
+	country?: string
+	state?: string
+	city?: string
+	postalCode?: string
+	rate: number
+	freeAbove?: number
+	enabled: boolean
+}
+
 export interface ShippingSettings {
 	merchantId: string
 	zones: Array<{ name: string; countries: string[]; rate: number; freeAbove?: number }>
+	rules: ShippingRule[]
 	freeShippingThreshold: number
 	updatedAt: string
 }
@@ -1211,6 +1265,8 @@ export type TransferStatus = 'pending' | 'in_transit' | 'completed' | 'cancelled
 
 export interface StockTransfer {
 	id: string
+	kind: string | null
+	groupKey: string | null
 	fromWarehouseId: string | null
 	toWarehouseId: string | null
 	variantId: string

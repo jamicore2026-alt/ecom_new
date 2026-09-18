@@ -43,10 +43,12 @@ const cardCheckout = (email: string, idempotencyKey?: string, quantity = 1) =>
     shippingAddress: {
       name: 'Invariant Buyer',
       line1: '1 Main St',
+      line2: 'Apt 1',
       city: 'New York',
       state: 'NY',
       postalCode: '10001',
-      country: 'US'
+      country: 'US',
+      phone: '+1 5550105'
     },
     paymentMethod: 'card',
     ...(idempotencyKey ? { idempotencyKey } : {})

@@ -45,10 +45,12 @@ const patch = (body: unknown, token?: string) => ({
 const ADDRESS = {
   name: 'Promo Tester',
   line1: '1 Promo Way',
+  line2: 'Ste 4',
   city: 'Austin',
   state: 'TX',
   postalCode: '73301',
-  country: 'US'
+  country: 'US',
+  phone: '+1 5550108'
 }
 
 const daysFromNow = (d: number) => new Date(Date.now() + d * 24 * 60 * 60 * 1000)

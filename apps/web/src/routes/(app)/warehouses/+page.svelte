@@ -9,7 +9,7 @@
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import { currency, number } from '$lib/format'
-	import type { Address, Warehouse, WarehouseInventory } from '$lib/types'
+	import type { Address, InventoryRow, Warehouse, WarehouseInventory } from '$lib/types'
 
 	const canWrite = () => session.can('inventory:write')
 
@@ -20,6 +20,14 @@
 	let inventoryMap = $state<Record<string, WarehouseInventory>>({})
 
 	let selected = $state<Warehouse | null>(null)
+
+	// Editable quantities inside the stock modal.
+	let qtyDrafts = $state<Record<string, number>>({})
+	let savingQty = $state<Record<string, boolean>>({})
+	let variantList = $state<InventoryRow[]>([])
+	let addVariantId = $state('')
+	let addQty = $state('1')
+	let addingStock = $state(false)
 
 	let showCreate = $state(false)
 	let editing = $state<Warehouse | null>(null)
@@ -66,6 +74,61 @@
 	}
 
 	onMount(load)
+
+	async function openStock(w: Warehouse) {
+		selected = w
+		qtyDrafts = {}
+		savingQty = {}
+		addVariantId = ''
+		addQty = '1'
+		if (variantList.length === 0) {
+			try {
+				const res = await api.get<{ success: boolean; data: { items: InventoryRow[] } }>('/api/inventory', { limit: '500', status: 'active' })
+				variantList = res.data.items
+			} catch (e) {
+				toast.error((e as Error).message)
+			}
+		}
+	}
+
+	async function saveQty(it: WarehouseInventory['items'][number]) {
+		savingQty = { ...savingQty, [it.id]: true }
+		try {
+			await api.put<{ success: boolean }>(`/api/warehouses/${selected!.id}/inventory`, {
+				variantId: it.variantId,
+				quantity: Math.max(0, qtyDrafts[it.id] ?? it.quantity)
+			})
+			toast.success('Stock updated')
+			const inv = await api.get<{ success: boolean; data: WarehouseInventory }>(`/api/warehouses/${selected!.id}/inventory`)
+			inventoryMap = { ...inventoryMap, [selected!.id]: inv.data }
+			await loadStats()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			savingQty = { ...savingQty, [it.id]: false }
+		}
+	}
+
+	async function addStock() {
+		if (!addVariantId) return toast.error('Select an item')
+		addingStock = true
+		try {
+			await api.put<{ success: boolean }>(`/api/warehouses/${selected!.id}/inventory`, {
+				variantId: addVariantId,
+				quantity: Math.max(0, Number(addQty) || 0)
+			})
+			toast.success('Stock added')
+			const inv = await api.get<{ success: boolean; data: WarehouseInventory }>(`/api/warehouses/${selected!.id}/inventory`)
+			inventoryMap = { ...inventoryMap, [selected!.id]: inv.data }
+			await loadStats()
+			addVariantId = ''
+			addQty = '1'
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			addingStock = false
+		}
+	}
 
 	function openCreate() {
 		editing = null
@@ -196,7 +259,7 @@
 						</div>
 					</div>
 					<div class="mt-3 flex items-center justify-end gap-1">
-						<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => (selected = w)}>View stock</button>
+						<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openStock(w)}>View stock</button>
 						{#if canWrite()}
 							<button class="rounded p-1.5 text-xs font-medium text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => openEdit(w)}>Edit</button>
 						{/if}
@@ -230,6 +293,7 @@
 							<th class="px-table-cell-x py-table-cell-y font-semibold">SKU</th>
 							<th class="px-table-cell-x py-table-cell-y text-right font-semibold">Qty</th>
 							<th class="px-table-cell-x py-table-cell-y text-right font-semibold">Value</th>
+							<th class="px-table-cell-x py-table-cell-y text-right font-semibold"></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -246,12 +310,48 @@
 									{/if}
 								</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{it.sku ?? '—'}</td>
-								<td class="px-table-cell-x py-table-cell-y text-right font-medium text-on-surface" class:text-error={it.quantity === 0}>{number(it.quantity)}</td>
+								<td class="px-table-cell-x py-table-cell-y text-right">
+									{#if canWrite()}
+										<div class="inline-flex items-center justify-end gap-1.5">
+											<input
+												class="field w-24 text-right"
+												type="number"
+												min="0"
+												value={qtyDrafts[it.id] ?? it.quantity}
+												oninput={(e) => (qtyDrafts = { ...qtyDrafts, [it.id]: Number((e.target as HTMLInputElement).value) || 0 })}
+											/>
+											<button
+												type="button"
+												class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40 disabled:opacity-50"
+												disabled={savingQty[it.id]}
+												onclick={() => saveQty(it)}
+											>
+												<!-- svelte-ignore a11y_media_has_caption -->
+												{savingQty[it.id] ? 'Saving…' : 'Save'}
+											</button>
+										</div>
+									{:else}
+										<span class="font-medium text-on-surface" class:text-error={it.quantity === 0}>{number(it.quantity)}</span>
+									{/if}
+								</td>
 								<td class="px-table-cell-x py-table-cell-y text-right font-mono-label text-mono-label text-on-surface">{currency(it.quantity * it.price)}</td>
+								<td class="px-table-cell-x py-table-cell-y text-right"></td>
 							</tr>
 						{/each}
 					</tbody>
 				</table>
+				{#if canWrite()}
+					<div class="mt-3 flex flex-wrap items-center gap-2 border-t border-outline-variant/60 px-table-cell-x py-3">
+						<select class="field max-w-xs" bind:value={addVariantId}>
+							<option value="" disabled>Add a variant to this warehouse…</option>
+							{#each variantList as v (v.id)}
+								<option value={v.id}>{v.productName}{Object.keys(v.optionValues).length ? ` · ${Object.entries(v.optionValues).map(([k, x]) => `${k}: ${x}`).join(', ')}` : ''}{v.sku ? ` (${v.sku})` : ''}</option>
+							{/each}
+						</select>
+						<input class="field w-24" type="number" min="0" bind:value={addQty} />
+						<Button size="sm" loading={addingStock} onclick={addStock}>Add stock</Button>
+					</div>
+				{/if}
 			</div>
 		{/if}
 	</Modal>

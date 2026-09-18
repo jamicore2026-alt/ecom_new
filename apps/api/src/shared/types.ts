@@ -200,6 +200,62 @@ export type UserStatus = (typeof USER_STATUSES)[number]
 export const PRODUCT_STATUSES = ['active', 'draft', 'archived'] as const
 export type ProductStatus = (typeof PRODUCT_STATUSES)[number]
 
+/** Sales-channel visibility of a product. POS/restaurant folds are the
+ *  menu-item layer; this flag controls the retail storefront + menu picks. */
+export const PRODUCT_VISIBILITIES = ['both', 'pos', 'website'] as const
+export type ProductVisibility = (typeof PRODUCT_VISIBILITIES)[number]
+
+/** Product option definition controls (retail variation UI). */
+export const OPTION_TYPES = ['radio', 'checkbox', 'select', 'swatch', 'number', 'text'] as const
+export type OptionType = (typeof OPTION_TYPES)[number]
+
+/** Checkout address/contact fields a merchant can configure as required. */
+export const CHECKOUT_FIELDS = [
+  'email',
+  'phone',
+  'name',
+  'line1',
+  'line2',
+  'city',
+  'state',
+  'postalCode',
+  'country'
+] as const
+export type CheckoutField = (typeof CHECKOUT_FIELDS)[number]
+export type CheckoutFieldRequirements = Partial<Record<CheckoutField, boolean>>
+
+/** PDF correction: phone/name/address/apartment/city/state/pin/country are
+ *  mandatory, email optional. Persisted as the checkout default. */
+export const DEFAULT_CHECKOUT_REQUIRED_FIELDS: CheckoutFieldRequirements = {
+  phone: true,
+  name: true,
+  line1: true,
+  line2: true,
+  city: true,
+  state: true,
+  postalCode: true,
+  country: true,
+  email: false
+}
+
+/** Hierarchical shipping-rate rule. Precedence at lookup time:
+ *  postalCode (pin, prefix-wildcard) > city > state > country > default. */
+export type ShippingRuleType = 'pin' | 'city' | 'state' | 'country' | 'default'
+export interface ShippingRule {
+  id: string
+  name: string
+  type: ShippingRuleType
+  /** ISO 2-letter code; used for type=country (and required context for lower levels). */
+  country?: string
+  state?: string
+  city?: string
+  /** Exact PIN or prefix wildcard (e.g. "1100*"). Used for type=pin. */
+  postalCode?: string
+  rate: number
+  freeAbove?: number
+  enabled: boolean
+}
+
 export const COUPON_TYPES = ['percentage', 'fixed', 'free_shipping'] as const
 export type CouponType = (typeof COUPON_TYPES)[number]
 

@@ -11,6 +11,10 @@ export const addressSchema = t.Object({
   phone: t.Optional(t.String())
 })
 
+export const merchantBody = t.Object({
+  country: t.Optional(t.Nullable(t.String({ minLength: 2, maxLength: 3 })))
+})
+
 export const storeBody = t.Object({
   name: t.String({ minLength: 1 }),
   logo: t.Optional(t.String()),
@@ -42,6 +46,19 @@ export const providerBody = t.Object({
   credentials: t.Optional(t.Record(t.String(), t.Nullable(t.String())))
 })
 
+const shippingRuleSchema = t.Object({
+  id: t.String(),
+  type: t.Enum({ pin: 'pin', city: 'city', state: 'state', country: 'country', default: 'default' }),
+  name: t.String(),
+  rate: t.Number({ minimum: 0 }),
+  enabled: t.Boolean(),
+  freeAbove: t.Optional(t.Number({ minimum: 0 })),
+  country: t.Optional(t.String()),
+  state: t.Optional(t.String()),
+  city: t.Optional(t.String()),
+  postalCode: t.Optional(t.String())
+})
+
 export const shippingBody = t.Object({
   zones: t.Optional(
     t.Array(
@@ -53,6 +70,7 @@ export const shippingBody = t.Object({
       })
     )
   ),
+  rules: t.Optional(t.Array(shippingRuleSchema)),
   freeShippingThreshold: t.Optional(t.Number({ minimum: 0 }))
 })
 
@@ -109,7 +127,8 @@ export const checkoutBody = t.Object({
   codMaxValue: t.Optional(t.Number({ minimum: 0 })),
   codFee: t.Optional(t.Number({ minimum: 0 })),
   serviceablePincodes: t.Optional(t.Array(t.String())),
-  defaultShippingDays: t.Optional(t.Number({ minimum: 0 }))
+  defaultShippingDays: t.Optional(t.Number({ minimum: 0 })),
+  requiredFields: t.Optional(t.Record(t.String(), t.Boolean()))
 })
 
 export const serviceabilityBody = t.Object({

@@ -69,3 +69,33 @@ export const i18n = {
 	initLocale,
 	t
 }
+
+/**
+ * Bilingual-field picker (Mnasati pattern): an Arabic value is used whenever
+ * the active locale is Arabic and the merchant supplied one, otherwise the
+ * primary-language value wins.
+ */
+export function localized(label: string, labelAr?: string | null): string {
+	return locale === 'ar' && labelAr ? labelAr : label
+}
+
+/** Option-value label for a variant row, honoring per-option Arabic values. */
+export function localizedOptionValue(
+	optionValues: Record<string, string>,
+	optionValuesAr: Record<string, string>,
+	name: string
+): string {
+	const primary = optionValues[name] ?? ''
+	return locale === 'ar' && optionValuesAr[name] ? optionValuesAr[name] : primary
+}
+
+/** Grouped options (option name → choices) for the variant chooser, with
+ *  localized names and values. */
+export function optionGroups(variants: Array<{ optionValues: Record<string, string>; optionValuesAr: Record<string, string> }>) {
+	const names = [...new Set(variants.flatMap((v) => Object.keys(v.optionValues)))]
+	return names.map((name) => ({
+		name,
+		label: localized(name),
+		values: [...new Set(variants.map((v) => v.optionValues[name]).filter((v): v is string => Boolean(v)))]
+	}))
+}

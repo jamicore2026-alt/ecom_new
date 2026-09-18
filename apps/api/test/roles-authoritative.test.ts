@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { eq } from 'drizzle-orm'
+import { and, eq, like } from 'drizzle-orm'
 import { app } from '../src/app'
 import { db } from '../src/database/client'
-import { users } from '../src/database/schema'
+import { productVariants, products, users } from '../src/database/schema'
 
 const call = async (path: string, init?: RequestInit) => {
   const res = await app.handle(new Request(`http://localhost${path}`, init))
@@ -55,6 +55,19 @@ describe('roles authoritative via users.role_id (P2-3)', () => {
   afterAll(async () => {
     for (const email of createdEmails) {
       await db.delete(users).where(eq(users.email, email)).catch(() => null)
+    }
+    // The draft product created in "clearing roleId drops role grants" has no
+    // clean-up of its own and otherwise leaks into the seeded merchant's
+    // catalog across suite runs, breaking the exact-20 seeded-product
+    // assertions elsewhere.
+    const [leaked] = await db
+      .select()
+      .from(products)
+      .where(and(like(products.sku, 'ROLDONE-%'), eq(products.status, 'draft')))
+      .limit(1)
+    if (leaked) {
+      await db.delete(productVariants).where(eq(productVariants.productId, leaked.id)).catch(() => null)
+      await db.delete(products).where(eq(products.id, leaked.id)).catch(() => null)
     }
   })
 

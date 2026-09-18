@@ -108,7 +108,7 @@ describe('Storefront checkout', () => {
         items: [{ productId: product.id, variantId, quantity: 1 }],
         couponCode: 'WELCOME15',
         email: 'buyer@example.com',
-        shippingAddress: { name: 'Test Buyer', line1: '1 Main St', city: 'New York', state: 'NY', postalCode: '10001', country: 'US' },
+        shippingAddress: { name: 'Test Buyer', line1: '1 Main St', line2: 'Apt 1', city: 'New York', state: 'NY', postalCode: '10001', country: 'US', phone: '+1 5550100' },
         paymentMethod: 'card',
         notes: 'Please leave at door'
       })
@@ -128,7 +128,7 @@ describe('Storefront checkout', () => {
       json({
         items: [{ productId: product.id, variantId, quantity: 1 }],
         email: 'confirm@example.com',
-        shippingAddress: { name: 'Confirm Buyer', line1: '2 Oak St', city: 'Toronto', state: 'ON', postalCode: 'M5V', country: 'CA' },
+        shippingAddress: { name: 'Confirm Buyer', line1: '2 Oak St', line2: 'Unit 2', city: 'Toronto', state: 'ON', postalCode: 'M5V', country: 'CA', phone: '+1 5550102' },
         paymentMethod: 'cod'
       })
     )

@@ -16,6 +16,7 @@
 	let fieldErrors = $state<Record<string, string>>({})
 
 	let name = $state('')
+	let nameAr = $state('')
 	let parentId = $state('')
 	let sortOrder = $state('0')
 	let status = $state('active')
@@ -25,6 +26,7 @@
 	function startEdit(c: Category) {
 		editing = c
 		name = c.name
+		nameAr = c.nameAr ?? ''
 		parentId = c.parentId ?? ''
 		sortOrder = String(c.sortOrder)
 		status = c.status
@@ -34,6 +36,7 @@
 	function reset() {
 		editing = null
 		name = ''
+		nameAr = ''
 		parentId = ''
 		sortOrder = '0'
 		status = 'active'
@@ -46,6 +49,7 @@
 		try {
 			const body: Record<string, unknown> = {
 				name,
+				nameAr: nameAr || undefined,
 				parentId: parentId || null,
 				sortOrder: Number(sortOrder || 0),
 				status,
@@ -102,6 +106,10 @@
 					<label for="cat-name" class="field-label">Name *</label>
 					<input id="cat-name" class="field" bind:value={name} required />
 					{#if fieldErrors.name}<p class="field-error">{fieldErrors.name}</p>{/if}
+				</div>
+				<div>
+					<label for="cat-name-ar" class="field-label">Name (Arabic)</label>
+					<input id="cat-name-ar" class="field" bind:value={nameAr} dir="rtl" />
 				</div>
 				<div>
 					<label for="cat-parent" class="field-label">Parent</label>

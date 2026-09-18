@@ -47,10 +47,12 @@ const checkoutPayload = (email: string, extra: Record<string, unknown> = {}) => 
   shippingAddress: {
     name: 'Wh Buyer',
     line1: '1 Main St',
+    line2: 'Apt 1',
     city: 'New York',
     state: 'NY',
     postalCode: '10001',
-    country: 'US'
+    country: 'US',
+    phone: '+1 5550106'
   },
   paymentMethod: 'card',
   ...extra

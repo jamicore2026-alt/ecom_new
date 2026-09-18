@@ -19,6 +19,8 @@ import {
   paymentSettings,
   paymentTransactions,
   productImages,
+  productOptions,
+  productOptionValues,
   products,
   productVariants,
   promotions,
@@ -30,6 +32,8 @@ import {
   warehouseInventory,
   warehouses
 } from '../../database/schema'
+import { DEFAULT_CHECKOUT_REQUIRED_FIELDS } from '../../shared/types'
+import type { CheckoutFieldRequirements, ShippingRule } from '../../shared/types'
 import { DiscountsService } from '../discounts/service'
 import { EmailsService } from '../emails/service'
 import { CartsService } from '../carts/service'
@@ -43,8 +47,18 @@ import { productSearchCondition, productSearchRank } from '../../shared/product-
 import { getProvider, listProviders } from '../../payments/registry'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
+import {
+  assertShippingSupported,
+  computeShippingRate,
+  validateRequiredFields
+} from './shipping'
 
 const number = (v: unknown) => Number(v)
+
+/** A retail product is available on the storefront when a merchant has not
+ *  restricted it to POS only (visibility ∈ website | both). */
+const visibleOnWeb = () => inArray(products.visibility, ['website', 'both'])
+const webVisible = visibleOnWeb
 
 export interface CheckoutItemInput {
   productId: string
@@ -54,8 +68,8 @@ export interface CheckoutItemInput {
 
 export interface CheckoutInput extends CheckoutPreviewInput {
   email: string
-  shippingAddress: Record<string, unknown>
-  billingAddress?: Record<string, unknown>
+  shippingAddress: CheckoutAddress
+  billingAddress?: CheckoutAddress
   paymentMethod: string
   notes?: string
   cartId?: string
@@ -70,7 +84,7 @@ export interface CheckoutPreviewInput {
   items: CheckoutItemInput[]
   couponCode?: string
   /** Optional country so previewed totals match the final order's shipping/tax. */
-  shippingAddress?: { country?: string }
+  shippingAddress?: { country?: string; state?: string; city?: string; postalCode?: string }
 }
 
 /** Drizzle transaction type used inside `db.transaction(async (tx) => ...)`. */
@@ -134,7 +148,16 @@ async function allocateWarehouseStock(
 }
 
 interface StorePayload {
-  merchant: { id: string; name: string; slug: string; currency: string; timezone: string }
+  merchant: {
+    id: string
+    name: string
+    slug: string
+    currency: string
+    timezone: string
+    /** Merchant home country (ISO 2–3 char) — storefront country default +
+     *  server-side delivery restriction. */
+    country: string | null
+  }
   settings: {
     name: string
     logo: string | null
@@ -150,12 +173,29 @@ interface StorePayload {
   }
   shipping: {
     zones: Array<{ name: string; countries: string[]; rate: number; freeAbove?: number }>
+    /** Hierarchical rules: pin > city > state > country > default. */
+    rules: ShippingRule[]
     freeShippingThreshold: number
+  }
+  checkout: {
+    /** Which address/contact fields the merchant requires at checkout. */
+    requiredFields: CheckoutFieldRequirements
   }
   taxes: {
     autoCalculate: boolean
     rates: Array<{ region: string; rate: number }>
   }
+}
+
+export interface CheckoutAddress {
+  name?: string
+  line1?: string
+  line2?: string
+  city?: string
+  state?: string
+  postalCode?: string
+  country?: string
+  phone?: string
 }
 
 interface CheckoutLine {
@@ -186,6 +226,7 @@ export interface StorefrontQuery {
 interface PublicCategory {
   id: string
   name: string
+  nameAr: string | null
   slug: string
   image: string | null
 }
@@ -194,8 +235,10 @@ interface PublicProduct {
   id: string
   merchantId: string
   name: string
+  nameAr: string | null
   slug: string
   description: string
+  descriptionAr: string
   price: number
   compareAtPrice: number | null
   sku: string | null
@@ -256,6 +299,10 @@ export class StorefrontService {
       .select()
       .from(shippingSettings)
       .where(eq(shippingSettings.merchantId, merchant.id))
+    const [checkout] = await db
+      .select()
+      .from(checkoutSettings)
+      .where(eq(checkoutSettings.merchantId, merchant.id))
     const [taxes] = await db
       .select()
       .from(taxSettings)
@@ -276,7 +323,8 @@ export class StorefrontService {
         name: merchant.name,
         slug: merchant.slug,
         currency: merchant.currency,
-        timezone: merchant.timezone
+        timezone: merchant.timezone,
+        country: merchant.country
       },
       settings: {
         name: settings?.name ?? merchant.name,
@@ -293,7 +341,11 @@ export class StorefrontService {
       },
       shipping: {
         zones: shipping?.zones ?? [],
+        rules: shipping?.rules ?? [],
         freeShippingThreshold: number(shipping?.freeShippingThreshold ?? 0)
+      },
+      checkout: {
+        requiredFields: checkout?.requiredFields ?? DEFAULT_CHECKOUT_REQUIRED_FIELDS
       },
       taxes: {
         autoCalculate: taxes?.autoCalculate ?? true,
@@ -322,7 +374,9 @@ export class StorefrontService {
     const productRows = await db
       .select({ slug: products.slug })
       .from(products)
-      .where(and(eq(products.merchantId, store.merchant.id), eq(products.status, 'active')))
+      .where(
+        and(eq(products.merchantId, store.merchant.id), eq(products.status, 'active'), visibleOnWeb())
+      )
       .orderBy(asc(products.slug))
     const categoryRows = await db
       .select({ slug: categories.slug })
@@ -382,7 +436,13 @@ export class StorefrontService {
     const productCounts = await db
       .select({ categoryId: products.categoryId, count: count() })
       .from(products)
-      .where(and(eq(products.merchantId, store.merchant.id), eq(products.status, 'active')))
+      .where(
+        and(
+          eq(products.merchantId, store.merchant.id),
+          eq(products.status, 'active'),
+          visibleOnWeb()
+        )
+      )
       .groupBy(products.categoryId)
     const countMap = new Map(productCounts.map((c) => [c.categoryId, Number(c.count)]))
 
@@ -402,6 +462,7 @@ export class StorefrontService {
       return {
         id: cat.id,
         name: cat.name,
+        nameAr: cat.nameAr,
         slug: cat.slug,
         image: cat.image,
         sortOrder: cat.sortOrder,
@@ -489,8 +550,10 @@ export class StorefrontService {
         id: p.id,
         merchantId,
         name: p.name,
+        nameAr: p.nameAr,
         slug: p.slug,
         description: p.description,
+        descriptionAr: p.descriptionAr,
         price: number(p.price),
         compareAtPrice: p.compareAtPrice === null ? null : number(p.compareAtPrice),
         sku: p.sku,
@@ -503,7 +566,13 @@ export class StorefrontService {
         variantCount: productVariants_.length,
         image,
         category: category
-          ? { id: category.id, name: category.name, slug: category.slug, image: category.image }
+          ? {
+              id: category.id,
+              name: category.name,
+              nameAr: category.nameAr,
+              slug: category.slug,
+              image: category.image
+            }
           : null
       } as PublicProduct
     })
@@ -514,7 +583,8 @@ export class StorefrontService {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [
       eq(products.merchantId, store.merchant.id),
-      eq(products.status, 'active')
+      eq(products.status, 'active'),
+      visibleOnWeb()
     ]
 
     const search = q.search?.trim()
@@ -573,7 +643,8 @@ export class StorefrontService {
         and(
           eq(products.merchantId, store.merchant.id),
           eq(products.status, 'active'),
-          eq(products.slug, productSlug)
+          eq(products.slug, productSlug),
+          visibleOnWeb()
         )
       )
     if (!product) throw notFound('PRODUCT_NOT_FOUND', 'Product not found')
@@ -610,7 +681,8 @@ export class StorefrontService {
             eq(products.merchantId, store.merchant.id),
             eq(products.status, 'active'),
             eq(products.categoryId, product.categoryId),
-            ne(products.id, product.id)
+            ne(products.id, product.id),
+            visibleOnWeb()
           )
         )
         .limit(4)
@@ -619,8 +691,10 @@ export class StorefrontService {
     return ok({
       id: product.id,
       name: product.name,
+      nameAr: product.nameAr,
       slug: product.slug,
       description: product.description,
+      descriptionAr: product.descriptionAr,
       price: number(product.price),
       compareAtPrice: product.compareAtPrice === null ? null : number(product.compareAtPrice),
       sku: product.sku,
@@ -638,14 +712,61 @@ export class StorefrontService {
         price: number(v.price),
         compareAtPrice: v.compareAtPrice === null ? null : number(v.compareAtPrice),
         inventory: v.inventory,
+        unlimited: v.unlimited,
         optionValues: v.optionValues,
+        optionValuesAr: v.optionValuesAr,
         image: v.image
       })),
+      options: await this.optionsFor(db, store.merchant.id, product.id),
       category: category
-        ? { id: category.id, name: category.name, slug: category.slug, image: category.image }
+        ? {
+            id: category.id,
+            name: category.name,
+            nameAr: category.nameAr,
+            slug: category.slug,
+            image: category.image
+          }
         : null,
       related: await this.enrich(db, store.merchant.id, relatedRows)
     })
+  }
+
+  /** Option definitions for a product, with their values (storefront-facing). */
+  private static async optionsFor(db: DB, merchantId: string, productId: string) {
+    const opts = await db
+      .select()
+      .from(productOptions)
+      .where(and(eq(productOptions.productId, productId), eq(productOptions.status, 'active')))
+      .orderBy(asc(productOptions.sortOrder), asc(productOptions.createdAt))
+    if (!opts.length) return []
+    const values = await db
+      .select()
+      .from(productOptionValues)
+      .where(
+        and(
+          inArray(productOptionValues.optionId, opts.map((o) => o.id)),
+          eq(productOptionValues.status, 'active')
+        )
+      )
+      .orderBy(asc(productOptionValues.sortOrder), asc(productOptionValues.createdAt))
+    return opts.map((o) => ({
+      id: o.id,
+      name: o.name,
+      nameAr: o.nameAr,
+      type: o.type,
+      required: o.required,
+      minSelections: o.minSelections,
+      maxSelections: o.maxSelections,
+      perValueQuantity: o.allowControl.perValueQuantity,
+      values: values
+        .filter((v) => v.optionId === o.id)
+        .map((v) => ({
+          value: v.value,
+          valueAr: v.valueAr,
+          priceAdjustment: number(v.priceAdjustment),
+          quantity: v.quantity
+        }))
+    }))
   }
 
   /** Approved-review aggregate for a single product. */
@@ -679,7 +800,8 @@ export class StorefrontService {
         and(
           eq(products.merchantId, store.merchant.id),
           eq(products.status, 'active'),
-          eq(products.slug, productSlug)
+          eq(products.slug, productSlug),
+          visibleOnWeb()
         )
       )
     if (!product) throw notFound('PRODUCT_NOT_FOUND', 'Product not found')
@@ -770,11 +892,14 @@ export class StorefrontService {
       if (product.status !== 'active') {
         throw badRequest('PRODUCT_UNAVAILABLE', `${product.name} is not available`)
       }
+      if (product.visibility === 'pos') {
+        throw badRequest('PRODUCT_UNAVAILABLE', `${product.name} is not available online`)
+      }
       const variant = variantMap.get(item.variantId)
       if (!variant || variant.productId !== product.id) {
         throw badRequest('VARIANT_NOT_FOUND', `Invalid variant for ${product.name}`)
       }
-      if (product.trackInventory && variant.inventory < item.quantity) {
+      if (product.trackInventory && !variant.unlimited && variant.inventory < item.quantity) {
         throw badRequest('OUT_OF_STOCK', `Only ${variant.inventory} of ${product.name} available`)
       }
       const price = number(variant.price)
@@ -787,30 +912,57 @@ export class StorefrontService {
         image: variant.image ?? null,
         categoryId: product.categoryId ?? null,
         optionValues: variant.optionValues,
-        trackInventory: product.trackInventory,
+        trackInventory: product.trackInventory && !variant.unlimited,
         quantity: item.quantity,
         total: roundForCurrency(price * item.quantity, currency)
       }
     })
   }
 
-  private static shippingRate(store: StorePayload, subtotal: number, country?: string) {
-    const freeAt = store.shipping.freeShippingThreshold ?? 0
-    if (freeAt > 0 && subtotal >= freeAt) return { method: 'Free shipping', rate: 0 }
-    const zones = store.shipping.zones
-    if (!zones.length) return { method: 'Flat rate', rate: 0 }
-    // A zone with no country restriction applies everywhere (wildcard); a
-    // listed zone only matches its countries. An unmatched country is rejected
-    // instead of silently charging the first zone's rate (P1-10).
-    const zone =
-      zones.find(
-        (z) => !z.countries?.length || (!!country && z.countries.includes(country))
-      ) ?? null
-    if (!zone) {
-      throw badRequest('UNSUPPORTED_COUNTRY', `We don't ship to ${country ?? 'this country'}`)
-    }
-    if (zone.freeAbove && subtotal >= zone.freeAbove) return { method: zone.name, rate: 0 }
-    return { method: zone.name, rate: number(zone.rate) }
+  private static shippingRate(
+    store: StorePayload,
+    subtotal: number,
+    location?: CheckoutAddress
+  ) {
+    return computeShippingRate(
+      {
+        zones: store.shipping.zones,
+        rules: store.shipping.rules,
+        freeAt: store.shipping.freeShippingThreshold ?? 0
+      },
+      subtotal,
+      {
+        country: location?.country,
+        state: location?.state,
+        city: location?.city,
+        postalCode: location?.postalCode
+      }
+    )
+  }
+
+  /**
+   * Delivery-country restriction (PDF-correction): when a merchant sets their
+   * home country — and no shipping zones carry explicit country lists — the
+   * storefront may only deliver to that country (KW merchant → Kuwait only).
+   * Explicit zone countries still win, with the merchant's country always
+   * accepted.
+   */
+  private static assertShippingSupported(store: StorePayload, country?: string) {
+    assertShippingSupported(
+      { zones: store.shipping.zones, merchantCountry: store.merchant.country },
+      country
+    )
+  }
+
+  /** Merchant-configurable required checkout fields (email default-optional). */
+  private static validateRequiredFields(
+    store: StorePayload,
+    address: CheckoutAddress | undefined
+  ) {
+    validateRequiredFields(
+      store.checkout.requiredFields,
+      address as Record<string, unknown> | undefined
+    )
   }
 
   private static taxFor(
@@ -841,8 +993,7 @@ export class StorefrontService {
   private static async buildSummary(
     db: DB,
     slug: string,
-    body: CheckoutPreviewInput,
-    country?: string
+    body: CheckoutPreviewInput
   ) {
     const store = await this.resolveStore(db, slug)
     const currency = store.merchant.currency
@@ -899,17 +1050,23 @@ export class StorefrontService {
       )
     }
 
+    const address = body.shippingAddress as CheckoutAddress | undefined
+    const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
     const shipping = coupon?.freeShipping
       ? { method: 'Free shipping', rate: 0 }
-      : this.shippingRate(store, subtotal, country)
-    const address = body.shippingAddress as { country?: unknown; state?: unknown } | undefined
+      : this.shippingRate(store, subtotal, {
+          country: str(address?.country),
+          state: str(address?.state),
+          city: str(address?.city),
+          postalCode: str(address?.postalCode)
+        })
     const taxTotal = this.taxFor(
       store,
       subtotal - discountTotal + shipping.rate,
       currency,
       {
-        country: typeof address?.country === 'string' ? address.country : undefined,
-        state: typeof address?.state === 'string' ? address.state : undefined
+        country: str(address?.country),
+        state: str(address?.state)
       }
     )
     const total = roundForCurrency(subtotal + shipping.rate - discountTotal + taxTotal, currency)
@@ -929,7 +1086,7 @@ export class StorefrontService {
   }
 
   static async preview(db: DB, slug: string, body: CheckoutPreviewInput) {
-    const summary = await this.buildSummary(db, slug, body, body.shippingAddress?.country)
+    const summary = await this.buildSummary(db, slug, body)
     return ok({
       items: summary.items,
       subtotal: summary.subtotal,
@@ -978,7 +1135,7 @@ export class StorefrontService {
     merchantId: string,
     method: string,
     total: number,
-    shippingAddress: { country?: string; postalCode?: string }
+    shippingAddress?: CheckoutAddress
   ) {
     const [payments] = await db
       .select()
@@ -1159,8 +1316,8 @@ export class StorefrontService {
           taxTotal: summary.taxTotal,
           total: summary.total,
           currency,
-          shippingAddress: body.shippingAddress,
-          billingAddress: body.billingAddress ?? body.shippingAddress,
+          shippingAddress: body.shippingAddress as Record<string, unknown>,
+          billingAddress: (body.billingAddress ?? body.shippingAddress) as Record<string, unknown>,
           notes: body.notes ?? null,
           paymentMethod: body.paymentMethod,
           paymentProvider: opts.provider ?? null,
@@ -1328,14 +1485,16 @@ export class StorefrontService {
           createdAt: existing.createdAt
         })
       }
-      summary = await this.buildSummary(db, slug, body, body.shippingAddress.country as string | undefined)
+      summary = await this.buildSummary(db, slug, body)
+      this.assertShippingSupported(summary.store, body.shippingAddress?.country as string | undefined)
+      this.validateRequiredFields(summary.store, body.shippingAddress)
 
       await this.assertCodAvailable(
         db,
         summary.store.merchant.id,
         body.paymentMethod,
         summary.total,
-        body.shippingAddress as { country?: string; postalCode?: string }
+        body.shippingAddress
       )
 
       // Legacy "card" demo method is treated as paid-on-place; everything else waits for payment.
@@ -1390,14 +1549,16 @@ export class StorefrontService {
       })
     }
 
-    summary = await this.buildSummary(db, slug, body, body.shippingAddress.country as string | undefined)
+    summary = await this.buildSummary(db, slug, body)
+    this.assertShippingSupported(summary.store, body.shippingAddress?.country as string | undefined)
+    this.validateRequiredFields(summary.store, body.shippingAddress)
 
     await this.assertCodAvailable(
       db,
       summary.store.merchant.id,
       body.paymentMethod,
       summary.total,
-      body.shippingAddress as { country?: string; postalCode?: string }
+      body.shippingAddress
     )
 
     // Legacy "card" demo method is treated as paid-on-place; everything else waits for payment.
@@ -1483,7 +1644,9 @@ export class StorefrontService {
       credentials: decryptJson<Record<string, string>>(configRow.credentials)
     }
 
-    const summary = await this.buildSummary(db, slug, body, body.shippingAddress.country as string | undefined)
+    const summary = await this.buildSummary(db, slug, body)
+    this.assertShippingSupported(summary.store, body.shippingAddress?.country as string | undefined)
+    this.validateRequiredFields(summary.store, body.shippingAddress)
 
     let order: typeof orders.$inferSelect
     try {
@@ -1556,7 +1719,7 @@ export class StorefrontService {
         })),
         shippingAmount: summary.shipping.rate,
         taxAmount: summary.taxTotal,
-        shippingAddress: body.shippingAddress,
+        shippingAddress: body.shippingAddress as Record<string, unknown>,
         ...urls
       })
     } catch (err) {

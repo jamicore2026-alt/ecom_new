@@ -96,10 +96,12 @@ describe('storefront payments integration', () => {
         shippingAddress: {
           name: 'Pay Test',
           line1: '9 Test Ln',
+          line2: 'Apt 10',
           city: 'Kuwait City',
           state: 'KW',
           postalCode: '10000',
-          country: 'KW'
+          country: 'KW',
+          phone: '+965 5550109'
         },
         paymentMethod: 'cod'
       })
@@ -142,7 +144,7 @@ describe('storefront payments integration', () => {
       json({
         items: [{ productId, variantId, quantity: 1 }],
         email: 'provider@example.com',
-        shippingAddress: { name: 'P', line1: '1', city: 'C', state: 'S', postalCode: '1', country: 'SA' },
+        shippingAddress: { name: 'P', line1: '1', line2: '2', city: 'C', state: 'S', postalCode: '1', country: 'SA', phone: '+966 1' },
         paymentMethod: 'tamara'
       })
     )
@@ -156,7 +158,7 @@ describe('storefront payments integration', () => {
       json({
         items: [{ productId, variantId, quantity: 1 }],
         email: 'provider@example.com',
-        shippingAddress: { name: 'P', line1: '1', city: 'C', state: 'S', postalCode: '1', country: 'SA' },
+        shippingAddress: { name: 'P', line1: '1', line2: '2', city: 'C', state: 'S', postalCode: '1', country: 'SA', phone: '+966 1' },
         paymentMethod: 'myfatoorah'
       })
     )

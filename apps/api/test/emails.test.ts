@@ -115,10 +115,12 @@ describe('transactional emails', () => {
         shippingAddress: {
           name: 'Mail Test',
           line1: '5 Test Ln',
+          line2: 'Apt 6',
           city: 'Kuwait City',
           state: 'KW',
           postalCode: '10000',
-          country: 'KW'
+          country: 'KW',
+          phone: '+965 5550110'
         },
         paymentMethod: 'card'
       })
@@ -152,10 +154,12 @@ describe('transactional emails', () => {
         shippingAddress: {
           name: 'COD Mail',
           line1: '6 Test Ln',
+          line2: 'Apt 7',
           city: 'Kuwait City',
           state: 'KW',
           postalCode: '10000',
-          country: 'KW'
+          country: 'KW',
+          phone: '+965 5550111'
         },
         paymentMethod: 'cod'
       })

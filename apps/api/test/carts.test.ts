@@ -99,7 +99,7 @@ describe('Abandoned carts pipeline (storefront persistence → conversion)', () 
       json({
         items: [{ productId: product.id, variantId, quantity: 1 }],
         email: 'carts-buyer@example.com',
-        shippingAddress: { name: 'Cart Buyer', line1: '1 Main St', city: 'New York', state: 'NY', postalCode: '10001', country: 'US' },
+        shippingAddress: { name: 'Cart Buyer', line1: '1 Main St', line2: 'Apt 1', city: 'New York', state: 'NY', postalCode: '10001', country: 'US', phone: '+1 5550100' },
         paymentMethod: 'card',
         cartId
       })
@@ -122,7 +122,7 @@ describe('Abandoned carts pipeline (storefront persistence → conversion)', () 
       json({
         items: [{ productId: product.id, variantId, quantity: 1 }],
         email: 'carts-nocart@example.com',
-        shippingAddress: { name: 'No Cart', line1: '1 Main St', city: 'New York', state: 'NY', postalCode: '10001', country: 'US' },
+        shippingAddress: { name: 'No Cart', line1: '1 Main St', line2: 'Apt 1', city: 'New York', state: 'NY', postalCode: '10001', country: 'US', phone: '+1 5550101' },
         paymentMethod: 'card'
       })
     )
