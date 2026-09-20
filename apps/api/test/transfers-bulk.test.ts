@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { and, eq, inArray, like } from 'drizzle-orm'
 import { app } from '../src/app'
 import { db } from '../src/database/client'
+import { createTenantConnection } from '../src/database/tenant-context'
 import {
   merchants,
   products,
@@ -150,7 +151,10 @@ describe('Warehouse transfers — pool fallback, bulk & tenant safety', () => {
     expect(res.body.error.code).toBe('VARIANT_NOT_FOUND')
   })
 
-  it('isolates variants owned by another merchant (RLS hides them → not found)', async () => {
+  // Shared by the two RLS stages below (they run in order).
+  let iso: { srcId: string; dstId: string; variantId: string; merchantId: string } | null = null
+
+  it('cross-merchant RLS [1/2 setup + tenant-invisibility probe]', async () => {
     const headers = await auth()
     // Fully self-contained: fresh warehouses + fresh foreign merchant/variant
     // with a crypto-random suffix, so this test can never depend on shared
@@ -182,21 +186,44 @@ describe('Warehouse transfers — pool fallback, bulk & tenant safety', () => {
         .insert(productVariants)
         .values({ productId: fProduct.id, sku: `ISO-${suffix}`, price: 9.99, inventory: 30 })
         .returning()
-      // Sanity: the variant really exists in the admin view, so a 404 below
-      // proves tenant-hiding — not missing setup.
+      // Sanity: the variant really exists in the admin view, so invisibility
+      // below proves tenant-hiding — not missing setup.
       const [check] = await db.select().from(productVariants).where(eq(productVariants.id, fVariant.id))
       expect(check).toBeTruthy()
 
+      // Direct probe: a jamicore tenant connection must NOT see the variant.
+      const [jm] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'jamicore-store'))
+      const tenancy = await createTenantConnection(jm.id)
+      try {
+        const vis = await tenancy.db
+          .select({ id: productVariants.id })
+          .from(productVariants)
+          .where(eq(productVariants.id, fVariant.id))
+        expect(vis.length).toBe(0)
+      } finally {
+        await tenancy.end()
+      }
+      iso = { srcId: src.id, dstId: dst.id, variantId: fVariant.id, merchantId: fMerchant.id }
+    } catch (e) {
+      await db.delete(merchants).where(eq(merchants.id, fMerchant.id)).catch(() => null)
+      throw e
+    }
+  })
+
+  it('cross-merchant RLS [2/2 transfer surfaces VARIANT_NOT_FOUND]', async () => {
+    const headers = await auth()
+    expect(iso).toBeTruthy()
+    try {
       const res = await call(
         '/api/transfers',
-        apiJson(headers, { fromWarehouseId: src.id, toWarehouseId: dst.id, variantId: fVariant.id, quantity: 1 })
+        apiJson(headers, { fromWarehouseId: iso!.srcId, toWarehouseId: iso!.dstId, variantId: iso!.variantId, quantity: 1 })
       )
       // Tenant isolation is enforced by row-level security: a foreign variant is
       // simply invisible, surfacing as VARIANT_NOT_FOUND rather than touching it.
       expect(res.status).toBe(404)
       expect(res.body.error.code).toBe('VARIANT_NOT_FOUND')
     } finally {
-      await db.delete(merchants).where(eq(merchants.id, fMerchant.id)).catch(() => null)
+      await db.delete(merchants).where(eq(merchants.id, iso!.merchantId)).catch(() => null)
     }
   })
 
