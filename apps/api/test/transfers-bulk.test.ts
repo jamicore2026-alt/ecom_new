@@ -152,14 +152,52 @@ describe('Warehouse transfers — pool fallback, bulk & tenant safety', () => {
 
   it('isolates variants owned by another merchant (RLS hides them → not found)', async () => {
     const headers = await auth()
-    const res = await call(
-      '/api/transfers',
-      apiJson(headers, { fromWarehouseId: whA.id, toWarehouseId: whB.id, variantId: foreignVariantId, quantity: 1 })
-    )
-    // Tenant isolation is enforced by row-level security: a foreign variant is
-    // simply invisible, surfacing as VARIANT_NOT_FOUND rather than touching it.
-    expect(res.status).toBe(404)
-    expect(res.body.error.code).toBe('VARIANT_NOT_FOUND')
+    // Fully self-contained: fresh warehouses + fresh foreign merchant/variant
+    // with a crypto-random suffix, so this test can never depend on shared
+    // seed state, file ordering, or Date.now() collisions across workers.
+    const suffix = `${Date.now().toString(36)}${Math.floor(Math.random() * 0xffffff).toString(36)}`
+    const mkWh = async (name: string, code: string) => {
+      const res = await call('/api/warehouses', apiJson(headers, { name, code, isDefault: false }))
+      expect(res.status).toBe(200)
+      return res.body.data
+    }
+    const src = await mkWh('Iso Source', `TBISO-S-${suffix}`.slice(0, 20))
+    const dst = await mkWh('Iso Dest', `TBISO-D-${suffix}`.slice(0, 20))
+    const [fMerchant] = await db
+      .insert(merchants)
+      .values({ name: `Iso ${suffix}`, slug: `iso-bulk-${suffix}`, email: `iso-${suffix}@example.com` })
+      .returning()
+    try {
+      const [fProduct] = await db
+        .insert(products)
+        .values({
+          merchantId: fMerchant.id,
+          name: 'Iso Widget',
+          slug: `iso-widget-${suffix}`,
+          price: 9.99,
+          status: 'active'
+        })
+        .returning()
+      const [fVariant] = await db
+        .insert(productVariants)
+        .values({ productId: fProduct.id, sku: `ISO-${suffix}`, price: 9.99, inventory: 30 })
+        .returning()
+      // Sanity: the variant really exists in the admin view, so a 404 below
+      // proves tenant-hiding — not missing setup.
+      const [check] = await db.select().from(productVariants).where(eq(productVariants.id, fVariant.id))
+      expect(check).toBeTruthy()
+
+      const res = await call(
+        '/api/transfers',
+        apiJson(headers, { fromWarehouseId: src.id, toWarehouseId: dst.id, variantId: fVariant.id, quantity: 1 })
+      )
+      // Tenant isolation is enforced by row-level security: a foreign variant is
+      // simply invisible, surfacing as VARIANT_NOT_FOUND rather than touching it.
+      expect(res.status).toBe(404)
+      expect(res.body.error.code).toBe('VARIANT_NOT_FOUND')
+    } finally {
+      await db.delete(merchants).where(eq(merchants.id, fMerchant.id)).catch(() => null)
+    }
   })
 
   it('bulk-transfers multiple explicit lines atomically and shares a groupKey', async () => {
