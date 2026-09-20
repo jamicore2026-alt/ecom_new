@@ -29,6 +29,11 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/ecom_merchant
+      # Tenant connections MUST run as the no-BYPASSRLS role, otherwise the
+      # postgres superuser silently disables all Row Level Security (superusers
+      # bypass even FORCED RLS) and RLS-dependent API tests cannot fail.
+      # The test bootstrap creates this role when missing. Mirrors repo .env.
+      APP_RUNTIME_DATABASE_URL: postgres://app_runtime:app_runtime_dev_password@localhost:5432/ecom_merchant
       JWT_ACCESS_SECRET: ci-access-secret
       JWT_REFRESH_SECRET: ci-refresh-secret
       ENCRYPTION_KEY: ci-encryption-key
