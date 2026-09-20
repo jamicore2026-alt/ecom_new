@@ -102,9 +102,11 @@ describe('permission convergence (P2-2)', () => {
     expect(row).toBeDefined()
     expect(row.permissions).toEqual(
       expect.arrayContaining([
+        'products.read',
         'products.create',
         'products.update',
         'products.delete',
+        'orders.read',
         'orders.create',
         'orders.update',
         'orders.cancel',
@@ -127,6 +129,14 @@ describe('permission convergence (P2-2)', () => {
     const exportRes = await call('/api/orders/export', { headers: staff })
     expect(exportRes.status).toBe(200)
     expect(exportRes.res.headers.get('content-type')).toContain('text/csv')
+  })
+
+  it('order reads require orders.read (write-only grants are not enough)', async () => {
+    const riley = await loginAs('riley@jamicore.com')
+    for (const path of ['/api/orders', '/api/orders/export', '/api/returns', '/api/refunds']) {
+      const res = await call(path, { headers: riley })
+      expect(res.status).toBe(403)
+    }
   })
 
   it('staff can still create a product with their canonical grants', async () => {

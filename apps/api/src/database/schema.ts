@@ -25,6 +25,11 @@ const tsvector = customType<{ data: string; driverData: string }>({ dataType: ()
 
 const id = (name: string) => varchar(name, { length: 30 }).$defaultFn(() => createId())
 
+/** Timezone-aware timestamp (timestamptz). All wall-clock columns use this so
+ *  ordering/expiry is unambiguous across merchant timezones — the app always
+ *  reads/writes JS Dates (UTC instants). See drizzle/0034_timestamptz.sql. */
+const tstz = (name: string) => timestamp(name, { withTimezone: true })
+
 const merchantIdRef = () =>
   varchar('merchant_id', { length: 30 })
     .notNull()
@@ -44,7 +49,11 @@ export const merchants = pgTable('merchants', {
    *  checkout country options + server-side country restriction. */
   country: varchar('country', { length: 3 }),
   status: varchar('status', { length: 20 }).$type<MerchantStatus>().notNull().default('active'),
-  createdAt: timestamp('created_at').defaultNow().notNull()
+  /** Soft-delete marker set when the merchant reaches `archived` (offboarded).
+   *  Rows are never hard-deleted: retention/audit data stays queryable by the
+   *  platform connection while login/API/storefront stay blocked by status. */
+  deletedAt: tstz('deleted_at'),
+  createdAt: tstz('created_at').defaultNow().notNull()
 })
 
 /** Platform admins — the operators who can see every merchant and move their
@@ -55,7 +64,7 @@ export const platformAdmins = pgTable('platform_admins', {
   id: id('id').primaryKey(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull()
+  createdAt: tstz('created_at').defaultNow().notNull()
 })
 
 export const users = pgTable(
@@ -75,7 +84,7 @@ export const users = pgTable(
       onDelete: 'set null'
     }),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('users_merchant_email_idx').on(t.merchantId, t.email)]
 )
@@ -91,8 +100,8 @@ export const outlets = pgTable(
     code: varchar('code', { length: 50 }).notNull(),
     address: jsonb('address').$type<Address>().notNull().default({}),
     status: varchar('status', { length: 20 }).$type<OutletStatus>().notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('outlets_merchant_code_idx').on(t.merchantId, t.code),
@@ -109,7 +118,7 @@ export const merchantModules = pgTable(
     merchantId: merchantIdRef(),
     module: varchar('module', { length: 30 }).$type<ModuleId>().notNull(),
     enabled: boolean('enabled').notNull().default(true),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('merchant_modules_merchant_module_idx').on(t.merchantId, t.module)]
 )
@@ -126,8 +135,8 @@ export const roles = pgTable(
     permissions: jsonb('permissions').$type<Permission[]>().notNull().default([]),
     scope: varchar('scope', { length: 20 }).$type<Scope>().notNull().default('MERCHANT'),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [uniqueIndex('roles_merchant_name_idx').on(t.merchantId, t.name)]
 )
@@ -144,11 +153,12 @@ export const userOutlets = pgTable(
     outletId: varchar('outlet_id', { length: 30 })
       .notNull()
       .references(() => outlets.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
     uniqueIndex('user_outlets_user_outlet_idx').on(t.userId, t.outletId),
-    index('user_outlets_outlet_idx').on(t.outletId)
+    index('user_outlets_outlet_idx').on(t.outletId),
+    index('user_outlets_user_idx').on(t.userId)
   ]
 )
 
@@ -173,8 +183,8 @@ export const menuItems = pgTable(
     status: varchar('status', { length: 20 }).notNull().default('active'),
     /** Time-based availability: [{ days: number[] (0=Sun..6=Sat), start: "09:00", end: "22:00" }]. Empty = always. */
     availability: jsonb('availability').notNull().default([]),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('menu_items_merchant_product_idx').on(t.merchantId, t.productId),
@@ -195,8 +205,8 @@ export const modifierGroups = pgTable(
     maxSelections: integer('max_selections').notNull().default(1),
     sortOrder: integer('sort_order').notNull().default(0),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [index('modifier_groups_merchant_idx').on(t.merchantId)]
 )
@@ -214,8 +224,8 @@ export const modifiers = pgTable(
     available: boolean('available').notNull().default(true),
     sortOrder: integer('sort_order').notNull().default(0),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     index('modifiers_group_idx').on(t.modifierGroupId),
@@ -236,7 +246,7 @@ export const menuItemModifiers = pgTable(
       .notNull()
       .references(() => modifierGroups.id, { onDelete: 'cascade' }),
     sortOrder: integer('sort_order').notNull().default(0),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
     uniqueIndex('menu_item_modifiers_item_group_idx').on(t.menuItemId, t.modifierGroupId)
@@ -257,7 +267,7 @@ export const menuItemOutlets = pgTable(
       .references(() => outlets.id, { onDelete: 'cascade' }),
     available: boolean('available').notNull().default(true),
     priceAdjustment: money('price_adjustment').notNull().default(0),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
     uniqueIndex('menu_item_outlets_item_outlet_idx').on(t.menuItemId, t.outletId)
@@ -281,7 +291,7 @@ export const categories = pgTable(
     image: varchar('image', { length: 1024 }),
     sortOrder: integer('sort_order').notNull().default(0),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('categories_merchant_slug_idx').on(t.merchantId, t.slug)]
 )
@@ -319,8 +329,8 @@ export const products = pgTable(
     searchVector: tsvector('search_vector').generatedAlwaysAs(
       sql`to_tsvector('english', coalesce(name, '') || ' ' || coalesce(sku, '') || ' ' || coalesce(description, ''))`
     ),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('products_merchant_sku_idx').on(t.merchantId, t.sku),
@@ -362,7 +372,7 @@ export const productVariants = pgTable(
     // variants get distinct, insertion-ordered timestamps. now() would stamp
     // every row in a statement identically, making ORDER BY created_at ties
     // nondeterministic across databases.
-    createdAt: timestamp('created_at')
+    createdAt: tstz('created_at')
       .default(sql`clock_timestamp()`)
       .notNull()
   },
@@ -379,7 +389,7 @@ export const productImages = pgTable(
     url: varchar('url', { length: 1024 }).notNull(),
     altText: varchar('alt_text', { length: 255 }),
     sortOrder: integer('sort_order').notNull().default(0),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [index('product_images_product_idx').on(t.productId)]
 )
@@ -397,7 +407,7 @@ export const inventoryLogs = pgTable(
     afterValue: integer('after_value').notNull(),
     reason: varchar('reason', { length: 20 }).notNull(),
     reference: varchar('reference', { length: 255 }),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [index('inventory_logs_variant_idx').on(t.variantId)]
 )
@@ -430,8 +440,8 @@ export const productOptions = pgTable(
       .default({ perValueQuantity: false, unlimited: false }),
     sortOrder: integer('sort_order').notNull().default(0),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [index('product_options_product_idx').on(t.productId)]
 )
@@ -454,7 +464,7 @@ export const productOptionValues = pgTable(
     quantity: integer('quantity'),
     sortOrder: integer('sort_order').notNull().default(0),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [index('product_option_values_option_idx').on(t.optionId)]
 )
@@ -474,12 +484,12 @@ export const customers = pgTable(
     tags: jsonb('tags').$type<string[]>().notNull().default([]),
     totalSpent: money('total_spent').notNull().default(0),
     ordersCount: integer('orders_count').notNull().default(0),
-    lastOrderAt: timestamp('last_order_at'),
+    lastOrderAt: tstz('last_order_at'),
     /** Bumped on password change — invalidates previously issued shopper JWTs. */
     tokenVersion: integer('token_version').notNull().default(0),
     emailVerified: boolean('email_verified').notNull().default(false),
-    emailVerifiedAt: timestamp('email_verified_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    emailVerifiedAt: tstz('email_verified_at'),
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('customers_merchant_email_idx').on(t.merchantId, t.email)]
 )
@@ -545,7 +555,7 @@ export const orders = pgTable(
       onDelete: 'set null'
     }),
     /** Reserved time for scheduled delivery/pickup. */
-    scheduledFor: timestamp('scheduled_for'),
+    scheduledFor: tstz('scheduled_for'),
     /** Open dine-in/QR table session this order belongs to (null for ecommerce/takeaway). */
     tableSessionId: varchar('table_session_id', { length: 30 }).references(() => tableSessions.id, {
       onDelete: 'set null'
@@ -554,11 +564,11 @@ export const orders = pgTable(
     warehouseId: varchar('warehouse_id', { length: 30 }).references(() => warehouses.id, {
       onDelete: 'set null'
     }),
-    expiresAt: timestamp('expires_at'),
+    expiresAt: tstz('expires_at'),
     /** Client-generated key so a POS double-submit/retry can never create a duplicate order. */
     idempotencyKey: varchar('idempotency_key', { length: 80 }),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('orders_merchant_number_idx').on(t.merchantId, t.orderNumber),
@@ -619,7 +629,7 @@ export const foodOrderItems = pgTable(
     unitPrice: money('unit_price').notNull().default(0),
     quantity: integer('quantity').notNull().default(1),
     total: money('total').notNull().default(0),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [index('food_order_items_order_idx').on(t.orderId)]
 )
@@ -638,8 +648,8 @@ export const tableSections = pgTable(
     name: varchar('name', { length: 120 }).notNull(),
     sortOrder: integer('sort_order').notNull().default(0),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('table_sections_merchant_outlet_name_idx').on(t.merchantId, t.outletId, t.name),
@@ -665,8 +675,8 @@ export const tables = pgTable(
     status: varchar('status', { length: 20 }).$type<TableState>().notNull().default('AVAILABLE'),
     /** Public QR locator — opaque, grants NO private merchant access. */
     qrToken: varchar('qr_token', { length: 64 }).notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('tables_merchant_outlet_code_idx').on(t.merchantId, t.outletId, t.code),
@@ -690,11 +700,11 @@ export const tableSessions = pgTable(
     }),
     status: varchar('status', { length: 20 }).$type<TableSessionStatus>().notNull().default('OPEN'),
     guests: integer('guests').notNull().default(1),
-    openedAt: timestamp('opened_at').defaultNow().notNull(),
-    closedAt: timestamp('closed_at'),
+    openedAt: tstz('opened_at').defaultNow().notNull(),
+    closedAt: tstz('closed_at'),
     notes: text('notes'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     index('table_sessions_merchant_status_idx').on(t.merchantId, t.status),
@@ -719,8 +729,8 @@ export const kitchenStations = pgTable(
     prepSlaMin: integer('prep_sla_min').notNull().default(10),
     sortOrder: integer('sort_order').notNull().default(0),
     status: varchar('status', { length: 20 }).$type<KitchenStationStatus>().notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('kitchen_stations_merchant_outlet_name_idx').on(t.merchantId, t.outletId, t.name),
@@ -750,13 +760,13 @@ export const kitchenTickets = pgTable(
     priority: varchar('priority', { length: 10 }).$type<KitchenPriority>().notNull().default('NORMAL'),
     prepSlaMin: integer('prep_sla_min').notNull().default(10),
     /** When the party/handoff is needed — drives priority ordering for scheduled KOTs. */
-    dueAt: timestamp('due_at'),
-    receivedAt: timestamp('received_at').defaultNow().notNull(),
-    startedAt: timestamp('started_at'),
-    readyAt: timestamp('ready_at'),
-    closedAt: timestamp('closed_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    dueAt: tstz('due_at'),
+    receivedAt: tstz('received_at').defaultNow().notNull(),
+    startedAt: tstz('started_at'),
+    readyAt: tstz('ready_at'),
+    closedAt: tstz('closed_at'),
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('kitchen_tickets_order_station_idx').on(t.orderId, t.stationId),
@@ -785,9 +795,9 @@ export const kitchenTicketItems = pgTable(
     modifiers: jsonb('modifiers').$type<FoodOrderModifier[]>().notNull().default([]),
     quantity: integer('quantity').notNull().default(1),
     status: varchar('status', { length: 20 }).$type<KitchenItemStatus>().notNull().default('PENDING'),
-    readyAt: timestamp('ready_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    readyAt: tstz('ready_at'),
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     index('kitchen_ticket_items_ticket_idx').on(t.ticketId),
@@ -812,8 +822,8 @@ export const deliveryZones = pgTable(
     freeDeliveryThreshold: money('free_delivery_threshold'),
     etaMin: integer('eta_min').notNull().default(30),
     status: varchar('status', { length: 20 }).$type<DeliveryZoneStatus>().notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('delivery_zones_merchant_outlet_name_idx').on(t.merchantId, t.outletId, t.name),
@@ -836,8 +846,8 @@ export const drivers = pgTable(
     vehiclePlate: varchar('vehicle_plate', { length: 50 }),
     status: varchar('status', { length: 20 }).$type<DriverStatus>().notNull().default('OFFLINE'),
     assignedOutletId: varchar('assigned_outlet_id', { length: 30 }).references(() => outlets.id, { onDelete: 'set null' }),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('drivers_merchant_user_idx').on(t.merchantId, t.userId),
@@ -856,7 +866,7 @@ export const driverLocations = pgTable(
       .references(() => drivers.id, { onDelete: 'cascade' }),
     lat: numeric('lat', { precision: 9, scale: 6, mode: 'number' }).notNull(),
     lng: numeric('lng', { precision: 9, scale: 6, mode: 'number' }).notNull(),
-    at: timestamp('at').defaultNow().notNull()
+    at: tstz('at').defaultNow().notNull()
   },
   (t) => [
     index('driver_locations_driver_idx').on(t.driverId),
@@ -880,14 +890,14 @@ export const deliveryOrders = pgTable(
     address: jsonb('address').$type<Address>().notNull().default({}),
     fee: money('fee').notNull().default(0),
     etaMin: integer('eta_min').notNull().default(30),
-    pickupAt: timestamp('pickup_at'),
-    pickedUpAt: timestamp('picked_up_at'),
-    arrivedAt: timestamp('arrived_at'),
-    deliveredAt: timestamp('delivered_at'),
-    cancelledAt: timestamp('cancelled_at'),
+    pickupAt: tstz('pickup_at'),
+    pickedUpAt: tstz('picked_up_at'),
+    arrivedAt: tstz('arrived_at'),
+    deliveredAt: tstz('delivered_at'),
+    cancelledAt: tstz('cancelled_at'),
     notes: text('notes'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('delivery_orders_order_idx').on(t.orderId),
@@ -907,8 +917,8 @@ export const driverAssignments = pgTable(
       .references(() => deliveryOrders.id, { onDelete: 'cascade' }),
     driverId: varchar('driver_id', { length: 30 }).references(() => drivers.id, { onDelete: 'set null' }),
     driverName: varchar('driver_name', { length: 255 }),
-    assignedAt: timestamp('assigned_at').defaultNow().notNull(),
-    unassignedAt: timestamp('unassigned_at'),
+    assignedAt: tstz('assigned_at').defaultNow().notNull(),
+    unassignedAt: tstz('unassigned_at'),
     reason: varchar('reason', { length: 50 })
   },
   (t) => [
@@ -932,7 +942,7 @@ export const returnsTable = pgTable(
     amount: money('amount').notNull().default(0),
     reason: text('reason'),
     status: varchar('status', { length: 20 }).notNull().default('pending'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [index('returns_merchant_idx').on(t.merchantId, t.orderId)]
 )
@@ -953,8 +963,8 @@ export const reviews = pgTable(
     title: varchar('title', { length: 255 }),
     body: text('body'),
     status: varchar('status', { length: 20 }).notNull().default('pending'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('reviews_product_customer_idx').on(t.productId, t.customerId),
@@ -976,7 +986,7 @@ export const auditLogs = pgTable(
     entityId: varchar('entity_id', { length: 30 }),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     ipAddress: varchar('ip_address', { length: 64 }),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
     index('audit_logs_merchant_created_idx').on(t.merchantId, t.createdAt),
@@ -996,7 +1006,7 @@ export const wishlistItems = pgTable(
     productId: varchar('product_id', { length: 30 })
       .notNull()
       .references(() => products.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
     uniqueIndex('wishlist_customer_product_idx').on(t.customerId, t.productId),
@@ -1023,7 +1033,7 @@ export const refunds = pgTable(
     idempotencyKey: varchar('idempotency_key', { length: 80 }),
     attemptCount: integer('attempt_count').notNull().default(1),
     lastError: text('last_error'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
     index('refunds_merchant_idx').on(t.merchantId, t.orderId),
@@ -1047,10 +1057,10 @@ export const coupons = pgTable(
     minSubtotal: money('min_subtotal').notNull().default(0),
     usageLimit: integer('usage_limit'),
     usedCount: integer('used_count').notNull().default(0),
-    startsAt: timestamp('starts_at'),
-    endsAt: timestamp('ends_at'),
+    startsAt: tstz('starts_at'),
+    endsAt: tstz('ends_at'),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('coupons_merchant_code_idx').on(t.merchantId, t.code)]
 )
@@ -1070,12 +1080,12 @@ export const promotions = pgTable(
       .$type<{ scope: 'all' | 'products' | 'category'; productIds?: string[]; categoryId?: string }>()
       .notNull()
       .default({ scope: 'all' }),
-    startsAt: timestamp('starts_at'),
-    endsAt: timestamp('ends_at'),
+    startsAt: tstz('starts_at'),
+    endsAt: tstz('ends_at'),
     usageLimit: integer('usage_limit'),
     usedCount: integer('used_count').notNull().default(0),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [index('promotions_merchant_idx').on(t.merchantId)]
 )
@@ -1092,7 +1102,7 @@ export const storeSettings = pgTable('store_settings', {
   currency: varchar('currency', { length: 10 }).notNull().default('USD'),
   timezone: varchar('timezone', { length: 100 }).notNull().default('UTC'),
   announcement: text('announcement').notNull().default(''),
-  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
 
 export const paymentSettings = pgTable('payment_settings', {
@@ -1104,7 +1114,7 @@ export const paymentSettings = pgTable('payment_settings', {
     .notNull()
     .default([]),
   currency: varchar('currency', { length: 10 }).notNull().default('USD'),
-  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
 
 /* ------------------------------ payments (BYOK) ----------------------------- */
@@ -1124,8 +1134,8 @@ export const paymentProviderConfigs = pgTable(
     country: varchar('country', { length: 5 }),
     // AES-256-GCM ciphertext of the credential map ({ key: value }) — never stored in plaintext
     credentials: text('credentials').notNull().default(''),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [primaryKey({ columns: [t.merchantId, t.provider] })]
 )
@@ -1144,8 +1154,8 @@ export const paymentTransactions = pgTable(
     amount: money('amount').notNull().default(0),
     currency: varchar('currency', { length: 10 }).notNull().default('USD'),
     raw: jsonb('raw'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     index('payment_transactions_order_idx').on(t.orderId),
@@ -1157,13 +1167,22 @@ export const webhookEvents = pgTable(
   'webhook_events',
   {
     id: id('id').primaryKey(),
+    /** Owning merchant (nullable for rows recorded before merchant scoping).
+     *  RLS confines tenant-role reads to their own merchant; NULL rows are
+     *  visible only to the admin connection. */
+    merchantId: varchar('merchant_id', { length: 30 }).references(() => merchants.id, {
+      onDelete: 'cascade'
+    }),
     provider: varchar('provider', { length: 30 }).notNull(),
     eventId: varchar('event_id', { length: 255 }).notNull(),
     payload: jsonb('payload'),
-    processedAt: timestamp('processed_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    processedAt: tstz('processed_at'),
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
-  (t) => [uniqueIndex('webhook_events_provider_event_idx').on(t.provider, t.eventId)]
+  (t) => [
+    uniqueIndex('webhook_events_provider_event_idx').on(t.provider, t.eventId),
+    index('webhook_events_merchant_idx').on(t.merchantId)
+  ]
 )
 
 export const shippingSettings = pgTable('shipping_settings', {
@@ -1183,7 +1202,7 @@ export const shippingSettings = pgTable('shipping_settings', {
     .notNull()
     .default([]),
   freeShippingThreshold: money('free_shipping_threshold').notNull().default(0),
-  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
 
 export const taxSettings = pgTable('tax_settings', {
@@ -1195,7 +1214,7 @@ export const taxSettings = pgTable('tax_settings', {
     .$type<Array<{ region: string; rate: number }>>()
     .notNull()
     .default([]),
-  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
 
 /* --------------------------------- visits --------------------------------- */
@@ -1205,7 +1224,7 @@ export const visits = pgTable(
   {
     id: id('id').primaryKey(),
     merchantId: merchantIdRef(),
-    date: timestamp('date').notNull(),
+    date: tstz('date').notNull(),
     channel: varchar('channel', { length: 20 }).notNull(),
     views: integer('views').notNull().default(0),
     cartAdds: integer('cart_adds').notNull().default(0),
@@ -1226,7 +1245,7 @@ export const notificationSettings = pgTable('notification_settings', {
   fromEmail: varchar('from_email', { length: 255 }),
   /** Per-template opt-outs; missing key = enabled */
   templates: jsonb('templates').$type<Record<string, boolean>>().notNull().default({}),
-  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
 
 export const EMAIL_TEMPLATE_IDS = [
@@ -1252,8 +1271,8 @@ export const emailLogs = pgTable(
     status: varchar('status', { length: 20 }).notNull().default('queued'),
     providerRef: varchar('provider_ref', { length: 255 }),
     error: text('error'),
-    sentAt: timestamp('sent_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    sentAt: tstz('sent_at'),
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
     index('email_logs_merchant_idx').on(t.merchantId, t.createdAt),
@@ -1267,14 +1286,23 @@ export const tokenBlacklist = pgTable(
   'token_blacklist',
   {
     id: id('id').primaryKey(),
+    /** Owning merchant when known (NULL for legacy rows). RLS hides NULL rows
+     *  from tenant connections; the admin connection (auth plugin) sees all. */
+    merchantId: varchar('merchant_id', { length: 30 }).references(() => merchants.id, {
+      onDelete: 'cascade'
+    }),
     userId: varchar('user_id', { length: 30 })
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     jti: varchar('jti', { length: 64 }).notNull(),
-    expiresAt: timestamp('expires_at').notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    expiresAt: tstz('expires_at').notNull(),
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
-  (t) => [uniqueIndex('token_blacklist_jti_idx').on(t.jti), index('token_blacklist_user_idx').on(t.userId)]
+  (t) => [
+    uniqueIndex('token_blacklist_jti_idx').on(t.jti),
+    index('token_blacklist_user_idx').on(t.userId),
+    index('token_blacklist_merchant_idx').on(t.merchantId)
+  ]
 )
 
 
@@ -1291,9 +1319,9 @@ export const webhookEndpoints = pgTable(
     enabled: boolean('enabled').notNull().default(true),
     events: jsonb('events').$type<string[]>().notNull().default([]),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date()),
-    lastDeliveryAt: timestamp('last_delivery_at')
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date()),
+    lastDeliveryAt: tstz('last_delivery_at')
   },
   (t) => [index('webhook_endpoints_merchant_idx').on(t.merchantId)]
 )
@@ -1314,9 +1342,9 @@ export const webhookDeliveries = pgTable(
     responseCode: integer('response_code'),
     responseBody: text('response_body'),
     lastError: text('last_error'),
-    nextRetryAt: timestamp('next_retry_at'),
-    sentAt: timestamp('sent_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    nextRetryAt: tstz('next_retry_at'),
+    sentAt: tstz('sent_at'),
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
     index('webhook_deliveries_merchant_status_idx').on(t.merchantId, t.status),
@@ -1338,11 +1366,11 @@ export const backgroundJobs = pgTable(
     attempts: integer('attempts').notNull().default(0),
     maxAttempts: integer('max_attempts').notNull().default(5),
     lastError: text('last_error'),
-    nextRetryAt: timestamp('next_retry_at'),
-    lockedUntil: timestamp('locked_until'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    completedAt: timestamp('completed_at'),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    nextRetryAt: tstz('next_retry_at'),
+    lockedUntil: tstz('locked_until'),
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    completedAt: tstz('completed_at'),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     index('background_jobs_merchant_type_idx').on(t.merchantId, t.type),
@@ -1367,11 +1395,11 @@ export const fulfillments = pgTable(
     trackingNumber: varchar('tracking_number', { length: 255 }),
     trackingUrl: varchar('tracking_url', { length: 1024 }),
     labelUrl: varchar('label_url', { length: 1024 }),
-    shippedAt: timestamp('shipped_at'),
-    deliveredAt: timestamp('delivered_at'),
+    shippedAt: tstz('shipped_at'),
+    deliveredAt: tstz('delivered_at'),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     index('fulfillments_merchant_order_idx').on(t.merchantId, t.orderId),
@@ -1402,8 +1430,8 @@ export const customerAddresses = pgTable(
     phone: varchar('phone', { length: 50 }),
     isDefaultShipping: boolean('is_default_shipping').notNull().default(false),
     isDefaultBilling: boolean('is_default_billing').notNull().default(false),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     index('customer_addresses_merchant_customer_idx').on(t.merchantId, t.customerId),
@@ -1424,19 +1452,20 @@ export const carts = pgTable(
     items: jsonb('items').notNull().default([]),
     status: varchar('status', { length: 20 }).notNull().default('active'),
     recoveryCode: varchar('recovery_code', { length: 100 }),
-    abandonedAt: timestamp('abandoned_at'),
+    abandonedAt: tstz('abandoned_at'),
     recoveredOrderId: varchar('recovered_order_id', { length: 30 }).references(() => orders.id, {
       onDelete: 'set null'
     }),
-    recoverySentAt: timestamp('recovery_sent_at'),
-    lastActivityAt: timestamp('last_activity_at').defaultNow().notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    recoverySentAt: tstz('recovery_sent_at'),
+    lastActivityAt: tstz('last_activity_at').defaultNow().notNull(),
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     index('carts_merchant_status_idx').on(t.merchantId, t.status),
     index('carts_customer_idx').on(t.customerId),
-    index('carts_abandoned_idx').on(t.abandonedAt)
+    index('carts_abandoned_idx').on(t.abandonedAt),
+    index('carts_recovery_code_idx').on(t.recoveryCode)
   ]
 )
 
@@ -1465,8 +1494,8 @@ export const invoices = pgTable(
     billingAddress: jsonb('billing_address').notNull().default({}),
     shippingAddress: jsonb('shipping_address').notNull().default({}),
     pdfUrl: varchar('pdf_url', { length: 1024 }),
-    invoiceDate: timestamp('invoice_date').defaultNow().notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    invoiceDate: tstz('invoice_date').defaultNow().notNull(),
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
     uniqueIndex('invoices_merchant_number_idx').on(t.merchantId, t.invoiceNumber),
@@ -1487,8 +1516,8 @@ export const warehouses = pgTable(
     address: jsonb('address').$type<Address>().notNull().default({}),
     isDefault: boolean('is_default').notNull().default(false),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('warehouses_merchant_code_idx').on(t.merchantId, t.code),
@@ -1508,7 +1537,7 @@ export const warehouseInventory = pgTable(
       .notNull()
       .references(() => productVariants.id, { onDelete: 'cascade' }),
     quantity: integer('quantity').notNull().default(0),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('warehouse_inventory_warehouse_variant_idx').on(t.warehouseId, t.variantId),
@@ -1537,8 +1566,8 @@ export const stockTransfers = pgTable(
       .references(() => productVariants.id, { onDelete: 'cascade' }),
     quantity: integer('quantity').notNull(),
     status: varchar('status', { length: 20 }).notNull().default('pending'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    completedAt: timestamp('completed_at')
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    completedAt: tstz('completed_at')
   },
   (t) => [index('stock_transfers_merchant_idx').on(t.merchantId)]
 )
@@ -1558,8 +1587,8 @@ export const suppliers = pgTable(
     taxId: varchar('tax_id', { length: 100 }),
     status: varchar('status', { length: 20 }).notNull().default('active'),
     notes: text('notes'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     index('suppliers_merchant_idx').on(t.merchantId),
@@ -1577,15 +1606,15 @@ export const purchaseOrders = pgTable(
       .notNull()
       .references(() => suppliers.id, { onDelete: 'restrict' }),
     status: varchar('status', { length: 20 }).notNull().default('draft'),
-    expectedAt: timestamp('expected_at'),
+    expectedAt: tstz('expected_at'),
     notes: text('notes'),
     // currency is inherited from the merchant; totals are snapshotted so cost
     // history survives later price changes
     subtotal: numeric('subtotal', { precision: 12, scale: 3, mode: 'number' }).notNull().default(0),
-    approvedAt: timestamp('approved_at'),
+    approvedAt: tstz('approved_at'),
     approvedBy: varchar('approved_by', { length: 30 }),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('purchase_orders_merchant_number_idx').on(t.merchantId, t.poNumber),
@@ -1628,7 +1657,7 @@ export const goodsReceipts = pgTable(
       .notNull()
       .references(() => warehouses.id, { onDelete: 'restrict' }),
     notes: text('notes'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdAt: tstz('created_at').defaultNow().notNull(),
     createdBy: varchar('created_by', { length: 30 })
   },
   (t) => [
@@ -1676,8 +1705,8 @@ export const billOfMaterials = pgTable(
     outputQuantity: integer('output_quantity').notNull().default(1),
     status: varchar('status', { length: 20 }).notNull().default('draft'),
     notes: text('notes'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     index('bom_merchant_idx').on(t.merchantId),
@@ -1717,11 +1746,11 @@ export const productionOrders = pgTable(
     // Number of BOM runs to execute.
     quantity: integer('quantity').notNull().default(1),
     notes: text('notes'),
-    startedAt: timestamp('started_at'),
-    completedAt: timestamp('completed_at'),
-    cancelledAt: timestamp('cancelled_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    startedAt: tstz('started_at'),
+    completedAt: tstz('completed_at'),
+    cancelledAt: tstz('cancelled_at'),
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [
     uniqueIndex('production_orders_merchant_number_idx').on(t.merchantId, t.productionNumber),
@@ -1762,8 +1791,8 @@ export const customerSegments = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     definition: jsonb('definition').notNull().default({}),
     customerCount: integer('customer_count').notNull().default(0),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [index('customer_segments_merchant_idx').on(t.merchantId)]
 )
@@ -1781,8 +1810,8 @@ export const loyaltyAccounts = pgTable(
     points: integer('points').notNull().default(0),
     lifetimePoints: integer('lifetime_points').notNull().default(0),
     tier: varchar('tier', { length: 30 }).notNull().default('standard'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [uniqueIndex('loyalty_accounts_merchant_customer_idx').on(t.merchantId, t.customerId)]
 )
@@ -1800,7 +1829,7 @@ export const loyaltyLedger = pgTable(
     balanceAfter: integer('balance_after').notNull(),
     reference: varchar('reference', { length: 255 }),
     meta: jsonb('meta').notNull().default({}),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
     index('loyalty_ledger_merchant_customer_idx').on(t.merchantId, t.customerId),
@@ -1818,8 +1847,8 @@ export const loyaltyTiers = pgTable(
     perks: jsonb('perks').notNull().default({}),
     isDefault: boolean('is_default').notNull().default(false),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [index('loyalty_tiers_merchant_idx').on(t.merchantId)]
 )
@@ -1835,8 +1864,8 @@ export const loyaltyEarningRules = pgTable(
     awardValue: integer('award_value').notNull().default(0),
     enabled: boolean('enabled').notNull().default(true),
     triggerCount: integer('trigger_count').notNull().default(0),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [index('loyalty_rules_merchant_idx').on(t.merchantId)]
 )
@@ -1852,8 +1881,8 @@ export const loyaltyRewards = pgTable(
     pointsCost: integer('points_cost').notNull().default(0),
     status: varchar('status', { length: 20 }).notNull().default('active'),
     stock: integer('stock'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [index('loyalty_rewards_merchant_status_idx').on(t.merchantId, t.status)]
 )
@@ -1870,7 +1899,7 @@ export const affiliates = pgTable(
     referralCode: varchar('referral_code', { length: 50 }).notNull(),
     commissionRate: numeric('commission_rate', { precision: 5, scale: 2 }).notNull().default(sql`0`),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('affiliates_merchant_code_idx').on(t.merchantId, t.referralCode)]
 )
@@ -1893,7 +1922,7 @@ export const referrals = pgTable(
     commissionAmount: money('commission_amount').notNull().default(0),
     commissionStatus: varchar('commission_status', { length: 20 }).notNull().default('pending'),
     source: varchar('source', { length: 20 }).notNull().default('click'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [index('referrals_merchant_affiliate_idx').on(t.merchantId, t.affiliateId)]
 )
@@ -1911,9 +1940,9 @@ export const contentPages = pgTable(
     status: varchar('status', { length: 20 }).notNull().default('draft'),
     metaTitle: varchar('meta_title', { length: 255 }),
     metaDescription: varchar('meta_description', { length: 500 }),
-    publishedAt: timestamp('published_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    publishedAt: tstz('published_at'),
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [uniqueIndex('content_pages_merchant_slug_idx').on(t.merchantId, t.slug)]
 )
@@ -1930,12 +1959,12 @@ export const apiKeys = pgTable(
     secretHash: varchar('secret_hash', { length: 255 }).notNull(),
     scopes: jsonb('scopes').$type<string[]>().notNull().default([]),
     status: varchar('status', { length: 20 }).notNull().default('active'),
-    lastUsedAt: timestamp('last_used_at'),
-    expiresAt: timestamp('expires_at'),
-    revokedAt: timestamp('revoked_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    lastUsedAt: tstz('last_used_at'),
+    expiresAt: tstz('expires_at'),
+    revokedAt: tstz('revoked_at'),
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
-  (t) => [index('api_keys_merchant_idx').on(t.merchantId)]
+  (t) => [index('api_keys_merchant_idx').on(t.merchantId), index('api_keys_prefix_idx').on(t.keyPrefix)]
 )
 
 /* --------------------------- password reset / verification --------------------------- */
@@ -1949,11 +1978,11 @@ export const passwordResetTokens = pgTable(
       .notNull()
       .references(() => customers.id, { onDelete: 'cascade' }),
     tokenHash: varchar('token_hash', { length: 255 }).notNull(),
-    expiresAt: timestamp('expires_at').notNull(),
-    usedAt: timestamp('used_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    expiresAt: tstz('expires_at').notNull(),
+    usedAt: tstz('used_at'),
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
-  (t) => [index('password_reset_tokens_merchant_customer_idx').on(t.merchantId, t.customerId)]
+  (t) => [index('password_reset_tokens_merchant_customer_idx').on(t.merchantId, t.customerId), index('password_reset_tokens_hash_idx').on(t.tokenHash)]
 )
 
 export const verificationTokens = pgTable(
@@ -1966,11 +1995,11 @@ export const verificationTokens = pgTable(
       .references(() => customers.id, { onDelete: 'cascade' }),
     tokenHash: varchar('token_hash', { length: 255 }).notNull(),
     type: varchar('type', { length: 30 }).notNull().default('email_verification'),
-    expiresAt: timestamp('expires_at').notNull(),
-    usedAt: timestamp('used_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    expiresAt: tstz('expires_at').notNull(),
+    usedAt: tstz('used_at'),
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
-  (t) => [index('verification_tokens_merchant_customer_idx').on(t.merchantId, t.customerId)]
+  (t) => [index('verification_tokens_merchant_customer_idx').on(t.merchantId, t.customerId), index('verification_tokens_hash_idx').on(t.tokenHash)]
 )
 
 /* ------------------------------ settings additions ------------------------------ */
@@ -1991,7 +2020,7 @@ export const checkoutSettings = pgTable('checkout_settings', {
     .$type<CheckoutFieldRequirements>()
     .notNull()
     .default(DEFAULT_CHECKOUT_REQUIRED_FIELDS),
-  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
 
 export const invoiceSettings = pgTable('invoice_settings', {
@@ -2018,7 +2047,7 @@ export const invoiceSettings = pgTable('invoice_settings', {
   /** 'standard' | 'compact' — layout control for the PDF renderer. */
   layout: varchar('layout', { length: 20 }).notNull().default('standard'),
   nextNumber: integer('next_number').notNull().default(1),
-  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
 
 export const themeConfigs = pgTable('theme_configs', {
@@ -2033,7 +2062,7 @@ export const themeConfigs = pgTable('theme_configs', {
   header: jsonb('header').notNull().default({}),
   footer: jsonb('footer').notNull().default({}),
   config: jsonb('config').notNull().default({}),
-  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
 
 export const codRules = pgTable('cod_rules', {
@@ -2046,7 +2075,7 @@ export const codRules = pgTable('cod_rules', {
   maxOrderValue: money('max_order_value'),
   codFee: money('cod_fee').notNull().default(0),
   enabled: boolean('enabled').notNull().default(true),
-  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
 
 export const carriers = pgTable(
@@ -2059,8 +2088,8 @@ export const carriers = pgTable(
     enabled: boolean('enabled').notNull().default(true),
     credentials: jsonb('credentials').notNull().default({}),
     config: jsonb('config').notNull().default({}),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [uniqueIndex('carriers_merchant_code_idx').on(t.merchantId, t.code)]
 )
@@ -2082,10 +2111,10 @@ export const campaigns = pgTable(
     openedCount: integer('opened_count').notNull().default(0),
     clickedCount: integer('clicked_count').notNull().default(0),
     convertedCount: integer('converted_count').notNull().default(0),
-    scheduledAt: timestamp('scheduled_at'),
-    sentAt: timestamp('sent_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+    scheduledAt: tstz('scheduled_at'),
+    sentAt: tstz('sent_at'),
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },
   (t) => [index('campaigns_merchant_status_idx').on(t.merchantId, t.status)]
 )
@@ -2099,7 +2128,7 @@ export const customerTags = pgTable(
       .notNull()
       .references(() => customers.id, { onDelete: 'cascade' }),
     tag: varchar('tag', { length: 100 }).notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull()
+    createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
     uniqueIndex('customer_tags_merchant_customer_tag_idx').on(t.merchantId, t.customerId, t.tag)

@@ -380,7 +380,7 @@
 										<li class="rounded-lg border border-outline-variant bg-surface-container-lowest p-3">
 											<div class="flex items-center justify-between gap-2">
 												<p class="font-medium text-on-surface">
-													{o.name}{o.nameAr ? <span class="text-secondary"> · {o.nameAr}</span> : ''}
+													{o.name}{#if o.nameAr}<span class="text-secondary"> · {o.nameAr}</span>{/if}
 												</p>
 												<div class="flex gap-1">
 													<Badge label={o.required ? 'Required' : 'Optional'} />
@@ -474,7 +474,7 @@
 				</button>
 			</div>
 
-			{/* svelte-ignore a11y_label_has_associated_control */}
+			<!-- svelte-ignore a11y_label_has_associated_control -->
 			<div class="flex justify-end gap-2 pt-2">
 				<Button variant="secondary" onclick={() => (variantModal = false)}>Cancel</Button>
 				<Button type="submit" loading={vSaving}>Save variant</Button>
@@ -500,12 +500,12 @@
 					</div>
 					<div class="mt-3 grid gap-3 sm:grid-cols-2">
 						<div>
-							<label class="mb-1 block text-xs font-medium text-secondary">Name</label>
-							<input class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" placeholder="Size" bind:value={optionDrafts[i].name} />
+							<label for="opt-name-{i}" class="mb-1 block text-xs font-medium text-secondary">Name</label>
+							<input id="opt-name-{i}" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" placeholder="Size" bind:value={optionDrafts[i].name} />
 						</div>
 						<div>
-							<label class="mb-1 block text-xs font-medium text-secondary">Arabic name</label>
-							<input class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" placeholder="المقاس" bind:value={optionDrafts[i].nameAr} />
+							<label for="opt-name-ar-{i}" class="mb-1 block text-xs font-medium text-secondary">Arabic name</label>
+							<input id="opt-name-ar-{i}" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" placeholder="المقاس" bind:value={optionDrafts[i].nameAr} />
 						</div>
 					</div>
 					<div class="mt-3 flex flex-wrap items-center gap-4 text-sm">
@@ -532,7 +532,7 @@
 								<input class="w-full rounded-lg border border-outline-variant px-2 py-1.5 text-sm" placeholder="S" bind:value={optionDrafts[i].values[j].value} />
 								<input class="w-full rounded-lg border border-outline-variant px-2 py-1.5 text-sm" placeholder="صغير" bind:value={optionDrafts[i].values[j].valueAr} />
 								<div class="relative">
-									<span class="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-secondary">{product.currency ?? ''}</span>
+									<span class="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-secondary">{session.merchant?.currency ?? ''}</span>
 									<input class="w-full rounded-lg border border-outline-variant py-1.5 pl-8 pr-2 text-sm" type="number" step="0.01" placeholder="Price adj." bind:value={optionDrafts[i].values[j].priceAdjustment} />
 								</div>
 								{#if optionDrafts[i].perValueQuantity}

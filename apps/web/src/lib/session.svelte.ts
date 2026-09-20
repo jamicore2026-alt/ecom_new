@@ -2,8 +2,6 @@ import {
 	fetchMe,
 	login,
 	logout,
-	getAccessToken,
-	setAccessToken,
 	getSelectedOutletId,
 	setSelectedOutletId
 } from './api'
@@ -109,14 +107,16 @@ export const session = {
 		if (outletId === null) {
 			selectedOutletId = null
 			setSelectedOutletId(null)
+			if (typeof window !== 'undefined') window.location.reload()
 			return
 		}
 		if (!allowedOutlets.some((o) => o.id === outletId)) return
 		selectedOutletId = outletId
 		setSelectedOutletId(outletId)
+		if (typeof window !== 'undefined') window.location.reload()
 	},
 	get isAuthenticated() {
-		return !!user && !!getAccessToken()
+		return !!user
 	},
 	get isAdmin() {
 		return !!user && currentIsAdmin()
@@ -127,10 +127,6 @@ export const session = {
 		return grantedPermissions().includes(perm)
 	},
 	async bootstrap() {
-		if (!getAccessToken()) {
-			ready = true
-			return
-		}
 		bootError = null
 		try {
 			const me = await fetchMe()
@@ -162,7 +158,6 @@ export const session = {
 	},
 	async logout() {
 		await logout()
-		setAccessToken(null)
 		setSelectedOutletId(null)
 		user = null
 		merchant = null
@@ -172,5 +167,3 @@ export const session = {
 		selectedOutletId = null
 	}
 }
-
-export { setAccessToken }

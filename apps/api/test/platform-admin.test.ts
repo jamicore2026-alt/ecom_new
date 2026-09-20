@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { hash } from 'bcryptjs'
 import { app } from '../src/app'
 import { db } from '../src/database/client'
-import { merchants } from '../src/database/schema'
+import { merchants, users } from '../src/database/schema'
 import { eq } from 'drizzle-orm'
 import { ensurePlatformAdmin } from '../src/database/seed-platform-admin'
 import { AuditService } from '../src/modules/audit-logs/service'
@@ -172,6 +173,69 @@ describe('platform status changes', () => {
     // machine (not the UI) is the source of truth.
     expect(res.status).toBe(400)
     expect((await res.json()).error.code).toBe('ILLEGAL_TRANSITION')
+  })
+})
+
+describe('platform offboarding', () => {
+  it('cancelling disables all staff and archiving stamps deleted_at (no hard delete)', async () => {
+    const stamp = Date.now()
+    const [doomed] = await db
+      .insert(merchants)
+      .values({
+        name: `Doomed ${stamp}`,
+        slug: `doomed-${stamp}`,
+        email: `doomed-${stamp}@jamicore.com`,
+        currency: 'USD',
+        timezone: 'UTC',
+        status: 'active'
+      })
+      .returning()
+    const [staff] = await db
+      .insert(users)
+      .values({
+        merchantId: doomed.id,
+        name: 'Doomed Staff',
+        email: `doomed-staff-${stamp}@jamicore.com`,
+        passwordHash: await hash('password123', 4),
+        role: 'staff',
+        permissions: [],
+        status: 'active'
+      })
+      .returning()
+
+    const cancel = await base(`/api/platform/merchants/${doomed.id}/status`, {
+      ...json({ to: 'cancelled', reason: 'merchant requested closure' }),
+      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+    })
+    expect(cancel.status).toBe(200)
+    expect((await cancel.json()).data.merchant.usersDisabled).toBe(1)
+
+    const [disabledStaff] = await db.select().from(users).where(eq(users.id, staff.id))
+    expect(disabledStaff.status).toBe('disabled')
+
+    const archive = await base(`/api/platform/merchants/${doomed.id}/status`, {
+      ...json({ to: 'archived', reason: 'retention window elapsed' }),
+      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+    })
+    expect(archive.status).toBe(200)
+
+    const [archived] = await db.select().from(merchants).where(eq(merchants.id, doomed.id))
+    // Soft-delete only: the row (and its orders/invoices) still exists.
+    expect(archived).toBeTruthy()
+    expect(archived.status).toBe('archived')
+    expect(archived.deletedAt).toBeInstanceOf(Date)
+
+    const detail = await base(`/api/platform/merchants/${doomed.id}`, {
+      headers: { cookie: sessionCookie }
+    })
+    expect((await detail.json()).data.merchant.deletedAt).toBeTruthy()
+
+    // Disabled staff can no longer sign in.
+    const login = await base(
+      '/api/auth/login',
+      json({ email: `doomed-staff-${stamp}@jamicore.com`, password: 'password123' })
+    )
+    expect(login.status).toBe(403)
   })
 })
 

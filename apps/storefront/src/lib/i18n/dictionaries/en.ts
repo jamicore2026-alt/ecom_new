@@ -240,6 +240,7 @@ export const en: Record<string, string> = {
 	'accountAddrs.setDefaultShipping': 'Make default shipping',
 	'accountAddrs.setDefaultBilling': 'Make default billing',
 	'accountAddrs.line1Required': 'Enter the address line',
+	'accountAddrs.selectManual': 'Enter a new address manually',
 	'accountAddrs.countryRequired': 'Enter a country code (e.g. US)',
 	'accountAddrs.defaultShippingUpdated': 'Default shipping updated.',
 	'accountAddrs.defaultBillingUpdated': 'Default billing updated.',
@@ -320,6 +321,15 @@ export const en: Record<string, string> = {
 
 	// Account placeholders
 	'account.orderNumberPlaceholder': 'e.g. #W-XXXXXXXX-XXXXXXXX',
+
+	// Guest order lookup
+	'orders.lookupTitle': 'Track your order',
+	'orders.lookupBody': 'Enter the order number from your confirmation email plus the email you checked out with.',
+	'orders.lookupOrderNumber': 'Order number',
+	'orders.lookupEmail': 'Email',
+	'orders.lookupSubmit': 'Track order',
+	'orders.lookupNotFound': 'No order matches that number and email.',
+	'orders.lookupInvalid': 'Enter an order number and a valid email.',
 
 	// Common
 	'common.loading': 'Loading…',

@@ -149,11 +149,27 @@ export const pruneBlacklist = async (): Promise<number> => {
 export const authPlugin = new Elysia({ name: 'auth' })
   .use(accessJwt)
   .use(refreshJwt)
-  .derive({ as: 'scoped' }, async ({ accessJwt, headers }): Promise<{ auth: AuthContext }> => {
-    const token = headers.authorization?.startsWith('Bearer ')
+  .derive({ as: 'scoped' }, async ({ accessJwt, headers, cookie, request }): Promise<{ auth: AuthContext }> => {
+    const bearer = headers.authorization?.startsWith('Bearer ')
       ? headers.authorization.slice(7)
       : undefined
+    // Browser dashboard flow: httpOnly md.access cookie. Bearer stays for API
+    // clients and tests.
+    const cookieToken = (cookie as Record<string, { value?: string } | undefined>)['md.access']?.value
+    const token = bearer ?? cookieToken
     if (!token) throw unauthorized()
+
+    if (!bearer && cookieToken) {
+      // Double-submit CSRF for cookie-authenticated state-changing requests.
+      const method = request.method.toUpperCase()
+      if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+        const csrfCookie = (cookie as Record<string, { value?: string } | undefined>)['md.csrf']?.value
+        const csrfHeader = headers['x-csrf-token']
+        if (!csrfCookie || !csrfHeader || csrfHeader !== csrfCookie) {
+          throw forbidden('Invalid CSRF token')
+        }
+      }
+    }
 
     const payload = await accessJwt.verify(token)
     if (!payload || !payload.sub || payload.type !== 'access') {

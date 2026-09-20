@@ -30,12 +30,14 @@
     "drizzle-orm": "^0.45.2",
     "drizzle-typebox": "^0.1.1",
     "elysia": "^1.2.0",
+    "pdfkit": "^0.20.2",
     "postgres": "^3.4.5"
   },
   "devDependencies": {
     "@elysiajs/eden": "^1.2.0",
     "@types/bcryptjs": "2.4.6",
     "@types/bun": "^1.1.0",
+    "@types/pdfkit": "^0.17.6",
     "drizzle-kit": "^0.31.10",
     "typescript": "^5.7.0"
   }

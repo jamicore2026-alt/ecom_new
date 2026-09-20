@@ -15,6 +15,27 @@ export const merchantBody = t.Object({
   country: t.Optional(t.Nullable(t.String({ minLength: 2, maxLength: 3 })))
 })
 
+export const invoiceSettingsBody = t.Object({
+  prefix: t.Optional(t.String({ minLength: 1, maxLength: 50 })),
+  logo: t.Optional(t.Nullable(t.String({ maxLength: 1024 }))),
+  businessName: t.Optional(t.Nullable(t.String({ maxLength: 255 }))),
+  address: t.Optional(addressSchema),
+  phone: t.Optional(t.Nullable(t.String({ maxLength: 50 }))),
+  email: t.Optional(t.Nullable(t.String({ maxLength: 255 }))),
+  taxLabel: t.Optional(t.Nullable(t.String({ maxLength: 100 }))),
+  taxNumber: t.Optional(t.Nullable(t.String({ maxLength: 100 }))),
+  headerNote: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
+  footerNote: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
+  displayFields: t.Optional(
+    t.Object({
+      columns: t.Optional(t.Array(t.String())),
+      showDiscount: t.Optional(t.Boolean()),
+      showTax: t.Optional(t.Boolean())
+    })
+  ),
+  layout: t.Optional(t.Union([t.Literal('standard'), t.Literal('compact')]))
+})
+
 export const storeBody = t.Object({
   name: t.String({ minLength: 1 }),
   logo: t.Optional(t.String()),

@@ -10,6 +10,8 @@ export const GET: RequestHandler = async ({ url, setHeaders }) => {
 		'Disallow: /*/cart',
 		'Disallow: /*/checkout',
 		'Disallow: /*/orders',
+		'Disallow: /*/account',
+		'Disallow: /*/wishlist',
 		'',
 		`Sitemap: ${base}/sitemap.xml`,
 		''

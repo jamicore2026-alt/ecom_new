@@ -6,6 +6,7 @@ import {
   carrierBody,
   checkoutBody,
   codRulesBody,
+  invoiceSettingsBody,
   merchantBody,
   notificationsBody,
   paymentBody,
@@ -74,6 +75,16 @@ export const settingsModule = new Elysia({ prefix: '/api' })
       .put('/checkout', async ({ body, auth }) => SettingsService.updateCheckoutSettings(auth.db, auth.merchant.id, body), {
         body: checkoutBody
       })
+      .get('/invoice', async ({ auth }) => SettingsService.getInvoiceSettings(auth.db, auth.merchant.id))
+      .put('/invoice', async ({ body, auth, request }) => {
+        const result = await SettingsService.updateInvoiceSettings(auth.db, auth.merchant.id, body)
+        await auditFromRequest(auth, request, {
+          action: 'invoice.settings.update',
+          entityType: 'invoice_settings',
+          entityId: auth.merchant.id
+        })
+        return result
+      }, { body: invoiceSettingsBody })
       .get('/serviceability/:pincode', async ({ auth, params }) =>
         SettingsService.checkServiceability(auth.db, auth.merchant.id, params.pincode)
       )

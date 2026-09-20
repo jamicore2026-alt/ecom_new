@@ -43,7 +43,7 @@
 					onerror={handleImageError}
 				/>
 			{:else}
-				<img src="/logo.jpg" alt={store.settings.name} class="h-9 w-9 rounded-full object-cover" />
+				<img src="/logo.jpg" alt={store.settings.name} class="h-9 w-9 rounded-full object-cover" onerror={handleImageError} />
 			{/if}
 			<span class="truncate text-lg font-semibold tracking-tight text-neutral-900">
 				{store.settings.name}
@@ -57,7 +57,7 @@
 				<div class="group relative">
 					<button class="inline-flex min-h-11 cursor-pointer items-center hover:text-neutral-900">{t('navigation.categories')}</button>
 					<div
-						class="invisible absolute left-0 top-full z-50 w-56 rounded-lg border border-neutral-200 bg-white py-2 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100"
+						class="invisible absolute start-0 top-full z-50 w-56 rounded-lg border border-neutral-200 bg-white py-2 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100"
 					>
 						{#each categories as cat}
 							<a

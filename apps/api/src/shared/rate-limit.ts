@@ -30,7 +30,10 @@ const RULES: Rule[] = [
   { test: (p) => p.endsWith('/sync'), max: 30 },
   { test: (p) => p.endsWith('/events'), max: 60 },
   { test: (p) => p.startsWith('/api/webhooks/'), max: 240 },
-  { test: (p, m) => m === 'GET' && /^\/api\/store\/[^/]+\/(products|categories|search)/.test(p), max: 60 }
+  { test: (p, m) => m === 'GET' && /^\/api\/store\/[^/]+\/(products|categories|search)/.test(p), max: 60 },
+  // Default-deny: every other mutating API call gets a baseline budget so no
+  // write endpoint is unlimited. Must stay LAST — first match wins.
+  { test: (p, m) => p.startsWith('/api/') && (m === 'POST' || m === 'PUT' || m === 'PATCH' || m === 'DELETE'), max: 600 }
 ]
 
 class MemoryCounterStore implements CounterStore {

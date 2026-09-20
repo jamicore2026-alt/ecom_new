@@ -775,6 +775,9 @@
 					<a href={`/${slug}/account/forgot`} class="block text-center text-sm font-medium text-brand-600 hover:text-brand-700">
 						{t('account.forgot.title')}
 					</a>
+					<a href={`/${slug}/orders/lookup`} class="block text-center text-sm font-medium text-brand-600 hover:text-brand-700">
+						{t('orders.lookupTitle')}
+					</a>
 				{/if}
 				{#if mode === 'register'}
 					<p class="text-center text-xs text-neutral-400">

@@ -9,9 +9,30 @@ import { badRequest, notFound } from '../../shared/errors'
 import { ok } from '../../shared/response'
 import { OrdersService } from '../orders/service'
 
-export const webhooksModule = new Elysia({ prefix: '/api', name: 'webhooks' }).post(
+export const webhooksModule = new Elysia({ prefix: '/api', name: 'webhooks' })
+  // Capture the raw body BEFORE parsing so adapters can verify raw-body HMAC
+  // signatures. Elysia consumes the request stream during its own parse phase,
+  // so without this hook the exact bytes are unrecoverable downstream.
+  .onParse(async ({ request }) => {
+    const text = await request.text()
+    ;(request as unknown as { rawBody?: string }).rawBody = text
+    if (!text) return null
+    const ct = request.headers.get('content-type') ?? ''
+    if (!ct.includes('form') && !ct.includes('multipart')) {
+      try {
+        return JSON.parse(text)
+      } catch {
+        return text
+      }
+    }
+    if (ct.includes('x-www-form-urlencoded')) {
+      return Object.fromEntries(new URLSearchParams(text))
+    }
+    return text
+  })
+  .post(
   '/webhooks/:provider/:slug',
-  async ({ params, query, body, headers }) => {
+  async ({ params, query, body, headers, request }) => {
     const [merchant] = await db
       .select()
       .from(merchants)
@@ -45,13 +66,15 @@ export const webhooksModule = new Elysia({ prefix: '/api', name: 'webhooks' }).p
     const result = await adapter.verifyCallback(config, {
       query,
       body,
-      headers
+      headers,
+      rawBody: (request as unknown as { rawBody?: string }).rawBody
     })
 
     // Idempotency — the same provider event must only be applied once.
     const inserted = await db
       .insert(webhookEvents)
       .values({
+        merchantId: merchant.id,
         provider: params.provider,
         eventId: result.eventId.slice(0, 255),
         payload: body as object | null

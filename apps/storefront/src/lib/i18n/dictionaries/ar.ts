@@ -240,6 +240,7 @@ export const ar: Record<string, string> = {
 	'accountAddrs.setDefaultShipping': 'اجعله عنوان الشحن الافتراضي',
 	'accountAddrs.setDefaultBilling': 'اجعله عنوان الفوترة الافتراضي',
 	'accountAddrs.line1Required': 'أدخل سطر العنوان',
+	'accountAddrs.selectManual': 'إدخال عنوان جديد يدوياً',
 	'accountAddrs.countryRequired': 'أدخل رمز الدولة (مثل SA)',
 	'accountAddrs.defaultShippingUpdated': 'تم تحديث عنوان الشحن الافتراضي.',
 	'accountAddrs.defaultBillingUpdated': 'تم تحديث عنوان الفوترة الافتراضي.',
@@ -320,6 +321,15 @@ export const ar: Record<string, string> = {
 
 	// Account placeholders
 	'account.orderNumberPlaceholder': 'مثال: #W-XXXXXXXX-XXXXXXXX',
+
+	// Guest order lookup
+	'orders.lookupTitle': 'تتبع طلبك',
+	'orders.lookupBody': 'أدخل رقم الطلب من بريد التأكيد مع البريد الإلكتروني المستخدم عند الشراء.',
+	'orders.lookupOrderNumber': 'رقم الطلب',
+	'orders.lookupEmail': 'البريد الإلكتروني',
+	'orders.lookupSubmit': 'تتبع الطلب',
+	'orders.lookupNotFound': 'لا يوجد طلب يطابق هذا الرقم والبريد.',
+	'orders.lookupInvalid': 'أدخل رقم الطلب وبريداً إلكترونياً صالحاً.',
 
 	// Common
 	'common.loading': 'جارٍ التحميل…',

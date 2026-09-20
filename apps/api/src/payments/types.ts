@@ -52,6 +52,10 @@ export interface CallbackVerifyInput {
   query: Record<string, string>
   body: unknown
   headers: Record<string, string | undefined>
+  /** Raw request text BEFORE parsing — required for raw-body HMAC signatures
+   *  (Stripe-style). Always populated by the webhook route; adapters that need
+   *  it must prefer it over re-serializing `body`. */
+  rawBody?: string
   /** Server-resolved provider reference for the order (sync flow) — preferred over client payload. */
   providerRef?: string
 }

@@ -4,14 +4,40 @@ import { AuthService } from './service'
 import { loginBody, refreshBody, logoutBody, tokenPair, meResponse } from './model'
 import { unauthorized } from '../../shared/errors'
 import { createId } from '@paralleldrive/cuid2'
+import { randomBytes } from 'node:crypto'
 import { auditFromRequest } from '../audit-logs'
 
 export const ACCESS_TOKEN_TTL = 60 * 60 // 1 hour
 export const REFRESH_TOKEN_TTL = 60 * 60 * 24 * 7 // 7 days
 
 export const REFRESH_COOKIE = 'md.refresh'
+/** httpOnly access-token cookie (browser dashboard flow). Bearer header stays
+ *  supported for API clients and tests. */
+export const ACCESS_COOKIE = 'md.access'
+/** Readable double-submit CSRF cookie paired with md.access. */
+export const CSRF_COOKIE = 'md.csrf'
 
-const cookieSchema = t.Cookie({ [REFRESH_COOKIE]: t.Optional(t.String()) })
+const cookieSchema = t.Cookie({
+  [REFRESH_COOKIE]: t.Optional(t.String()),
+  [ACCESS_COOKIE]: t.Optional(t.String()),
+  [CSRF_COOKIE]: t.Optional(t.String())
+})
+
+const accessCookieOptions = {
+  httpOnly: true,
+  sameSite: 'lax' as const,
+  secure: process.env.NODE_ENV === 'production',
+  path: '/',
+  maxAge: ACCESS_TOKEN_TTL
+}
+
+const csrfCookieOptions = {
+  httpOnly: false,
+  sameSite: 'lax' as const,
+  secure: process.env.NODE_ENV === 'production',
+  path: '/',
+  maxAge: REFRESH_TOKEN_TTL
+}
 
 const refreshCookieOptions = {
   httpOnly: true,
@@ -62,6 +88,11 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
       })
 
       cookie[REFRESH_COOKIE]?.set({ value: refreshToken, ...refreshCookieOptions })
+      // Browser flow: httpOnly access cookie + readable double-submit CSRF
+      // cookie. JSON tokens stay in the body for non-browser API clients.
+      const csrfPair = randomBytes(32).toString('hex')
+      cookie[ACCESS_COOKIE]?.set({ value: accessToken, ...accessCookieOptions })
+      cookie[CSRF_COOKIE]?.set({ value: csrfPair, ...csrfCookieOptions })
 
       // CSRF token: hash of the refresh token's jti — the client must send this
       // back in X-CSRF-Token header on refresh/logout to prove same-origin.
@@ -83,6 +114,7 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
   .post(
     '/refresh',
     async ({ body, accessJwt, refreshJwt, cookie, headers }) => {
+      const fromCookie = !body.refreshToken && !!cookie[REFRESH_COOKIE]?.value
       const token = body.refreshToken ?? cookie[REFRESH_COOKIE]?.value ?? ''
       if (!token) throw unauthorized('Invalid refresh token')
 
@@ -93,8 +125,13 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
 
       // CSRF check: X-CSRF-Token must match hash of the refresh token's jti.
       // This prevents same-site form-based CSRF attacks on the refresh endpoint.
+      // Required when the token comes from the cookie (browser flow); optional
+      // for body-token callers (bearer-style API clients).
       const csrfHeader = headers['x-csrf-token']
-      if (csrfHeader && csrfHeader !== hashToken(payload.jti)) {
+      if (fromCookie && csrfHeader !== hashToken(payload.jti)) {
+        throw unauthorized('Invalid CSRF token')
+      }
+      if (!fromCookie && csrfHeader && csrfHeader !== hashToken(payload.jti)) {
         throw unauthorized('Invalid CSRF token')
       }
 
@@ -125,6 +162,9 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
 
       // Rotation complete — the new pair is signed above with a fresh jti.
       cookie[REFRESH_COOKIE]?.set({ value: newRefreshToken, ...refreshCookieOptions })
+      const newCsrfPair = randomBytes(32).toString('hex')
+      cookie[ACCESS_COOKIE]?.set({ value: accessToken, ...accessCookieOptions })
+      cookie[CSRF_COOKIE]?.set({ value: newCsrfPair, ...csrfCookieOptions })
 
       const csrfToken = hashToken(jti)
 
@@ -153,6 +193,8 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
         }
       }
       cookie[REFRESH_COOKIE]?.set(expireRefreshCookie)
+      cookie[ACCESS_COOKIE]?.set({ ...expireRefreshCookie })
+      cookie[CSRF_COOKIE]?.set({ ...expireRefreshCookie, httpOnly: false })
       return { success: true, data: { message: 'Signed out successfully' } }
     },
     { body: t.Optional(logoutBody), cookie: cookieSchema }

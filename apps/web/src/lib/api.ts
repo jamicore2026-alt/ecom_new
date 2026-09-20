@@ -1,23 +1,42 @@
 import { browser } from '$app/environment'
 import type { ApiErrorBody, AuthResponse, MeResponse } from './types'
 
-// NOTE: Access tokens are stored in localStorage for SPA convenience.
-// This means any XSS vulnerability in the dashboard would expose the token.
-// The refresh token is httpOnly+SameSite=Lax cookie (set by the API), so
-// session hijacking via XSS is limited to the access token lifetime (1 hour).
-// TODO: Consider migrating to httpOnly cookie-based auth for defense-in-depth.
-const ACCESS_KEY = 'md.access'
+// Cookie-based auth: the API sets httpOnly `md.access` (access JWT) and
+// readable `md.csrf` (double-submit random hex) cookies on login/refresh.
+// Same-origin relative /api fetches send cookies automatically, so we never
+// store the access token in JS. The refresh CSRF token (`csrfToken` from the
+// last login/refresh JSON body, a hash of the refresh jti) is kept in memory
+// + localStorage under a distinct key and sent as X-CSRF-Token on refresh.
 const OUTLET_KEY = 'md.outlet'
+const REFRESH_CSRF_KEY = 'md.refresh-csrf'
 
-export function getAccessToken(): string | null {
+let refreshCsrfMemory: string | null = null
+
+export function getRefreshCsrf(): string | null {
+	if (refreshCsrfMemory) return refreshCsrfMemory
 	if (!browser) return null
-	return localStorage.getItem(ACCESS_KEY)
+	return localStorage.getItem(REFRESH_CSRF_KEY)
 }
 
-export function setAccessToken(token: string | null) {
+export function setRefreshCsrf(token: string | null) {
+	refreshCsrfMemory = token
 	if (!browser) return
-	if (token) localStorage.setItem(ACCESS_KEY, token)
-	else localStorage.removeItem(ACCESS_KEY)
+	if (token) localStorage.setItem(REFRESH_CSRF_KEY, token)
+	else localStorage.removeItem(REFRESH_CSRF_KEY)
+}
+
+/** Read the readable `md.csrf` double-submit cookie value. */
+export function getCsrfCookie(): string | null {
+	if (!browser) return null
+	const parts = document.cookie.split(';')
+	for (const part of parts) {
+		const idx = part.indexOf('=')
+		if (idx < 0) continue
+		if (part.slice(0, idx).trim() === 'md.csrf') {
+			return decodeURIComponent(part.slice(idx + 1).trim()) || null
+		}
+	}
+	return null
 }
 
 export function getSelectedOutletId(): string | null {
@@ -31,8 +50,18 @@ export function setSelectedOutletId(outletId: string | null) {
 	else localStorage.removeItem(OUTLET_KEY)
 }
 
+/** @deprecated Cookie auth no longer uses localStorage access tokens. Kept as no-op for compat. */
+export function getAccessToken(): string | null {
+	return null
+}
+
+/** @deprecated No-op — access token lives in the httpOnly `md.access` cookie. */
+export function setAccessToken(_token: string | null) {
+	// no-op
+}
+
 export function clearTokens() {
-	setAccessToken(null)
+	setRefreshCsrf(null)
 }
 
 export class ApiError extends Error {
@@ -51,10 +80,17 @@ export class ApiError extends Error {
 
 let refreshPromise: Promise<void> | null = null
 
+type AuthDataWithCsrf = AuthResponse['data'] & { csrfToken?: string }
+
 async function performRefresh(): Promise<void> {
+	const headers: Record<string, string> = { 'content-type': 'application/json' }
+	const refreshCsrf = getRefreshCsrf()
+	// Cookie-refresh callers MUST send the csrfToken from the last
+	// login/refresh JSON body as X-CSRF-Token.
+	if (refreshCsrf) headers['x-csrf-token'] = refreshCsrf
 	const res = await fetch('/api/auth/refresh', {
 		method: 'POST',
-		headers: { 'content-type': 'application/json' },
+		headers,
 		body: JSON.stringify({})
 	})
 	const body = (await res.json().catch(() => null)) as AuthResponse | ApiErrorBody | null
@@ -64,7 +100,8 @@ async function performRefresh(): Promise<void> {
 			res.status
 		)
 	}
-	setAccessToken(body.data.accessToken)
+	const data = (body as AuthResponse).data as AuthDataWithCsrf
+	if (data.csrfToken) setRefreshCsrf(data.csrfToken)
 }
 
 function refreshTokens(): Promise<void> {
@@ -74,10 +111,15 @@ function refreshTokens(): Promise<void> {
 	return refreshPromise
 }
 
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
 async function request<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
-	const access = getAccessToken()
 	const headers = new Headers(options.headers)
-	if (access) headers.set('authorization', `Bearer ${access}`)
+	const method = (options.method ?? 'GET').toUpperCase()
+	if (MUTATING.has(method)) {
+		const csrf = getCsrfCookie()
+		if (csrf) headers.set('x-csrf-token', csrf)
+	}
 	const outletId = getSelectedOutletId()
 	if (outletId) headers.set('x-outlet-id', outletId)
 	if (options.body && !(options.body instanceof FormData) && !headers.has('content-type')) {
@@ -139,15 +181,12 @@ export const api = {
 	delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 	upload: <T>(path: string, form: FormData) => {
 		const headers = new Headers()
-		const access = getAccessToken()
-		if (access) headers.set('authorization', `Bearer ${access}`)
+		const csrf = getCsrfCookie()
+		if (csrf) headers.set('x-csrf-token', csrf)
 		return request<T>(path, { method: 'POST', body: form, headers })
 	},
 	download: async (path: string, filename: string): Promise<void> => {
-		const headers = new Headers()
-		const access = getAccessToken()
-		if (access) headers.set('authorization', `Bearer ${access}`)
-		const res = await fetch(path, { headers })
+		const res = await fetch(path)
 		if (!res.ok) {
 			throw new ApiError({ code: 'HTTP_ERROR', message: `Download failed (${res.status})` }, res.status)
 		}
@@ -174,7 +213,10 @@ export async function login(input: { email: string; password: string; merchantSl
 			res.status
 		)
 	}
-	setAccessToken(body.data.accessToken)
+	// Access token lives in the httpOnly cookie — never store it in JS.
+	// Persist only the refresh csrfToken for cookie-based refresh calls.
+	const data = body.data as AuthDataWithCsrf
+	if (data.csrfToken) setRefreshCsrf(data.csrfToken)
 	return body
 }
 
@@ -184,9 +226,12 @@ export async function fetchMe(): Promise<MeResponse> {
 
 export async function logout() {
 	try {
+		const headers: Record<string, string> = { 'content-type': 'application/json' }
+		const csrf = getCsrfCookie()
+		if (csrf) headers['x-csrf-token'] = csrf
 		await fetch('/api/auth/logout', {
 			method: 'POST',
-			headers: { 'content-type': 'application/json' },
+			headers,
 			body: '{}'
 		})
 	} catch {

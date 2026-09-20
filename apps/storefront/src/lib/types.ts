@@ -253,8 +253,8 @@ export interface CheckoutInput {
 export interface CheckoutPreviewInput {
 	items: CartItemInput[]
 	couponCode?: string
-	/** Country so previewed shipping/tax match the final order. */
-	shippingAddress?: { country?: string }
+	/** Full destination so previewed shipping/tax match the final order. */
+	shippingAddress?: { country?: string; state?: string; city?: string; postalCode?: string }
 }
 
 export interface CheckoutOrder {

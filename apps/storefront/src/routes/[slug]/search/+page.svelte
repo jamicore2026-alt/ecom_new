@@ -1,14 +1,38 @@
 <script lang="ts">
 	import ProductListing from '$lib/components/ProductListing.svelte'
 	import { t } from '$lib/i18n'
+	import { siteUrl } from '$lib/seo'
 	import type { PageProps } from './$types'
 
 	let { data }: PageProps = $props()
 	const store = $derived(data.store)
+	const title = $derived(
+		data.query
+			? `${t('search.resultsFor', { query: data.query })} — ${store.settings.name}`
+			: `${t('search.title')} — ${store.settings.name}`
+	)
+	const description = $derived(
+		data.query
+			? t('search.resultsFor', { query: data.query })
+			: t('search.title')
+	)
+	const canonical = $derived(
+		`${siteUrl(data.origin)}/${data.slug}/search${data.query ? `?q=${encodeURIComponent(data.query)}` : ''}`
+	)
 </script>
 
 <svelte:head>
-	<title>{t('search.title')} — {store.settings.name}</title>
+	<title>{title}</title>
+	<meta name="description" content={description} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content={store.settings.name} />
+	<meta property="og:title" content={title} />
+	<meta property="og:description" content={description} />
+	<meta property="og:url" content={canonical} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
 	<meta name="robots" content="noindex" />
 </svelte:head>
 

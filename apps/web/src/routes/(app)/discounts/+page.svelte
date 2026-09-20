@@ -8,6 +8,7 @@
 	import Badge from '$lib/components/Badge.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import { currency, dateTime, titleCase } from '$lib/format'
 	import type { Category, Coupon, CouponType, PaginationMeta, Promotion, PromotionType } from '$lib/types'
@@ -44,6 +45,11 @@
 	let startsAt = $state('')
 	let endsAt = $state('')
 	let cStatus = $state('active')
+
+	let couponTarget = $state<Coupon | null>(null)
+	let promotionTarget = $state<Promotion | null>(null)
+	let couponToggleTarget = $state<Coupon | null>(null)
+	let promotionToggleTarget = $state<Promotion | null>(null)
 
 	// promotion fields
 	let pName = $state('')
@@ -232,8 +238,25 @@
 	}
 
 	async function toggleCoupon(c: Coupon) {
+		if (c.status === 'active') {
+			couponToggleTarget = c
+			return
+		}
 		try {
-			await api.put<{ success: boolean }>(`/api/coupons/${c.id}`, { status: c.status === 'active' ? 'disabled' : 'active' })
+			await api.put<{ success: boolean }>(`/api/coupons/${c.id}`, { status: 'active' })
+			toast.success('Coupon updated')
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function confirmCouponToggle() {
+		const c = couponToggleTarget
+		couponToggleTarget = null
+		if (!c) return
+		try {
+			await api.put<{ success: boolean }>(`/api/coupons/${c.id}`, { status: 'disabled' })
 			toast.success('Coupon updated')
 			load()
 		} catch (e) {
@@ -242,8 +265,12 @@
 	}
 
 	async function togglePromotion(p: Promotion) {
+		if (p.status === 'active') {
+			promotionToggleTarget = p
+			return
+		}
 		try {
-			await api.put<{ success: boolean }>(`/api/promotions/${p.id}`, { status: p.status === 'active' ? 'disabled' : 'active' })
+			await api.put<{ success: boolean }>(`/api/promotions/${p.id}`, { status: 'active' })
 			toast.success('Promotion updated')
 			load()
 		} catch (e) {
@@ -251,8 +278,23 @@
 		}
 	}
 
-	async function removeCoupon(c: Coupon) {
-		if (!confirm(`Disable coupon ${c.code}?`)) return
+	async function confirmPromotionToggle() {
+		const p = promotionToggleTarget
+		promotionToggleTarget = null
+		if (!p) return
+		try {
+			await api.put<{ success: boolean }>(`/api/promotions/${p.id}`, { status: 'disabled' })
+			toast.success('Promotion updated')
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function removeCoupon() {
+		const c = couponTarget
+		couponTarget = null
+		if (!c) return
 		try {
 			await api.delete<{ success: boolean }>(`/api/coupons/${c.id}`)
 			toast.success('Coupon disabled')
@@ -262,8 +304,10 @@
 		}
 	}
 
-	async function removePromotion(p: Promotion) {
-		if (!confirm(`Disable promotion "${p.name}"?`)) return
+	async function removePromotion() {
+		const p = promotionTarget
+		promotionTarget = null
+		if (!p) return
 		try {
 			await api.delete<{ success: boolean }>(`/api/promotions/${p.id}`)
 			toast.success('Promotion disabled')
@@ -364,9 +408,9 @@
 								<td class="px-table-cell-x py-table-cell-y"><Badge label={c.status} /></td>
 								{#if canWrite()}
 									<td class="whitespace-nowrap px-table-cell-x py-table-cell-y text-right">
-										<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditCoupon(c)}>Edit</button>
-										<button class="rounded p-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container" onclick={() => toggleCoupon(c)}>{c.status === 'active' ? 'Disable' : 'Enable'}</button>
-										<button class="rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => removeCoupon(c)}>Delete</button>
+										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditCoupon(c)}>Edit</button>
+										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container" onclick={() => toggleCoupon(c)}>{c.status === 'active' ? 'Disable' : 'Enable'}</button>
+										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => (couponTarget = c)}>Delete</button>
 									</td>
 								{/if}
 							</tr>
@@ -406,9 +450,9 @@
 								<td class="px-table-cell-x py-table-cell-y"><Badge label={p.status} /></td>
 								{#if canWrite()}
 									<td class="whitespace-nowrap px-table-cell-x py-table-cell-y text-right">
-										<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditPromotion(p)}>Edit</button>
-										<button class="rounded p-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container" onclick={() => togglePromotion(p)}>{p.status === 'active' ? 'Disable' : 'Enable'}</button>
-										<button class="rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => removePromotion(p)}>Delete</button>
+										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditPromotion(p)}>Edit</button>
+										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container" onclick={() => togglePromotion(p)}>{p.status === 'active' ? 'Disable' : 'Enable'}</button>
+										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => (promotionTarget = p)}>Delete</button>
 									</td>
 								{/if}
 							</tr>
@@ -426,26 +470,26 @@
 		<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); submit() }}>
 			{#if isPromotion}
 				<div>
-					<label class="field-label">Name *</label>
-					<input class="field" bind:value={pName} required />
+					<label class="field-label" for="promo-name">Name *</label>
+					<input id="promo-name" class="field" bind:value={pName} required />
 					{#if fieldErrors.name}<p class="field-error">{fieldErrors.name}</p>{/if}
 				</div>
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div>
-						<label class="field-label">Type</label>
-						<select class="field" bind:value={pType}>
+						<label class="field-label" for="promo-type">Type</label>
+						<select id="promo-type" class="field" bind:value={pType}>
 							<option value="discount_on_products">Discount on products</option>
 							<option value="buy_x_get_y">Buy X get Y</option>
 						</select>
 					</div>
 					<div>
-						<label class="field-label">Discount %</label>
-						<input type="number" min="0" max="100" class="field" bind:value={pDiscount} required />
+						<label class="field-label" for="promo-discount">Discount %</label>
+						<input id="promo-discount" type="number" min="0" max="100" class="field" bind:value={pDiscount} required />
 					</div>
 				</div>
 				<div>
-					<label class="field-label">Applies to</label>
-					<select class="field" bind:value={pScope}>
+					<label class="field-label" for="promo-scope">Applies to</label>
+					<select id="promo-scope" class="field" bind:value={pScope}>
 						<option value="all">All products</option>
 						<option value="products">Specific products</option>
 						<option value="category">Category</option>
@@ -453,8 +497,8 @@
 				</div>
 				{#if pScope === 'products'}
 					<div>
-						<label class="field-label">Products</label>
-						<div class="max-h-40 space-y-1 overflow-y-auto rounded border border-outline-variant bg-surface-container-lowest p-2">
+						<p class="field-label" id="promo-products-label">Products</p>
+						<div class="max-h-40 space-y-1 overflow-y-auto rounded border border-outline-variant bg-surface-container-lowest p-2" role="group" aria-labelledby="promo-products-label">
 							{#each products as p (p.id)}
 								<label class="flex items-center gap-2 text-sm text-on-surface-variant">
 									<input type="checkbox" class="field-check" checked={pProductIds.includes(p.id)} onchange={() => { pProductIds = pProductIds.includes(p.id) ? pProductIds.filter((x) => x !== p.id) : [...pProductIds, p.id] }} />
@@ -465,8 +509,8 @@
 					</div>
 				{:else if pScope === 'category'}
 					<div>
-						<label class="field-label">Category</label>
-						<select class="field" bind:value={pCategoryId}>
+						<label class="field-label" for="promo-category">Category</label>
+						<select id="promo-category" class="field" bind:value={pCategoryId}>
 							<option value="">Select…</option>
 							{#each categories as c (c.id)}
 								<option value={c.id}>{c.name}</option>
@@ -477,13 +521,13 @@
 			{:else}
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div>
-						<label class="field-label">Code *</label>
-						<input class="field font-mono-label uppercase" bind:value={code} placeholder="SAVE10" disabled={!!editingCoupon} required />
+						<label class="field-label" for="coupon-code">Code *</label>
+						<input id="coupon-code" class="field font-mono-label uppercase" bind:value={code} placeholder="SAVE10" disabled={!!editingCoupon} required />
 						{#if fieldErrors.code}<p class="field-error">{fieldErrors.code}</p>{/if}
 					</div>
 					<div>
-						<label class="field-label">Type</label>
-						<select class="field" bind:value={type}>
+						<label class="field-label" for="coupon-type">Type</label>
+						<select id="coupon-type" class="field" bind:value={type}>
 							<option value="percentage">Percentage</option>
 							<option value="fixed">Fixed amount</option>
 							<option value="free_shipping">Free shipping</option>
@@ -492,22 +536,22 @@
 				</div>
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div>
-						<label class="field-label">{type === 'percentage' ? 'Percent' : 'Amount'}</label>
-						<input type="number" step="0.01" min="0" class="field" bind:value={value} required />
+						<label class="field-label" for="coupon-value">{type === 'percentage' ? 'Percent' : 'Amount'}</label>
+						<input id="coupon-value" type="number" step="0.01" min="0" class="field" bind:value={value} required />
 					</div>
 					<div>
-						<label class="field-label">Min subtotal</label>
-						<input type="number" step="0.01" min="0" class="field" bind:value={minSubtotal} />
+						<label class="field-label" for="coupon-min">Min subtotal</label>
+						<input id="coupon-min" type="number" step="0.01" min="0" class="field" bind:value={minSubtotal} />
 					</div>
 				</div>
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div>
-						<label class="field-label">Usage limit</label>
-						<input type="number" min="0" class="field" bind:value={usageLimit} placeholder="Unlimited" />
+						<label class="field-label" for="coupon-limit">Usage limit</label>
+						<input id="coupon-limit" type="number" min="0" class="field" bind:value={usageLimit} placeholder="Unlimited" />
 					</div>
 					<div>
-						<label class="field-label">Status</label>
-						<select class="field" bind:value={cStatus}>
+						<label class="field-label" for="coupon-status">Status</label>
+						<select id="coupon-status" class="field" bind:value={cStatus}>
 							<option value="active">Active</option>
 							<option value="disabled">Disabled</option>
 						</select>
@@ -517,12 +561,12 @@
 
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
-					<label class="field-label">Start date</label>
-					<input type="date" class="field" bind:value={startsAt} />
+					<label class="field-label" for="discount-start">Start date</label>
+					<input id="discount-start" type="date" class="field" bind:value={startsAt} />
 				</div>
 				<div>
-					<label class="field-label">End date</label>
-					<input type="date" class="field" bind:value={endsAt} />
+					<label class="field-label" for="discount-end">End date</label>
+					<input id="discount-end" type="date" class="field" bind:value={endsAt} />
 				</div>
 			</div>
 
@@ -533,3 +577,39 @@
 		</form>
 	</Modal>
 {/if}
+
+<ConfirmDialog
+	open={couponTarget !== null}
+	title={`Disable coupon ${couponTarget?.code ?? ''}?`}
+	message="Customers will no longer be able to use this coupon. This cannot be undone."
+	confirmLabel="Disable"
+	onConfirm={removeCoupon}
+	onCancel={() => (couponTarget = null)}
+/>
+
+<ConfirmDialog
+	open={promotionTarget !== null}
+	title={`Disable promotion "${promotionTarget?.name ?? ''}"?`}
+	message="The promotion will stop applying to orders. This cannot be undone."
+	confirmLabel="Disable"
+	onConfirm={removePromotion}
+	onCancel={() => (promotionTarget = null)}
+/>
+
+<ConfirmDialog
+	open={couponToggleTarget !== null}
+	title={`Disable coupon ${couponToggleTarget?.code ?? ''}?`}
+	message="Customers will no longer be able to use this coupon."
+	confirmLabel="Disable"
+	onConfirm={confirmCouponToggle}
+	onCancel={() => (couponToggleTarget = null)}
+/>
+
+<ConfirmDialog
+	open={promotionToggleTarget !== null}
+	title={`Disable promotion "${promotionToggleTarget?.name ?? ''}"?`}
+	message="The promotion will stop applying to orders."
+	confirmLabel="Disable"
+	onConfirm={confirmPromotionToggle}
+	onCancel={() => (promotionToggleTarget = null)}
+/>

@@ -38,6 +38,10 @@
 	function onPage(p: number) {
 		load(p)
 	}
+
+	function downloadPdf(inv: Invoice) {
+		api.download(`/api/invoices/${inv.id}/pdf`, `${inv.invoiceNumber}.pdf`).catch((e) => toast.error((e as Error).message))
+	}
 </script>
 
 <svelte:head>
@@ -81,6 +85,7 @@
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Total</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Date</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Order</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold"></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -93,6 +98,16 @@
 								<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTimeFull(inv.invoiceDate)}</td>
 								<td class="px-table-cell-x py-table-cell-y">
 									<a href="/orders/{inv.orderId}" class="text-primary hover:underline">{inv.orderId.slice(0, 8)}</a>
+								</td>
+								<td class="px-table-cell-x py-table-cell-y text-right">
+									<button
+										class="inline-flex items-center gap-1 rounded-md border border-outline-variant px-2 py-1 text-xs font-medium text-on-surface-variant transition-colors hover:border-primary hover:text-primary"
+										title="Download PDF"
+										onclick={() => downloadPdf(inv)}
+									>
+										<Icon name="download" size="text-[14px]" />
+										PDF
+									</button>
 								</td>
 							</tr>
 						{/each}

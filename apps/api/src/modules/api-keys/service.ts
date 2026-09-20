@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, count, desc, eq } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import { apiKeys } from '../../database/schema'
 import { ok } from '../../shared/response'
@@ -12,13 +12,12 @@ const SK_PREFIX = 'ecom_'
 export class ApiKeysService {
   static async list(db: DB, merchantId: string, query: { page?: string; limit?: string } = {}) {
     const { page, limit, offset } = parsePagination(query)
-    const rows = await db
-      .select()
-      .from(apiKeys)
-      .where(eq(apiKeys.merchantId, merchantId))
-      .orderBy(desc(apiKeys.createdAt))
-      .limit(limit)
-      .offset(offset)
+    const where = eq(apiKeys.merchantId, merchantId)
+    const [rows, totalRows] = await Promise.all([
+      db.select().from(apiKeys).where(where).orderBy(desc(apiKeys.createdAt)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(apiKeys).where(where)
+    ])
+    const total = totalRows[0]?.total ?? 0
     return ok({
       items: rows.map((r) => ({
         id: r.id,
@@ -31,7 +30,7 @@ export class ApiKeysService {
         revokedAt: r.revokedAt,
         createdAt: r.createdAt
       })),
-      meta: makeMeta(page, limit, rows.length)
+      meta: makeMeta(page, limit, total)
     })
   }
 

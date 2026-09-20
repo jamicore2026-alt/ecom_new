@@ -8,14 +8,43 @@
 	const store = $derived(data.store)
 	const category = $derived(data.categories.find((c) => c.slug === data.category))
 	const title = $derived(category ? localized(category.name, category.nameAr) : t('categories.title'))
+	const canonical = $derived(`${siteUrl(data.origin)}/${data.slug}/categories/${data.category}`)
+	const description = $derived(t('categories.browse', { title, store: store.settings.name }))
+	const orgJsonLd = $derived(
+		JSON.stringify({
+			'@context': 'https://schema.org',
+			'@type': 'Organization',
+			name: store.settings.name,
+			url: `${siteUrl(data.origin)}/${data.slug}`
+		}).replace(/</g, '\\u003c')
+	)
+	const crumbJsonLd = $derived(
+		JSON.stringify({
+			'@context': 'https://schema.org',
+			'@type': 'BreadcrumbList',
+			itemListElement: [
+				{ '@type': 'ListItem', position: 1, name: t('navigation.home'), item: `${siteUrl(data.origin)}/${data.slug}` },
+				{ '@type': 'ListItem', position: 2, name: t('navigation.shop'), item: `${siteUrl(data.origin)}/${data.slug}/products` },
+				{ '@type': 'ListItem', position: 3, name: title, item: canonical }
+			]
+		}).replace(/</g, '\\u003c')
+	)
 </script>
 
 <svelte:head>
 	<title>{title} — {store.settings.name}</title>
-	<meta name="description" content={t('categories.browse', { title, store: store.settings.name })} />
-	<link rel="canonical" href={`${siteUrl(data.origin)}/${data.slug}/categories/${data.category}`} />
+	<meta name="description" content={description} />
+	<link rel="canonical" href={canonical} />
 	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content={store.settings.name} />
 	<meta property="og:title" content={title} />
+	<meta property="og:description" content={description} />
+	<meta property="og:url" content={canonical} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	{@html `<script type="application/ld+json">${orgJsonLd}</script>`}
+	{@html `<script type="application/ld+json">${crumbJsonLd}</script>`}
 </svelte:head>
 
 <div class="mx-auto max-w-7xl px-4 py-10">

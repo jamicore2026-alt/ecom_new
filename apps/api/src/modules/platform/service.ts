@@ -1,7 +1,7 @@
 import { and, count, desc, eq, ilike } from 'drizzle-orm'
 import { compare, hashSync } from 'bcryptjs'
 import { db } from '../../database/client'
-import { merchants, platformAdmins } from '../../database/schema'
+import { merchants, platformAdmins, users } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, notFound, unauthorized } from '../../shared/errors'
 import { makeMeta, parsePagination } from '../../shared/pagination'
@@ -76,6 +76,7 @@ export class PlatformService {
         status: r.status,
         currency: r.currency,
         timezone: r.timezone,
+        deletedAt: r.deletedAt?.toISOString() ?? null,
         createdAt: r.createdAt.toISOString()
       })),
       meta: makeMeta(page, limit, Number(total))
@@ -98,6 +99,7 @@ export class PlatformService {
         currency: merchant.currency,
         timezone: merchant.timezone,
         status: merchant.status,
+        deletedAt: merchant.deletedAt?.toISOString() ?? null,
         createdAt: merchant.createdAt.toISOString()
       },
       allowedNextStatuses: nextStatuses(merchant.status),
@@ -123,6 +125,24 @@ export class PlatformService {
 
     await db.update(merchants).set({ status: to as MerchantStatus }).where(eq(merchants.id, id))
 
+    // Offboarding effects for terminal states: no hard delete (retention +
+    // audit rows must survive), but the merchant's staff must lose access and
+    // an archived merchant gets its soft-delete marker. JWTs need no explicit
+    // revocation — every request re-validates merchant status against the DB.
+    const effects: Record<string, unknown> = {}
+    if (to === 'cancelled' || to === 'archived') {
+      const disabled = await db
+        .update(users)
+        .set({ status: 'disabled' })
+        .where(and(eq(users.merchantId, id), eq(users.status, 'active')))
+        .returning({ id: users.id })
+      effects.usersDisabled = disabled.length
+    }
+    if (to === 'archived') {
+      await db.update(merchants).set({ deletedAt: new Date() }).where(eq(merchants.id, id))
+      effects.deletedAt = true
+    }
+
     await AuditService.log(db, {
       merchantId: id,
       // No users row owns a platform admin, so we set actorUserId null and rely
@@ -132,7 +152,7 @@ export class PlatformService {
       action: 'platform.merchant.status_changed',
       entityType: 'merchant',
       entityId: id,
-      metadata: { from: merchant.status, to, reason: reason.trim(), trigger: transition.trigger }
+      metadata: { from: merchant.status, to, reason: reason.trim(), trigger: transition.trigger, ...effects }
     })
 
     return ok({
@@ -141,7 +161,8 @@ export class PlatformService {
         name: merchant.name,
         slug: merchant.slug,
         status: to,
-        from: merchant.status
+        from: merchant.status,
+        ...effects
       }
     })
   }

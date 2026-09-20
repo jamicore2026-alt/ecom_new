@@ -63,6 +63,19 @@ export const app = new Elysia({
   // Cap request bodies (uploads are separately limited to 5MB by the upload model).
   serve: { maxRequestBodySize: 8 * 1024 * 1024 }
 })
+  // Production HTTPS enforcement (behind a TLS-terminating proxy): redirect
+  // plain-http requests to https. Only triggers on an explicit
+  // x-forwarded-proto=http so direct/non-proxied traffic is never looped.
+  // HSTS (below) then pins browsers to https.
+  .onRequest(({ request, set }) => {
+    if (process.env.NODE_ENV !== 'production') return
+    const url = new URL(request.url)
+    if (request.method !== 'GET' && request.method !== 'HEAD') return
+    if (request.headers.get('x-forwarded-proto') === 'http') {
+      url.protocol = 'https:'
+      return new Response(null, { status: 301, headers: { location: url.toString() } })
+    }
+  })
   .onAfterHandle(({ request, set }) => {
     set.headers['X-Frame-Options'] = 'DENY'
     set.headers['X-Content-Type-Options'] = 'nosniff'
@@ -82,7 +95,7 @@ export const app = new Elysia({
     cors({
       origin: corsOrigins.length > 0 ? corsOrigins : devOrigins,
       credentials: true,
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
     })
   )

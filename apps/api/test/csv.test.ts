@@ -90,11 +90,11 @@ describe('Products CSV export/import', () => {
     expect(sRow?.[3]).toBe('Has, a "tricky" description.')
     expect(sRow?.[1]).toBe('CSV Fixture Alpha')
 
-    // staff without write permission can still read exports
+    // staff without products.read cannot export products (permission-gated reads)
     const staffRes = await raw('/api/products/export', {
       headers: { authorization: `Bearer ${staffToken}` }
     })
-    expect(staffRes.status).toBe(200)
+    expect(staffRes.status).toBe(403)
   })
 
   it('round-trips an export through import (update + create)', async () => {

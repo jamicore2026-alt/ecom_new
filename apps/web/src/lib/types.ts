@@ -47,6 +47,7 @@ export interface AuthResponse {
 	data: {
 		accessToken: string
 		refreshToken: string
+		csrfToken?: string
 		expiresIn: number
 		user: AuthUser
 		merchant: AuthMerchant

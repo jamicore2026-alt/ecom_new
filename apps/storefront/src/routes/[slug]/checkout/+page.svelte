@@ -8,7 +8,7 @@
 	import { money, placeholderImage, handleImageError } from '$lib/format'
 	import { t } from '$lib/i18n'
 	import { track } from '$lib/analytics'
-	import type { CheckoutField, CheckoutSummary } from '$lib/types'
+	import type { CheckoutField, CheckoutSummary, ShopperAddress } from '$lib/types'
 	import type { PageProps } from './$types'
 
 	let { data }: PageProps = $props()
@@ -60,6 +60,12 @@
 	let orderError = $state('')
 	let placing = $state(false)
 	let previewed = $state(false)
+
+	// Saved address book (signed-in shoppers only — guests keep manual entry).
+	let savedAddresses = $state<ShopperAddress[]>([])
+	let selectedAddressId = $state('')
+	let addressesLoading = $state(false)
+	let addressPrefilled = $state(false)
 
 	// Idempotency key for this checkout attempt — regenerated per page load so a
 	// timeout/retry of the same attempt can never double-order on the server.
@@ -120,7 +126,14 @@
 			quantity: i.quantity
 		})),
 		couponCode: couponCode.trim() || undefined,
-		shippingAddress: { country }
+		// Preview accepts city/state/postal/country so the quoted shipping
+		// matches pin/city-level rules, not just the country.
+		shippingAddress: {
+			country,
+			state: region.trim() || undefined,
+			city: city.trim() || undefined,
+			postalCode: postalCode.trim() || undefined
+		}
 	})
 
 	const refreshPreview = async () => {
@@ -143,14 +156,57 @@
 		}
 	})
 
-	// Shipping zones/tax rules can differ per country — keep the quote in sync.
-	let lastPreviewCountry = $state('')
+	// Shipping zones/tax rules can differ per destination — keep the quote in sync.
+	let lastPreviewKey = $state('')
 	$effect(() => {
-		const current = country
-		if (lastPreviewCountry && current !== lastPreviewCountry && previewed) {
+		const current = [country, region.trim(), city.trim(), postalCode.trim()].join('|')
+		if (lastPreviewKey && current !== lastPreviewKey && previewed) {
 			refreshPreview()
 		}
-		lastPreviewCountry = current
+		lastPreviewKey = current
+	})
+
+	const applyAddress = (a: ShopperAddress | null) => {
+		if (!a) return
+		if (a.name) shippingName = a.name
+		line1 = a.line1
+		line2 = a.line2 ?? ''
+		city = a.city ?? ''
+		region = a.state ?? ''
+		postalCode = a.postalCode ?? ''
+		if (a.country && allowedCountries.includes(a.country)) country = a.country
+		if (a.phone) phone = a.phone
+		if (previewed) refreshPreview()
+	}
+
+	const onAddressSelect = (id: string) => {
+		selectedAddressId = id
+		applyAddress(savedAddresses.find((a) => a.id === id) ?? null)
+	}
+
+	$effect(() => {
+		if (!account.signedIn || addressesLoading || addressPrefilled) return
+		addressesLoading = true
+		account
+			.addresses(fetch)
+			.then((list) => {
+				savedAddresses = list
+				const preferred =
+					list.find((a) => a.isDefaultShipping) ??
+					list.find((a) => a.addressType === 'shipping' || a.addressType === 'both') ??
+					list[0]
+				if (preferred) {
+					selectedAddressId = preferred.id
+					applyAddress(preferred)
+				}
+				addressPrefilled = true
+			})
+			.catch(() => {
+				// Manual entry keeps working when the address book is unavailable.
+			})
+			.finally(() => {
+				addressesLoading = false
+			})
 	})
 
 	const applyCoupon = async () => {
@@ -217,6 +273,11 @@
 		}
 		placing = true
 		try {
+			// Prefer an explicitly-marked billing address for the invoice copy;
+			// otherwise the API falls back to the shipping address.
+			const billingSrc =
+				savedAddresses.find((a) => a.isDefaultBilling) ??
+				savedAddresses.find((a) => a.addressType === 'billing')
 			const payload = {
 				items: cart.items.map((i) => ({
 					productId: i.productId,
@@ -238,6 +299,18 @@ shippingAddress: {
 				// check can enforce email when the merchant enables it.
 				email: email.trim() || undefined
 			},
+				billingAddress: billingSrc
+					? {
+							name: billingSrc.name ?? undefined,
+							line1: billingSrc.line1,
+							line2: billingSrc.line2 ?? undefined,
+							city: billingSrc.city ?? undefined,
+							state: billingSrc.state ?? undefined,
+							postalCode: billingSrc.postalCode ?? undefined,
+							country: billingSrc.country,
+							phone: billingSrc.phone ?? undefined
+						}
+					: undefined,
 				paymentMethod,
 				notes: notes.trim() || undefined,
 				cartId: cart.persistedCartId,
@@ -327,6 +400,24 @@ shippingAddress: {
 
 				<section class="rounded-2xl border border-neutral-200 bg-white p-6">
 					<h2 class="text-lg font-semibold text-neutral-900">{t('checkout.address')}</h2>
+					{#if account.signedIn && (savedAddresses.length > 0 || addressesLoading)}
+						<div class="mt-4">
+							<label class="text-sm font-medium text-neutral-700" for="savedAddress">{t('accountAddrs.title')}</label>
+							<select
+								id="savedAddress"
+								value={selectedAddressId}
+								onchange={(e) => onAddressSelect(e.currentTarget.value)}
+								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+							>
+								<option value="">{t('accountAddrs.selectManual')}</option>
+								{#each savedAddresses as a (a.id)}
+									<option value={a.id}>
+										{a.label}{a.name ? ` · ${a.name}` : ''} · {[a.line1, a.city, a.country].filter(Boolean).join(', ')}
+									</option>
+								{/each}
+							</select>
+						</div>
+					{/if}
 					<div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="sm:col-span-2">
 							<label class="text-sm font-medium text-neutral-700" for="shippingName">{t('checkout.fullName')}{requiredMark('name')}</label>
@@ -480,7 +571,7 @@ shippingAddress: {
 									onerror={handleImageError}
 								/>
 								<span
-									class="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-900 px-1 text-[10px] font-bold text-white"
+									class="absolute -end-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-900 px-1 text-[10px] font-bold text-white"
 								>
 									{line.quantity}
 								</span>

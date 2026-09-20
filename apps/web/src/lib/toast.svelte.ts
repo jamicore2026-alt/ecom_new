@@ -1,4 +1,4 @@
-type ToastType = 'success' | 'error'
+type ToastType = 'success' | 'error' | 'info'
 
 let toasts: Array<{ id: number; message: string; type: ToastType }> = $state([])
 let nextId = 1
@@ -16,5 +16,6 @@ export const toast = {
 		return toasts
 	},
 	success: (m: string) => push(m, 'success'),
-	error: (m: string) => push(m, 'error')
+	error: (m: string) => push(m, 'error'),
+	info: (m: string) => push(m, 'info')
 }

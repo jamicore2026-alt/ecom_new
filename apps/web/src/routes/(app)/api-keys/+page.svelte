@@ -7,6 +7,7 @@
 	import Card from '$lib/components/Card.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte'
 	import Badge from '$lib/components/Badge.svelte'
 	import { dateTime, number } from '$lib/format'
 	import type { ApiKey, ApiKeyCreated, BackgroundJob, WebhookDelivery, WebhookEndpoint } from '$lib/types'
@@ -31,6 +32,9 @@
 	let eSecret = $state('')
 	let eEnabled = $state(true)
 	let eEvents = $state<string[]>(['order.paid'])
+
+	let revokeTarget = $state<ApiKey | null>(null)
+	let endpointTarget = $state<WebhookEndpoint | null>(null)
 
 	const canManage = () => session.can('settings.manage')
 
@@ -89,8 +93,10 @@
 		}
 	}
 
-	async function revokeKey(k: ApiKey) {
-		if (!confirm(`Revoke API key "${k.name}"?`)) return
+	async function revokeKey() {
+		const k = revokeTarget
+		revokeTarget = null
+		if (!k) return
 		try {
 			await api.delete(`/api/api-keys/${k.id}`)
 			toast.success('Key revoked')
@@ -138,8 +144,10 @@
 		}
 	}
 
-	async function removeEndpoint(ep: WebhookEndpoint) {
-		if (!confirm(`Delete endpoint "${ep.name}"?`)) return
+	async function removeEndpoint() {
+		const ep = endpointTarget
+		endpointTarget = null
+		if (!ep) return
 		try {
 			await api.delete(`/api/webhook-endpoints/${ep.id}`)
 			toast.success('Endpoint deleted')
@@ -231,7 +239,7 @@
 								<td class="px-table-cell-x py-table-cell-y">
 									{#if k.status === 'active' && canManage()}
 										<div class="flex justify-end">
-											<button class="rounded p-1.5 text-secondary hover:bg-error/10 hover:text-error" onclick={() => revokeKey(k)} aria-label="Revoke key"><Icon name="block" size="text-[18px]" /></button>
+											<button class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-secondary hover:bg-error/10 hover:text-error" onclick={() => (revokeTarget = k)} aria-label="Revoke key"><Icon name="block" size="text-[18px]" /></button>
 										</div>
 									{/if}
 								</td>
@@ -275,8 +283,8 @@
 								<td class="px-table-cell-x py-table-cell-y">
 									{#if canManage()}
 										<div class="flex justify-end gap-1">
-											<button class="rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => toggleEndpoint(ep)} aria-label="Toggle endpoint"><Icon name={ep.enabled ? 'toggle_on' : 'toggle_off'} size="text-[18px]" /></button>
-											<button class="rounded p-1.5 text-secondary hover:bg-error/10 hover:text-error" onclick={() => removeEndpoint(ep)} aria-label="Delete endpoint"><Icon name="delete" size="text-[18px]" /></button>
+											<button class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => toggleEndpoint(ep)} aria-label="Toggle endpoint"><Icon name={ep.enabled ? 'toggle_on' : 'toggle_off'} size="text-[18px]" /></button>
+											<button class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-secondary hover:bg-error/10 hover:text-error" onclick={() => (endpointTarget = ep)} aria-label="Delete endpoint"><Icon name="delete" size="text-[18px]" /></button>
 										</div>
 									{/if}
 								</td>
@@ -314,7 +322,7 @@
 								<td class="px-table-cell-x py-table-cell-y">
 									{#if d.status === 'failed' && canManage()}
 										<div class="flex justify-end">
-											<button class="rounded p-1.5 text-secondary hover:bg-primary/10 hover:text-primary" onclick={() => retry(d)} aria-label="Retry delivery"><Icon name="refresh" size="text-[18px]" /></button>
+											<button class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-secondary hover:bg-primary/10 hover:text-primary" onclick={() => retry(d)} aria-label="Retry delivery"><Icon name="refresh" size="text-[18px]" /></button>
 										</div>
 									{/if}
 								</td>
@@ -427,3 +435,21 @@
 		</div>
 	</Modal>
 {/if}
+
+<ConfirmDialog
+	open={revokeTarget !== null}
+	title={`Revoke API key "${revokeTarget?.name ?? ''}"?`}
+	message="This key will stop working immediately. This cannot be undone."
+	confirmLabel="Revoke key"
+	onConfirm={revokeKey}
+	onCancel={() => (revokeTarget = null)}
+/>
+
+<ConfirmDialog
+	open={endpointTarget !== null}
+	title={`Delete endpoint "${endpointTarget?.name ?? ''}"?`}
+	message="Deliveries to this endpoint will stop. This cannot be undone."
+	confirmLabel="Delete"
+	onConfirm={removeEndpoint}
+	onCancel={() => (endpointTarget = null)}
+/>

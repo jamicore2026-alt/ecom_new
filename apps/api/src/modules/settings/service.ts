@@ -5,6 +5,7 @@ import {
   carriers,
   checkoutSettings,
   codRules,
+  invoiceSettings,
   merchants,
   notificationSettings,
   paymentProviderConfigs,
@@ -41,6 +42,72 @@ const upsert = <T extends { merchantId: string }>(
     })
 
 export class SettingsService {
+  static async getInvoiceSettings(db: DB, merchantId: string) {
+    const [row] = await db.select().from(invoiceSettings).where(eq(invoiceSettings.merchantId, merchantId))
+    if (row) return ok(row)
+    const [store] = await db.select().from(storeSettings).where(eq(storeSettings.merchantId, merchantId))
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.id, merchantId))
+    return ok({
+      merchantId,
+      prefix: sanitizePrefix(store?.name ?? merchant?.name ?? 'INV'),
+      logo: null,
+      businessName: store?.name ?? merchant?.name ?? null,
+      address: store?.address ?? {},
+      phone: null,
+      email: null,
+      taxLabel: null,
+      taxNumber: null,
+      headerNote: null,
+      footerNote: null,
+      displayFields: { columns: ['item', 'sku', 'qty', 'price', 'total'], showDiscount: true, showTax: true },
+      layout: 'standard',
+      nextNumber: 1,
+      updatedAt: new Date()
+    })
+  }
+
+  static async updateInvoiceSettings(db: DB, merchantId: string, body: Record<string, unknown>) {
+    const clean: Record<string, unknown> = {}
+    if (typeof body.prefix === 'string') clean.prefix = sanitizePrefix(body.prefix)
+    if (body.logo !== undefined) clean.logo = (body.logo as string | null) || null
+    if (body.businessName !== undefined) clean.businessName = (body.businessName as string | null) || null
+    if (body.address !== undefined) clean.address = (body.address as object) ?? {}
+    if (body.phone !== undefined) clean.phone = (body.phone as string | null) || null
+    if (body.email !== undefined) clean.email = (body.email as string | null) || null
+    if (body.taxLabel !== undefined) clean.taxLabel = (body.taxLabel as string | null) || null
+    if (body.taxNumber !== undefined) clean.taxNumber = (body.taxNumber as string | null) || null
+    if (body.headerNote !== undefined) clean.headerNote = (body.headerNote as string | null) || null
+    if (body.footerNote !== undefined) clean.footerNote = (body.footerNote as string | null) || null
+    if (body.layout !== undefined) clean.layout = body.layout === 'compact' ? 'compact' : 'standard'
+    const displayFields = body.displayFields as
+      | { columns?: string[]; showDiscount?: boolean; showTax?: boolean }
+      | undefined
+    if (displayFields) {
+      const current = (
+        await db.select().from(invoiceSettings).where(eq(invoiceSettings.merchantId, merchantId))
+      )[0]?.displayFields ?? { columns: ['item', 'sku', 'qty', 'price', 'total'], showDiscount: true, showTax: true }
+      clean.displayFields = {
+        columns:
+          Array.isArray(displayFields.columns) && displayFields.columns.length
+            ? displayFields.columns.filter((c) => ['item', 'sku', 'qty', 'price', 'total'].includes(c))
+            : current.columns,
+        showDiscount:
+          displayFields.showDiscount !== undefined ? displayFields.showDiscount : current.showDiscount,
+        showTax: displayFields.showTax !== undefined ? displayFields.showTax : current.showTax
+      }
+    }
+
+    const [row] = await db
+      .insert(invoiceSettings)
+      .values({ merchantId, ...(clean as object) })
+      .onConflictDoUpdate({
+        target: invoiceSettings.merchantId,
+        set: { ...(clean as object), updatedAt: new Date() }
+      })
+      .returning()
+    return ok(row)
+  }
+
   static async getStore(db: DB, merchantId: string) {
     const [merchant] = await db.select().from(merchants).where(eq(merchants.id, merchantId))
     if (!merchant) throw notFound('NOT_FOUND', 'Merchant not found')
@@ -679,7 +746,14 @@ export class SettingsService {
   /* ------------------------------ carriers ------------------------------ */
 
   static async listCarriers(db: DB, merchantId: string) {
-    return db.select().from(carriers).where(eq(carriers.merchantId, merchantId))
+    const rows = await db.select().from(carriers).where(eq(carriers.merchantId, merchantId))
+    // Credentials are write-only — never return secrets, same as payment providers.
+    return ok(
+      rows.map(({ credentials, ...rest }) => ({
+        ...rest,
+        configured: Object.keys((credentials ?? {}) as object).length > 0
+      }))
+    )
   }
 
   static async createCarrier(
@@ -749,4 +823,9 @@ export class SettingsService {
     return row
   }
 
+}
+
+const sanitizePrefix = (name: string) => {
+  const cleaned = name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10)
+  return cleaned || 'INV'
 }

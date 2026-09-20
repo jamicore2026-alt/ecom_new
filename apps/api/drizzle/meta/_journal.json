@@ -225,6 +225,34 @@
       "when": 1789625572087,
       "tag": "0031_correction_phase1",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789700000000,
+      "tag": "0032_variant_unlimited",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1789700000001,
+      "tag": "0033_security_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1789700000002,
+      "tag": "0034_timestamptz",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1789700000003,
+      "tag": "0035_merchant_deleted_at",
+      "breakpoints": true
     }
   ]
 }

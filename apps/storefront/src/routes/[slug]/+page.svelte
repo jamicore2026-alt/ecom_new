@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ProductCard from '$lib/components/ProductCard.svelte'
 	import { t } from '$lib/i18n'
-	import { metaDescription, siteUrl } from '$lib/seo'
+	import { absoluteImageUrl, metaDescription, siteUrl } from '$lib/seo'
 	import type { PageProps } from './$types'
 
 	let { data }: PageProps = $props()
@@ -12,17 +12,50 @@
 			t('home.heroTagline', { store: store.settings.name })
 		)
 	)
+	const canonical = $derived(`${siteUrl(data.origin)}/${data.slug}`)
+	const logoImage = $derived(absoluteImageUrl(store.settings.logo, data.origin))
+	const orgJsonLd = $derived(
+		JSON.stringify({
+			'@context': 'https://schema.org',
+			'@type': 'Organization',
+			name: store.settings.name,
+			url: canonical,
+			...(logoImage ? { logo: logoImage } : {})
+		}).replace(/</g, '\\u003c')
+	)
+	const crumbJsonLd = $derived(
+		JSON.stringify({
+			'@context': 'https://schema.org',
+			'@type': 'BreadcrumbList',
+			itemListElement: [{ '@type': 'ListItem', position: 1, name: store.settings.name, item: canonical }]
+		}).replace(/</g, '\\u003c')
+	)
 </script>
 
 <svelte:head>
 	<title>{store.settings.name}</title>
 	<meta name="description" content={description} />
-	<link rel="canonical" href={`${siteUrl(data.origin)}/${data.slug}`} />
+	<link rel="canonical" href={canonical} />
 	<meta property="og:type" content="website" />
 	<meta property="og:site_name" content={store.settings.name} />
 	<meta property="og:title" content={store.settings.name} />
 	<meta property="og:description" content={description} />
-	<meta property="og:url" content={`${siteUrl(data.origin)}/${data.slug}`} />
+	<meta property="og:url" content={canonical} />
+	{#if logoImage}
+		<meta property="og:image" content={logoImage} />
+		<meta property="og:image:width" content="512" />
+		<meta property="og:image:height" content="512" />
+		<meta property="og:image:alt" content={store.settings.name} />
+	{/if}
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={store.settings.name} />
+	<meta name="twitter:description" content={description} />
+	{#if logoImage}
+		<meta name="twitter:image" content={logoImage} />
+		<meta name="twitter:image:alt" content={store.settings.name} />
+	{/if}
+	{@html `<script type="application/ld+json">${orgJsonLd}</script>`}
+	{@html `<script type="application/ld+json">${crumbJsonLd}</script>`}
 </svelte:head>
 
 <section class="bg-gradient-to-br from-brand-600 to-purple-700 text-white">

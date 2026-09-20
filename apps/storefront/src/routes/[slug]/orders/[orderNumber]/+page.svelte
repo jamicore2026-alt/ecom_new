@@ -91,6 +91,11 @@
 		>
 			{t('wishlist.continueShopping')}
 		</a>
+		<p class="mt-3 text-sm">
+			<a href={`/${slug}/orders/lookup`} class="font-medium text-brand-600 hover:text-brand-700">
+				{t('orders.lookupSubmit')} →
+			</a>
+		</p>
 	</div>
 
 	<div class="mt-8 rounded-2xl border border-neutral-200 bg-white p-6">

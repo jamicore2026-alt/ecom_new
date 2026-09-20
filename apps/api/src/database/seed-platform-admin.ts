@@ -17,6 +17,13 @@ export async function ensurePlatformAdmin(opts?: { email?: string; password?: st
     .trim()
     .toLowerCase()
   const password = opts?.password ?? process.env.PLATFORM_ADMIN_PASSWORD ?? 'password123'
+  if (
+    process.env.NODE_ENV === 'production' &&
+    !opts?.password &&
+    !process.env.PLATFORM_ADMIN_PASSWORD
+  ) {
+    throw new Error('Refusing to seed the default platform-admin password in production: set PLATFORM_ADMIN_PASSWORD')
+  }
 
   await db
     .insert(platformAdmins)

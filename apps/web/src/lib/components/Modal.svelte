@@ -16,7 +16,7 @@
 	}>()
 
 	let dialog = $state<HTMLElement | null>(null)
-	const descriptionId = title ? `modal-desc-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 'modal-desc'
+	const descriptionId = $derived(title ? `modal-desc-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 'modal-desc')
 
 	const widthClass: Record<string, string> = {
 		sm: 'max-w-md',
@@ -85,7 +85,7 @@
 			<div class="flex items-center justify-between border-b border-outline-variant px-5 py-4">
 				<h3 class="text-[15px] font-semibold text-on-surface">{title ?? 'Dialog'}</h3>
 				<button
-					class="flex h-9 w-9 items-center justify-center rounded text-secondary hover:bg-surface-container hover:text-on-surface"
+					class="flex h-11 w-11 items-center justify-center rounded text-secondary hover:bg-surface-container hover:text-on-surface"
 					onclick={() => onClose?.()}
 					aria-label="Close"
 					type="button"

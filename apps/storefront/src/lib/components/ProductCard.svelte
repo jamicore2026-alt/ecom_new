@@ -21,6 +21,10 @@
 	<div class="relative aspect-square overflow-hidden bg-neutral-100">
 		<img
 			src={product.image ?? placeholderImage()}
+			srcset={`${product.image ?? placeholderImage()} 600w`}
+			sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+			width="600"
+			height="600"
 			alt={localized(product.name, product.nameAr)}
 			class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
 			loading="lazy"
@@ -28,7 +32,7 @@
 		/>
 		{#if product.compareAtPrice && product.compareAtPrice > product.price}
 			<span
-				class="absolute left-3 top-3 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white"
+				class="absolute start-3 top-3 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white"
 			>
 				{t('productCard.sale')}
 			</span>
@@ -52,7 +56,7 @@
 				: 'text-red-600'}"
 		>
 			{#if available}
-				{product.stock > 0 ? t('productCard.inStock').replace('{count}', String(product.stock)) : t('productCard.inStockUntracked')}
+				{!product.trackInventory ? t('productCard.inStockUntracked') : product.stock > 0 ? t('productCard.inStock').replace('{count}', String(product.stock)) : t('productCard.inStockUntracked')}
 			{:else}
 				{t('productCard.outOfStock')}
 			{/if}

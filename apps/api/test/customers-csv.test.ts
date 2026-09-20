@@ -122,17 +122,11 @@ describe('Customers + Orders CSV export/import', () => {
     expect(first[2]).not.toBe('')
     expect(first[11]).not.toBe('')
 
-    // staff (read-only) can also export — note staff (unassigned outlets) is
-    // scoped to merchant-wide (online) orders only, so its export is at least
-    // as well-formed as admin's and never wider.
+    // staff without orders.read cannot export orders (permission-gated reads).
     const staffRes = await raw('/api/orders/export', {
       headers: { authorization: `Bearer ${staffToken}` }
     })
-    expect(staffRes.status).toBe(200)
-    const staffRows = parseCsv(await staffRes.res.text())
-    expect(staffRows[0]).toEqual(ORDER_HEADERS)
-    expect(staffRows.length).toBeGreaterThan(1)
-    expect(staffRows.length).toBeLessThanOrEqual(rows.length)
+    expect(staffRes.status).toBe(403)
 
     // unauthenticated is rejected
     const anon = await raw('/api/orders/export')

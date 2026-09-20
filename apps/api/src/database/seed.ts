@@ -191,6 +191,17 @@ const pickStatus = () => {
 /* --------------------------------- seed --------------------------------- */
 
 export async function seed() {
+  // Destructive by design (TRUNCATE … CASCADE) — refuse to run against a
+  // production database unless explicitly forced. Tests set NODE_ENV=test.
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_SEED !== 'true') {
+    throw new Error('Refusing to seed in production: set ALLOW_PROD_SEED=true to override')
+  }
+  // Demo passwords are env-overridable; forcing ALLOW_PROD_SEED with the
+  // public default still refuses — prod must set SEED_PASSWORD explicitly.
+  const seedPassword = process.env.SEED_PASSWORD ?? 'password123'
+  if (process.env.NODE_ENV === 'production' && !process.env.SEED_PASSWORD) {
+    throw new Error('Refusing to seed default passwords in production: set SEED_PASSWORD')
+  }
   console.log('🧹 Clearing existing data...')
   await connection.unsafe(`
     TRUNCATE TABLE
@@ -215,7 +226,7 @@ export async function seed() {
     RESTART IDENTITY CASCADE
   `)
 
-  const passwordHash = await hash('password123', 10)
+  const passwordHash = await hash(seedPassword, 10)
 
   /* merchant + staff */
   const [merchant] = await db
@@ -236,7 +247,7 @@ export async function seed() {
     .values([
       { merchantId: merchant.id, name: 'Alex Owner', email: 'owner@jamicore.com', passwordHash, role: 'owner', permissions: [] },
       { merchantId: merchant.id, name: 'Sam Admin', email: 'admin@jamicore.com', passwordHash, role: 'admin', permissions: [] },
-      { merchantId: merchant.id, name: 'Jordan Staff', email: 'staff@jamicore.com', passwordHash, role: 'staff', permissions: ['products.create', 'products.update', 'products.delete', 'orders.create', 'orders.update', 'orders.cancel', 'inventory.adjust', 'inventory.manage'] },
+      { merchantId: merchant.id, name: 'Jordan Staff', email: 'staff@jamicore.com', passwordHash, role: 'staff', permissions: ['products.read', 'products.create', 'products.update', 'products.delete', 'orders.read', 'orders.create', 'orders.update', 'orders.cancel', 'inventory.adjust', 'inventory.manage'] },
       { merchantId: merchant.id, name: 'Riley Staff', email: 'riley@jamicore.com', passwordHash, role: 'staff', permissions: ['reports.read'] },
       { merchantId: merchant.id, name: 'Dana Driver', email: 'driver@jamicore.com', passwordHash, role: 'driver', permissions: [] }
     ])
@@ -798,7 +809,7 @@ export async function seed() {
   console.log('   Store:        JamiCore')
   console.log('   Merchant:     jamicore-store')
   console.log('   Admin login:  admin@jamicore.com')
-  console.log('   Password:     password123')
+  console.log(`   Password:     ${process.env.SEED_PASSWORD ? '(from SEED_PASSWORD)' : 'password123 (default — override with SEED_PASSWORD)'}`)
   console.log('   Products:     20')
   console.log(`   Orders:       ${orderIds.length}`)
   console.log('   Customers:    40')

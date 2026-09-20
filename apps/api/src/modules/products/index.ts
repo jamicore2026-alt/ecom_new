@@ -1,5 +1,7 @@
 import { Elysia } from 'elysia'
-import { authPlugin, requirePermission } from '../../plugins/auth'
+import { authPlugin, hasPermission, requirePermission } from '../../plugins/auth'
+import type { AuthContext } from '../../plugins/auth'
+import { forbidden } from '../../shared/errors'
 import { auditFromRequest } from '../audit-logs'
 import { ProductsService } from './service'
 import {
@@ -13,10 +15,17 @@ import {
   variantInput
 } from './model'
 
+/** Per-route read guard — a module-level `.use(requirePermission(...))` would
+ *  stack onto the write routes below, so reads assert inline instead. */
+const needProductRead = ({ auth }: { auth: AuthContext }) => {
+  if (!hasPermission(auth, 'products.read')) throw forbidden()
+}
+
 export const productsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .get('/products', async ({ query, auth }) => ProductsService.list(auth.db, auth.merchant.id, query), {
-    query: productQuery
+    query: productQuery,
+    beforeHandle: needProductRead
   })
   // registered before '/products/:id' so "export" is not captured as an id
   .get(
@@ -27,16 +36,22 @@ export const productsModule = new Elysia({ prefix: '/api' })
       set.headers['content-disposition'] = `attachment; filename="products-${auth.merchant.slug}-${new Date().toISOString().slice(0, 10)}.csv"`
       return csv
     },
-    { detail: { summary: 'Export products as CSV (one row per variant)' } }
+    { detail: { summary: 'Export products as CSV (one row per variant)' }, beforeHandle: needProductRead }
   )
-  .get('/products/:id', async ({ params, auth }) => ProductsService.get(auth.db, auth.merchant.id, params.id))
+  .get('/products/:id', async ({ params, auth }) => ProductsService.get(auth.db, auth.merchant.id, params.id), {
+    beforeHandle: needProductRead
+  })
   .get('/products/:id/variants', async ({ params, auth }) =>
-    ProductsService.listVariants(auth.db, auth.merchant.id, params.id)
+    ProductsService.listVariants(auth.db, auth.merchant.id, params.id),
+    { beforeHandle: needProductRead }
   )
   .get('/products/:id/options', async ({ params, auth }) =>
-    ProductsService.listOptions(auth.db, auth.merchant.id, params.id)
+    ProductsService.listOptions(auth.db, auth.merchant.id, params.id),
+    { beforeHandle: needProductRead }
   )
-  .get('/categories', async ({ auth }) => ProductsService.listCategories(auth.db, auth.merchant.id))
+  .get('/categories', async ({ auth }) => ProductsService.listCategories(auth.db, auth.merchant.id), {
+    beforeHandle: needProductRead
+  })
   .use(requirePermission('products.create', 'products.update', 'products.delete'))
   .post('/products', async ({ body, auth, request }) => {
     const result = await ProductsService.create(auth.db, auth.merchant.id, body)

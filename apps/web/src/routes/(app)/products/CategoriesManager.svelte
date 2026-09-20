@@ -21,7 +21,7 @@
 	let sortOrder = $state('0')
 	let status = $state('active')
 	let image = $state('')
-	let editing: Category | null = null
+	let editing = $state<Category | null>(null)
 
 	function startEdit(c: Category) {
 		editing = c

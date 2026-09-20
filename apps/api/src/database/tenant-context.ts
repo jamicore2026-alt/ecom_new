@@ -7,13 +7,21 @@ import type { DB } from './client'
 /**
  * Connection string for the tenant-scoped runtime role (`app_runtime`).
  * This role must NOT be BYPASSRLS so Row Level Security actually filters rows.
- * When unset, falls back to DATABASE_URL — in that case requests bypass RLS,
- * so production must always configure APP_RUNTIME_DATABASE_URL explicitly.
+ * Fail-closed: in production APP_RUNTIME_DATABASE_URL must be set explicitly —
+ * falling back to the owner URL would silently void RLS.
  */
-export const RUNTIME_DATABASE_URL =
-  process.env.APP_RUNTIME_DATABASE_URL ??
-  process.env.DATABASE_URL ??
-  'postgres://postgres:postgres@localhost:5432/ecom_merchant'
+const resolveRuntimeUrl = (): string => {
+  const explicit = process.env.APP_RUNTIME_DATABASE_URL
+  if (explicit) return explicit
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('APP_RUNTIME_DATABASE_URL must be set in production (refusing RLS bypass)')
+  }
+  return (
+    process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/ecom_merchant'
+  )
+}
+
+export const RUNTIME_DATABASE_URL = resolveRuntimeUrl()
 
 export interface TenantConnection {
   db: DB
@@ -36,7 +44,12 @@ export interface TenantConnection {
  * database connection pool.
  */
 export const createTenantConnection = async (merchantId: string): Promise<TenantConnection> => {
-  const connection = postgres(RUNTIME_DATABASE_URL, { max: 1, idle_timeout: 10 })
+  const connection = postgres(RUNTIME_DATABASE_URL, {
+    max: 1,
+    idle_timeout: 10,
+    connection: { statement_timeout: 30_000, idle_in_transaction_session_timeout: 30_000 },
+    ...(process.env.NODE_ENV === 'production' ? { ssl: 'require' as const } : {})
+  })
   // SET does not accept bind parameters, so use set_config (parameterized).
   // is_local=false keeps the value for the whole session — safe because the
   // connection is dedicated to a single request and closed afterwards.
@@ -75,7 +88,12 @@ export const withTenantTransaction = async <T>(
   merchantId: string,
   fn: (tx: DB) => Promise<T>
 ): Promise<T> => {
-  const connection = postgres(RUNTIME_DATABASE_URL, { max: 1, idle_timeout: 10 })
+  const connection = postgres(RUNTIME_DATABASE_URL, {
+    max: 1,
+    idle_timeout: 10,
+    connection: { statement_timeout: 30_000 },
+    ...(process.env.NODE_ENV === 'production' ? { ssl: 'require' as const } : {})
+  })
   try {
     const tenantDb = drizzle(connection, { schema })
     return await tenantDb.transaction(async (tx) => {

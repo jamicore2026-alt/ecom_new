@@ -82,6 +82,17 @@
 	const stock = $derived(
 		selectedVariant?.unlimited ? Number.POSITIVE_INFINITY : selectedVariant?.inventory ?? product.stock
 	)
+	// Stepper cap: unlimited stock and untracked inventory have no cap.
+	const maxQty = $derived(
+		selectedVariant?.unlimited || !product.trackInventory
+			? null
+			: Math.max(1, stock)
+	)
+
+	// Clamp the stepper when the selection (and its inventory) changes.
+	$effect(() => {
+		if (maxQty !== null && quantity > maxQty) quantity = maxQty
+	})
 	const gallery = $derived(
 		product.images?.length ? product.images : product.image ? [product.image] : []
 	)
@@ -267,6 +278,16 @@
 	<meta property="og:url" content={canonicalUrl} />
 	{#if ogImage}
 		<meta property="og:image" content={ogImage} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content={localized(product.name, product.nameAr)} />
+	{/if}
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={localized(product.name, product.nameAr)} />
+	<meta name="twitter:description" content={description} />
+	{#if ogImage}
+		<meta name="twitter:image" content={ogImage} />
+		<meta name="twitter:image:alt" content={localized(product.name, product.nameAr)} />
 	{/if}
 	{#if available}
 		<meta property="product:price:amount" content={price.toFixed(2)} />
@@ -293,7 +314,7 @@
 	<div class="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-2">
 	<div class="space-y-3">
 		<div class="aspect-square overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100">
-			<img src={mainImage ?? placeholderImage()} alt={localized(product.name, product.nameAr)} class="h-full w-full object-cover" onerror={handleImageError} />
+			<img src={mainImage ?? placeholderImage()} srcset={`${mainImage ?? placeholderImage()} 900w`} sizes="(max-width: 1024px) 100vw, 50vw" width="900" height="900" alt={localized(product.name, product.nameAr)} class="h-full w-full object-cover" fetchpriority="high" onerror={handleImageError} />
 		</div>
 		{#if gallery.length > 1}
 			<div class="flex flex-wrap gap-2">
@@ -305,7 +326,7 @@
 						onclick={() => (activeImage = i)}
 						aria-label={t('product.viewImage', { n: i + 1 })}
 					>
-						<img src={img} alt="" class="h-full w-full object-cover" onerror={handleImageError} />
+						<img src={img} srcset={`${img} 128w`} sizes="64px" width="128" height="128" alt="" loading="lazy" class="h-full w-full object-cover" onerror={handleImageError} />
 					</button>
 				{/each}
 			</div>
@@ -349,6 +370,9 @@
 									onclick={() => chooseOption(name, value)}
 								>
 									{valueLabel(name, value)}{valueAdjustment(name, value)}
+									{#if !valueAvailable(name, value)}
+										<span class="ms-1 text-xs font-semibold text-red-500">· {t('product.outOfStock')}</span>
+									{/if}
 								</button>
 							{/each}
 						</div>
@@ -369,8 +393,9 @@
 					<span class="w-10 text-center text-sm font-medium">{quantity}</span>
 					<button
 						type="button"
-						class="min-w-11 min-h-11 px-3 py-2 text-neutral-600 hover:text-neutral-900"
-						onclick={() => (quantity = quantity + 1)}
+						class="min-w-11 min-h-11 px-3 py-2 text-neutral-600 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+						disabled={maxQty !== null && quantity >= maxQty}
+						onclick={() => (quantity = maxQty === null ? quantity + 1 : Math.min(maxQty, quantity + 1))}
 						aria-label={t('product.increaseQty')}
 					>
 						+
@@ -410,7 +435,7 @@
 
 			<p class="text-sm {available ? 'text-green-600' : 'text-red-600'}">
 				{#if available}
-					{selectedVariant?.unlimited || product.stock === Number.POSITIVE_INFINITY
+					{!product.trackInventory || selectedVariant?.unlimited
 						? t('product.inStock')
 						: stock > 0
 							? t('product.xAvailable', { stock })

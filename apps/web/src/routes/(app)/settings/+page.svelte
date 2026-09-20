@@ -8,13 +8,18 @@
 	import Badge from '$lib/components/Badge.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte'
 	import { titleCase, currency } from '$lib/format'
 	import { t } from '$lib/i18n'
 	import type { Address, NotificationSettings, PaymentProviderView, PaymentSettings, Permission, ShippingRule, ShippingRuleType, ShippingSettings, StaffMember, StoreSettings, TaxSettings } from '$lib/types'
 
-	type Section = 'store' | 'payments' | 'shipping' | 'taxes' | 'notifications' | 'staff' | 'cod' | 'checkout' | 'carriers' | 'pincode'
+	type Section = 'store' | 'payments' | 'shipping' | 'taxes' | 'notifications' | 'staff' | 'cod' | 'checkout' | 'carriers' | 'pincode' | 'invoice'
 	let section = $state<Section>('store')
 	let saving = $state(false)
+	let pendingSection = $state<Section | null>(null)
+	let staffToggleTarget = $state<StaffMember | null>(null)
+	let carrierDeleteTarget = $state<Carrier | null>(null)
+	let savedSnapshots = $state<Record<string, string>>({})
 
 	// store
 	let store = $state<StoreSettings | null>(null)
@@ -150,6 +155,38 @@
 	let pincodeResult = $state<ServiceabilityResult | null>(null)
 	let pincodeLoading = $state(false)
 
+	const INVOICE_COLUMNS = ['item', 'sku', 'qty', 'price', 'total'] as const
+	interface InvoiceSettings {
+		merchantId: string
+		prefix: string
+		logo: string | null
+		businessName: string | null
+		address: Address
+		phone: string | null
+		email: string | null
+		taxLabel: string | null
+		taxNumber: string | null
+		headerNote: string | null
+		footerNote: string | null
+		displayFields: { columns: string[]; showDiscount: boolean; showTax: boolean }
+		layout: 'standard' | 'compact'
+		nextNumber: number
+	}
+	let invoiceSettings = $state<InvoiceSettings | null>(null)
+	let invPrefix = $state('')
+	let invBusinessName = $state('')
+	let invAddress = $state<Address>({})
+	let invPhone = $state('')
+	let invEmail = $state('')
+	let invTaxLabel = $state('')
+	let invTaxNumber = $state('')
+	let invHeaderNote = $state('')
+	let invFooterNote = $state('')
+	let invColumns = $state<string[]>(['item', 'sku', 'qty', 'price', 'total'])
+	let invShowDiscount = $state(true)
+	let invShowTax = $state(true)
+	let invLayout = $state<'standard' | 'compact'>('standard')
+
 	const PERMISSIONS: Permission[] = [
 		'products:write',
 		'orders:write',
@@ -162,6 +199,7 @@
 	const isAdmin = () => session.isAdmin
 
 	async function load() {
+		const loadedSection = section
 		try {
 			if (section === 'store') {
 				const [storeRes, merchantRes] = await Promise.all([
@@ -226,10 +264,27 @@
 				await loadCarriers()
 			} else if (section === 'pincode') {
 				pincodeResult = null
+			} else if (section === 'invoice') {
+				const res = await api.get<{ success: boolean; data: InvoiceSettings }>('/api/settings/invoice')
+				invoiceSettings = res.data
+				invPrefix = res.data.prefix
+				invBusinessName = res.data.businessName ?? ''
+				invAddress = { ...res.data.address }
+				invPhone = res.data.phone ?? ''
+				invEmail = res.data.email ?? ''
+				invTaxLabel = res.data.taxLabel ?? ''
+				invTaxNumber = res.data.taxNumber ?? ''
+				invHeaderNote = res.data.headerNote ?? ''
+				invFooterNote = res.data.footerNote ?? ''
+				invColumns = [...res.data.displayFields.columns]
+				invShowDiscount = res.data.displayFields.showDiscount
+				invShowTax = res.data.displayFields.showTax
+				invLayout = res.data.layout
 			} else {
 				const res = await api.get<{ success: boolean; data: StaffMember[] }>('/api/settings/staff')
 				staff = res.data
 			}
+			markClean(loadedSection)
 		} catch (e) {
 			toast.error((e as Error).message)
 		}
@@ -237,14 +292,68 @@
 
 	onMount(() => {
 		load()
-		loadCodSettings()
-		loadCheckoutSettings()
-		loadCarriers()
 	})
 
-	function switchSection(s: Section) {
+	function snapshot(s: Section): string {
+		try {
+			switch (s) {
+				case 'store':
+					return JSON.stringify({ sName, sCurrency, sTimezone, sAnnouncement, sCountry, addr })
+				case 'payments':
+					return JSON.stringify({ pCurrency, methods, modes: providers.map((p) => ({ id: p.id, enabled: p.enabled, mode: p.mode, country: p.country })) })
+				case 'shipping':
+					return JSON.stringify({ freeShippingThreshold, zones, rules })
+				case 'taxes':
+					return JSON.stringify({ autoCalculate, rates })
+				case 'notifications':
+					return JSON.stringify({ nEnabled, nFromName, nFromEmail, templates: notifications?.templates })
+				case 'cod':
+					return JSON.stringify({ codEnabled, codServiceableText, codBlacklistText, codMin, codMax, codFee })
+				case 'checkout':
+					return JSON.stringify({ coCodEnabled, coCodMin, coCodMax, coCodFee, coServiceableText, coDefaultShippingDays, coRequired })
+				case 'invoice':
+					return JSON.stringify({ invPrefix, invBusinessName, invAddress, invPhone, invEmail, invTaxLabel, invTaxNumber, invHeaderNote, invFooterNote, invColumns, invShowDiscount, invShowTax, invLayout })
+				default:
+					return ''
+			}
+		} catch {
+			return ''
+		}
+	}
+
+	function markClean(s: Section) {
+		const snap = snapshot(s)
+		if (snap) savedSnapshots[s] = snap
+		else delete savedSnapshots[s]
+	}
+
+	function isDirty(s: Section): boolean {
+		const saved = savedSnapshots[s]
+		if (!saved) return false
+		return saved !== snapshot(s)
+	}
+
+	function requestSection(s: Section) {
+		if (s === section) return
+		if (isDirty(section)) {
+			pendingSection = s
+			return
+		}
 		section = s
 		load()
+	}
+
+	function confirmSectionSwitch() {
+		const s = pendingSection
+		pendingSection = null
+		if (!s) return
+		delete savedSnapshots[section]
+		section = s
+		load()
+	}
+
+	function switchSection(s: Section) {
+		requestSection(s)
 	}
 
 	async function saveStore() {
@@ -263,6 +372,7 @@
 				})
 			])
 			toast.success('Store settings saved')
+			markClean('store')
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -278,6 +388,7 @@
 				currency: pCurrency
 			})
 			toast.success('Payment settings saved')
+			markClean('payments')
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -313,6 +424,7 @@
 			providers = fresh.data
 			for (const np of providers) for (const f of np.credentialFields) (providerCreds[np.id] ??= {})[f.key] = ''
 			toast.success(`${p.label} saved`)
+			markClean('payments')
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -361,6 +473,7 @@
 				freeShippingThreshold: Number(freeShippingThreshold)
 			})
 			toast.success('Shipping settings saved')
+			markClean('shipping')
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -376,6 +489,7 @@
 				rates: rates.map((r) => ({ region: r.region, rate: Number(r.rate) }))
 			})
 			toast.success('Tax settings saved')
+			markClean('taxes')
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -396,6 +510,7 @@
 			)
 			notifications = res.data
 			toast.success('Notification settings saved')
+			markClean('notifications')
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -406,9 +521,9 @@
 	function toggleTemplate(id: string, value: boolean) {
 		if (!notifications) return
 		notifications.templates = { ...notifications.templates, [id]: value }
-		api.put<{ success: boolean }>('/api/settings/notifications', { templates: notifications.templates }).catch(
-			(e: unknown) => toast.error((e as Error).message)
-		)
+		api.put<{ success: boolean }>('/api/settings/notifications', { templates: notifications.templates })
+			.then(() => markClean('notifications'))
+			.catch((e: unknown) => toast.error((e as Error).message))
 	}
 
 	function openNewStaff() {
@@ -462,8 +577,10 @@
 		}
 	}
 
-	async function toggleStaff(m: StaffMember) {
-		if (!confirm(`${m.status === 'active' ? 'Disable' : 'Enable'} ${m.name}?`)) return
+	async function toggleStaff() {
+		const m = staffToggleTarget
+		staffToggleTarget = null
+		if (!m) return
 		try {
 			await api.put<{ success: boolean }>(`/api/settings/staff/${m.id}`, { status: m.status === 'active' ? 'disabled' : 'active' })
 			toast.success('Staff updated')
@@ -534,6 +651,7 @@
 			})
 			codSettings = res.data
 			toast.success('COD settings saved')
+			markClean('cod')
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -555,6 +673,7 @@
 			})
 			checkoutSettings = res.data
 			toast.success('Checkout settings saved')
+			markClean('checkout')
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -618,8 +737,10 @@
 		}
 	}
 
-	async function deleteCarrier(c: Carrier) {
-		if (!confirm(`Delete carrier ${c.name}?`)) return
+	async function deleteCarrier() {
+		const c = carrierDeleteTarget
+		carrierDeleteTarget = null
+		if (!c) return
 		deletingCarrierId = c.id
 		try {
 			await api.delete<{ success: boolean; data: { deleted: boolean } }>(`/api/settings/carriers/${c.id}`)
@@ -629,6 +750,32 @@
 			toast.error((e as Error).message)
 		} finally {
 			deletingCarrierId = ''
+		}
+	}
+
+	async function saveInvoice() {
+		saving = true
+		try {
+			const res = await api.put<{ success: boolean; data: InvoiceSettings }>('/api/settings/invoice', {
+				prefix: invPrefix,
+				businessName: invBusinessName.trim() || null,
+				address: invAddress,
+				phone: invPhone.trim() || null,
+				email: invEmail.trim() || null,
+				taxLabel: invTaxLabel.trim() || null,
+				taxNumber: invTaxNumber.trim() || null,
+				headerNote: invHeaderNote.trim() || null,
+				footerNote: invFooterNote.trim() || null,
+				displayFields: { columns: invColumns, showDiscount: invShowDiscount, showTax: invShowTax },
+				layout: invLayout
+			})
+			invoiceSettings = res.data
+			toast.success('Invoice settings saved')
+			markClean('invoice')
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			saving = false
 		}
 	}
 
@@ -658,6 +805,7 @@
 		{ id: 'checkout', label: 'Checkout' },
 		{ id: 'carriers', label: 'Carriers' },
 		{ id: 'pincode', label: 'Pincode lookup' },
+		{ id: 'invoice', label: 'Invoice' },
 		{ id: 'notifications', label: 'Notifications' },
 		{ id: 'staff', label: 'Staff' }
 	]
@@ -846,7 +994,7 @@
 									<div class="flex gap-2">
 										<input class="field flex-1" placeholder="Zone name" bind:value={zones[i].name} />
 										<input type="number" step="0.01" min="0" class="field w-28" placeholder="Rate" bind:value={zones[i].rate} />
-										<button type="button" class="rounded p-1.5 text-sm text-outline hover:bg-error-container/40 hover:text-error" onclick={() => zones = zones.filter((_, j) => j !== i)}>×</button>
+										<button type="button" aria-label="Remove zone" class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-sm text-outline hover:bg-error-container/40 hover:text-error" onclick={() => zones = zones.filter((_, j) => j !== i)}>×</button>
 									</div>
 									<input class="field mt-2 w-full" placeholder="Countries (comma separated, e.g. US, CA)" bind:value={zones[i].countriesText} />
 								</div>
@@ -881,7 +1029,7 @@
 											<input type="checkbox" class="field-check" bind:checked={rules[i].enabled} />
 											Enabled
 										</label>
-										<button type="button" class="rounded p-1.5 text-sm text-outline hover:bg-error-container/40 hover:text-error" onclick={() => rules = rules.filter((_, j) => j !== i)}>×</button>
+										<button type="button" aria-label="Remove rule" class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-sm text-outline hover:bg-error-container/40 hover:text-error" onclick={() => rules = rules.filter((_, j) => j !== i)}>×</button>
 									</div>
 									{#if rules[i].type === 'country'}
 										<input class="field mt-2 w-40 uppercase" placeholder="Country (e.g. KW)" maxlength="3" bind:value={rules[i].country} />
@@ -935,7 +1083,7 @@
 								<div class="flex gap-2">
 									<input class="field flex-1" placeholder="Region (e.g. CA)" bind:value={rates[i].region} />
 									<input type="number" step="0.01" min="0" max="100" class="field w-28" placeholder="%" bind:value={rates[i].rate} />
-									<button type="button" class="rounded p-1.5 text-sm text-outline hover:bg-error-container/40 hover:text-error" onclick={() => rates = rates.filter((_, j) => j !== i)}>×</button>
+									<button type="button" aria-label="Remove rate" class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-sm text-outline hover:bg-error-container/40 hover:text-error" onclick={() => rates = rates.filter((_, j) => j !== i)}>×</button>
 								</div>
 							{/each}
 							{#if rates.length === 0}
@@ -1061,9 +1209,9 @@
 										<td class="px-3 py-3 font-mono text-xs text-secondary">{c.code}</td>
 										<td class="px-3 py-3"><Badge label={c.enabled ? 'active' : 'disabled'} /></td>
 										<td class="px-5 py-3 text-right whitespace-nowrap">
-											<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditCarrier(c)}>Edit</button>
+											<button class="min-h-11 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditCarrier(c)}>Edit</button>
 											<span class="mx-1 text-outline">|</span>
-											<button class="rounded p-1.5 text-xs font-medium text-secondary hover:bg-surface-container hover:text-on-surface disabled:opacity-50" disabled={deletingCarrierId === c.id} onclick={() => deleteCarrier(c)}>{deletingCarrierId === c.id ? 'Deleting…' : 'Delete'}</button>
+											<button class="min-h-11 rounded p-1.5 text-xs font-medium text-secondary hover:bg-surface-container hover:text-on-surface disabled:opacity-50" disabled={deletingCarrierId === c.id} onclick={() => (carrierDeleteTarget = c)}>{deletingCarrierId === c.id ? 'Deleting…' : 'Delete'}</button>
 										</td>
 									</tr>
 								{/each}
@@ -1105,6 +1253,101 @@
 						</div>
 					</div>
 				{/if}
+			</Card>
+		{:else if section === 'invoice' && invoiceSettings}
+			<Card title="Invoice customization" headingLevel="h2">
+				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveInvoice() }}>
+					<div class="grid gap-4 sm:grid-cols-2">
+						<div>
+							<label for="inv-prefix" class="field-label">Number prefix</label>
+							<input id="inv-prefix" class="field font-mono uppercase" bind:value={invPrefix} maxlength="10" placeholder="INV" />
+							<p class="mt-1 text-[11px] text-outline">Letters and digits only; used as {invPrefix || 'INV'}-0001, {invPrefix || 'INV'}-0002, …</p>
+						</div>
+						<div>
+							<label for="inv-business-name" class="field-label">Business name</label>
+							<input id="inv-business-name" class="field" bind:value={invBusinessName} placeholder="Business name on the invoice" />
+						</div>
+						<div>
+							<label for="inv-phone" class="field-label">Phone</label>
+							<input id="inv-phone" class="field" bind:value={invPhone} />
+						</div>
+						<div>
+							<label for="inv-email" class="field-label">Email</label>
+							<input id="inv-email" type="email" class="field" bind:value={invEmail} />
+						</div>
+						<div>
+							<label for="inv-tax-label" class="field-label">Tax label</label>
+							<input id="inv-tax-label" class="field" bind:value={invTaxLabel} placeholder="e.g. VAT / Tax" />
+						</div>
+						<div>
+							<label for="inv-tax-number" class="field-label">Tax / registration number</label>
+							<input id="inv-tax-number" class="field" bind:value={invTaxNumber} placeholder="e.g. VATIN, 310122456600003" />
+						</div>
+					</div>
+
+					<div>
+						<p class="field-label mb-2">Business address</p>
+						<div class="grid gap-3 sm:grid-cols-2">
+							<input class="field" placeholder="Line 1" bind:value={invAddress.line1} />
+							<input class="field" placeholder="Line 2" bind:value={invAddress.line2} />
+							<input class="field" placeholder="City" bind:value={invAddress.city} />
+							<input class="field" placeholder="State" bind:value={invAddress.state} />
+							<input class="field" placeholder="Postal code" bind:value={invAddress.postalCode} />
+							<input class="field" placeholder="Country" bind:value={invAddress.country} />
+						</div>
+					</div>
+
+					<div>
+						<p class="field-label mb-2">Line-item columns</p>
+						<div class="flex flex-wrap gap-2">
+							{#each INVOICE_COLUMNS as col (col)}
+								<label class="flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface-variant">
+									<input
+										type="checkbox"
+										class="field-check"
+										checked={invColumns.includes(col)}
+										onchange={() => { invColumns = invColumns.includes(col) ? invColumns.filter((c) => c !== col) : [...invColumns, col] }}
+									/>
+									<span class="text-xs">{col}</span>
+								</label>
+							{/each}
+						</div>
+					</div>
+
+					<div class="flex flex-wrap gap-4">
+						<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+							<input type="checkbox" class="field-check" bind:checked={invShowDiscount} />
+							Show discount
+						</label>
+						<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+							<input type="checkbox" class="field-check" bind:checked={invShowTax} />
+							Show tax line
+						</label>
+					</div>
+
+					<div class="grid gap-4 sm:grid-cols-2">
+						<div>
+							<label for="inv-layout" class="field-label">Layout</label>
+							<select id="inv-layout" class="field" bind:value={invLayout}>
+								<option value="standard">Standard</option>
+								<option value="compact">Compact</option>
+							</select>
+						</div>
+					</div>
+
+					<div>
+						<label for="inv-header-note" class="field-label">Header note</label>
+						<input id="inv-header-note" class="field" bind:value={invHeaderNote} placeholder="Optional line above the items table" />
+					</div>
+					<div>
+						<label for="inv-footer-note" class="field-label">Footer note</label>
+						<input id="inv-footer-note" class="field" bind:value={invFooterNote} placeholder="Optional line below the totals (e.g. thanks for your business)" />
+					</div>
+
+					<div class="flex justify-end">
+						<Button type="submit" loading={saving}>Save</Button>
+					</div>
+				</form>
 			</Card>
 		{:else if section === 'notifications' && notifications}
 			<Card title="Email notifications" headingLevel="h2">
@@ -1180,9 +1423,9 @@
 										</td>
 										<td class="px-3 py-3"><Badge label={m.status} /></td>
 										<td class="px-5 py-3 text-right whitespace-nowrap">
-											<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditStaff(m)}>Edit</button>
+											<button class="min-h-11 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditStaff(m)}>Edit</button>
 											<span class="mx-1 text-outline">|</span>
-											<button class="rounded p-1.5 text-xs font-medium text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => toggleStaff(m)}>{m.status === 'active' ? 'Disable' : 'Enable'}</button>
+											<button class="min-h-11 rounded p-1.5 text-xs font-medium text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => (staffToggleTarget = m)}>{m.status === 'active' ? 'Disable' : 'Enable'}</button>
 										</td>
 									</tr>
 								{/each}
@@ -1203,23 +1446,23 @@
 				<input id="staff-name" class="field" bind:value={staffName} required />
 			</div>
 			<div>
-				<label class="field-label">Email *</label>
-				<input type="email" class="field" bind:value={staffEmail} required />
+				<label for="staff-email" class="field-label">Email *</label>
+				<input id="staff-email" type="email" class="field" bind:value={staffEmail} required />
 			</div>
 			<div>
-				<label class="field-label">{editingStaff ? 'New password (leave blank to keep)' : 'Password *'}</label>
-				<input type="password" class="field" bind:value={staffPassword} minlength={editingStaff ? undefined : 10} required={!editingStaff} />
+				<label for="staff-password" class="field-label">{editingStaff ? 'New password (leave blank to keep)' : 'Password *'}</label>
+				<input id="staff-password" type="password" class="field" bind:value={staffPassword} minlength={editingStaff ? undefined : 10} required={!editingStaff} />
 			</div>
 			<div>
-				<label class="field-label">Role</label>
-				<select class="field" bind:value={staffRole}>
+				<label for="staff-role" class="field-label">Role</label>
+				<select id="staff-role" class="field" bind:value={staffRole}>
 					<option value="admin">Admin</option>
 					<option value="staff">Staff</option>
 				</select>
 			</div>
 			<div>
-				<label class="field-label">Permissions</label>
-				<div class="grid grid-cols-2 gap-2">
+				<p class="field-label" id="staff-perms-label">Permissions</p>
+				<div class="grid grid-cols-2 gap-2" role="group" aria-labelledby="staff-perms-label">
 					{#each PERMISSIONS as p (p)}
 						<label class="flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface-variant">
 							<input type="checkbox" class="field-check" checked={staffPerms.includes(p)} onchange={() => togglePerm(p)} />
@@ -1258,3 +1501,30 @@
 		</form>
 	</Modal>
 {/if}
+
+<ConfirmDialog
+	open={pendingSection !== null}
+	title="Discard unsaved changes?"
+	message="You have unsaved changes on this tab. Switching tabs will discard them."
+	confirmLabel="Discard"
+	onConfirm={confirmSectionSwitch}
+	onCancel={() => (pendingSection = null)}
+/>
+
+<ConfirmDialog
+	open={staffToggleTarget !== null}
+	title={`${staffToggleTarget?.status === 'active' ? 'Disable' : 'Enable'} ${staffToggleTarget?.name ?? ''}?`}
+	message={staffToggleTarget?.status === 'active' ? 'The staff member will lose dashboard access.' : 'The staff member will regain dashboard access.'}
+	confirmLabel={staffToggleTarget?.status === 'active' ? 'Disable' : 'Enable'}
+	onConfirm={toggleStaff}
+	onCancel={() => (staffToggleTarget = null)}
+/>
+
+<ConfirmDialog
+	open={carrierDeleteTarget !== null}
+	title={`Delete carrier ${carrierDeleteTarget?.name ?? ''}?`}
+	message="Shipments can no longer use this carrier. This cannot be undone."
+	confirmLabel="Delete"
+	onConfirm={deleteCarrier}
+	onCancel={() => (carrierDeleteTarget = null)}
+/>

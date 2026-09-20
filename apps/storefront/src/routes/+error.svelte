@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state'
 	import { t } from '$lib/i18n'
+
+	const homeHref = $derived(page.params.slug ? `/${page.params.slug}` : '/')
 </script>
 
 <div class="flex min-h-screen flex-col items-center justify-center bg-neutral-50 px-4 text-center">
@@ -12,7 +14,7 @@
 		{page.error?.message ?? t('error.unexpected')}
 	</p>
 	<a
-		href="/"
+		href={homeHref}
 		class="mt-6 rounded-lg bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-700"
 	>
 		{t('error.goHome')}

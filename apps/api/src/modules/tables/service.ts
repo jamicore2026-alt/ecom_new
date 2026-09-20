@@ -229,6 +229,19 @@ export class TablesService {
     const [table] = await db.select().from(tables).where(and(eq(tables.id, id), eq(tables.merchantId, merchantId)))
     if (!table) throw notFound('TABLE_NOT_FOUND', 'Table not found')
     if (scope) assertInOutletScope(scope, table.outletId)
+    if (baseUrl !== undefined) {
+      // The base URL is embedded in the rendered QR payload — only allow
+      // absolute http(s) URLs so javascript:/data: payloads can never be minted.
+      let parsed: URL
+      try {
+        parsed = new URL(baseUrl)
+      } catch {
+        throw badRequest('INVALID_BASE_URL', 'baseUrl must be an absolute http(s) URL')
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw badRequest('INVALID_BASE_URL', 'baseUrl must be an absolute http(s) URL')
+      }
+    }
     const url = `${baseUrl ?? 'https://store'}${table.qrToken}`
     return ok({ token: table.qrToken, url, image: `/api/table-qr/${table.qrToken}/qr.svg` })
   }

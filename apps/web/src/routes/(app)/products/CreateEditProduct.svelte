@@ -16,21 +16,47 @@
 	let saving = $state(false)
 	let fieldErrors = $state<Record<string, string>>({})
 
-	let name = $state(product?.name ?? '')
-	let nameAr = $state(product?.nameAr ?? '')
-	let sku = $state(product?.sku ?? '')
-	let barcode = $state(product?.barcode ?? '')
-	let description = $state(product?.description ?? '')
-	let descriptionAr = $state(product?.descriptionAr ?? '')
-	let price = $state(String(product?.price ?? ''))
-	let compareAtPrice = $state(product?.compareAtPrice != null ? String(product.compareAtPrice) : '')
-	let cost = $state(String(product?.cost ?? '0'))
-	let category = $state(product?.categoryId ?? '')
-	let trackInventory = $state(product?.trackInventory ?? true)
-	let lowStockThreshold = $state(String(product?.lowStockThreshold ?? 5))
-	let status = $state(product?.status ?? 'active')
-	let visibility = $state(product?.visibility ?? 'both')
-	let images = $state<ProductImage[]>([...(product?.images ?? [])])
+	let name = $state('')
+	let nameAr = $state('')
+	let sku = $state('')
+	let barcode = $state('')
+	let description = $state('')
+	let descriptionAr = $state('')
+	let price = $state('')
+	let compareAtPrice = $state('')
+	let cost = $state('0')
+	let category = $state('')
+	let trackInventory = $state(true)
+	let lowStockThreshold = $state('5')
+	let status = $state('active')
+	let visibility = $state('both')
+	let images = $state<ProductImage[]>([])
+
+	// Sync the form from the product prop before first paint and whenever a
+	// different product is passed while mounted (fresh mount per modal open
+	// is the common case — the effect is a safety net for reuse).
+	let lastProductId = $state<string | null>(null)
+	$effect.pre(() => {
+		if ((product?.id ?? null) !== lastProductId) {
+			lastProductId = product?.id ?? null
+			name = product?.name ?? ''
+			nameAr = product?.nameAr ?? ''
+			sku = product?.sku ?? ''
+			barcode = product?.barcode ?? ''
+			description = product?.description ?? ''
+			descriptionAr = product?.descriptionAr ?? ''
+			price = String(product?.price ?? '')
+			compareAtPrice = product?.compareAtPrice != null ? String(product.compareAtPrice) : ''
+			cost = String(product?.cost ?? '0')
+			category = product?.categoryId ?? ''
+			trackInventory = product?.trackInventory ?? true
+			lowStockThreshold = String(product?.lowStockThreshold ?? 5)
+			status = product?.status ?? 'active'
+			visibility = product?.visibility ?? 'both'
+			images = [...(product?.images ?? [])]
+			fieldErrors = {}
+		}
+	})
 
 	async function submit() {
 		saving = true
@@ -110,7 +136,7 @@
 				<input id="price" type="number" step="0.01" min="0" class="field" bind:value={price} required />
 			</div>
 			<div>
-				<label for="compare-at-price" class="field-label">Sale price</label>
+				<label for="compare-at-price" class="field-label">Compare-at price</label>
 				<input id="compare-at-price" type="number" step="0.01" min="0" class="field" bind:value={compareAtPrice} />
 			</div>
 			<div>

@@ -7,6 +7,7 @@
 	import Card from '$lib/components/Card.svelte'
 	import Badge from '$lib/components/Badge.svelte'
 	import Modal from '$lib/components/Modal.svelte'
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import { currency, dateTimeFull, number, titleCase } from '$lib/format'
 	import type { OrderDetail, OrderItem, ReturnRecord, Invoice } from '$lib/types'
@@ -31,6 +32,9 @@
 	let refundAmount = $state('')
 	let refundMethod = $state<'original'>('original')
 	let refundReturnId = $state('')
+	let refundConfirmOpen = $state(false)
+	let returnStatusTarget = $state<{ r: ReturnRecord; status: 'approved' | 'rejected' } | null>(null)
+	let cancelConfirmOpen = $state(false)
 	// Same key per refund attempt: a retry after a gateway failure reuses it so
 	// the server can never double-refund (unique merchant+key).
 	let refundAttemptId = $state('')
@@ -86,6 +90,7 @@
 	}
 
 	$effect(() => {
+		void id
 		load()
 	})
 
@@ -120,18 +125,25 @@
 		}
 	}
 
-	async function setReturnStatus(r: ReturnRecord, status: 'approved' | 'rejected') {
-		if (!confirm(`Mark return ${status}?`)) return
+	function requestReturnStatus(r: ReturnRecord, status: 'approved' | 'rejected') {
+		returnStatusTarget = { r, status }
+	}
+
+	async function confirmReturnStatus() {
+		const target = returnStatusTarget
+		returnStatusTarget = null
+		if (!target) return
 		try {
-			await api.patch<{ success: boolean }>(`/api/returns/${r.id}`, { status })
-			toast.success(`Return ${status}`)
+			await api.patch<{ success: boolean }>(`/api/returns/${target.r.id}`, { status: target.status })
+			toast.success(`Return ${target.status}`)
 			load()
 		} catch (e) {
 			toast.error((e as Error).message)
 		}
 	}
 
-	async function submitRefund() {
+	async function doRefund() {
+		refundConfirmOpen = false
 		saving = true
 		try {
 			await api.post<{ success: boolean }>('/api/refunds', {
@@ -178,7 +190,7 @@
 	}
 
 	async function cancelOrder() {
-		if (!confirm(`Cancel order #${order?.orderNumber}? Inventory will be restocked.`)) return
+		cancelConfirmOpen = false
 		saving = true
 		try {
 			await api.post<{ success: boolean }>(`/api/orders/${id}/cancel`)
@@ -239,7 +251,7 @@
 					<Button
 						variant="danger"
 						size="sm"
-						onclick={cancelOrder}
+						onclick={() => (cancelConfirmOpen = true)}
 						disabled={saving}
 					>
 						Cancel order
@@ -298,8 +310,7 @@
 									<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{currency(item.total, order.currency)}</td>
 									{#if canWrite()}
 										<td class="px-table-cell-x py-table-cell-y text-right">
-											<button
-												class="inline-flex items-center gap-1 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
+											<button class="inline-flex min-h-11 items-center gap-1 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
 												disabled={availableToReturn(item) <= 0}
 												class:opacity-40={availableToReturn(item) <= 0}
 												onclick={() => openReturn(item)}
@@ -342,8 +353,8 @@
 										<td class="px-table-cell-x py-table-cell-y">
 											{#if canWrite() && r.status === 'pending'}
 												<div class="flex gap-2">
-													<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-success hover:bg-primary-fixed-dim/40" onclick={() => setReturnStatus(r, 'approved')}>Approve</button>
-													<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => setReturnStatus(r, 'rejected')}>Reject</button>
+													<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-success hover:bg-primary-fixed-dim/40" onclick={() => requestReturnStatus(r, 'approved')}>Approve</button>
+													<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => requestReturnStatus(r, 'rejected')}>Reject</button>
 												</div>
 											{:else}
 												<span class="text-xs text-outline">—</span>
@@ -380,7 +391,7 @@
 										<td class="px-table-cell-x py-table-cell-y text-right">
 											{#if canWrite() && (r.status as string) === 'failed'}
 												<button
-													class="inline-flex items-center gap-1 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
+													class="inline-flex min-h-11 items-center gap-1 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
 													disabled={retryingRefundId === r.id}
 													class:opacity-40={retryingRefundId === r.id}
 													onclick={() => retryRefund(r.id)}
@@ -425,6 +436,16 @@
 											<Badge label={inv.status} />
 										</div>
 									</a>
+									<div class="mt-1 flex justify-end">
+										<button
+											class="inline-flex min-h-11 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
+											title="Download PDF"
+											onclick={() => api.download(`/api/invoices/${inv.id}/pdf`, `${inv.invoiceNumber}.pdf`).catch((e) => toast.error((e as Error).message))}
+										>
+											<Icon name="download" size="text-[14px]" />
+											PDF
+										</button>
+									</div>
 								{/each}
 							</div>
 						{/if}
@@ -503,19 +524,19 @@
 				Available to return <span class="font-medium text-on-surface">{number(availableToReturn(returnItem))}</span>
 			</p>
 			<div>
-				<label for="return-qty" class="mb-1 block text-sm font-medium text-on-surface">Quantity</label>
+				<label for="return-qty" class="field-label">Quantity</label>
 				<input
 					id="return-qty"
 					type="number"
-					class="w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface focus:outline-2 focus:outline-primary"
+					class="field"
 					bind:value={returnQty}
 					max={availableToReturn(returnItem)}
 					required
 				/>
 			</div>
 			<div>
-				<label for="return-reason" class="mb-1 block text-sm font-medium text-on-surface">Reason</label>
-				<textarea id="return-reason" rows="2" class="w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface focus:outline-2 focus:outline-primary" bind:value={returnReason} placeholder="Optional"></textarea>
+				<label for="return-reason" class="field-label">Reason</label>
+				<textarea id="return-reason" rows="2" class="field" bind:value={returnReason} placeholder="Optional"></textarea>
 			</div>
 			<div class="flex justify-end gap-2 pt-2">
 				<Button variant="secondary" onclick={() => (returnOpen = false)}>Cancel</Button>
@@ -532,13 +553,13 @@
 			class="space-y-4"
 			onsubmit={(e) => {
 				e.preventDefault()
-				submitRefund()
+				refundConfirmOpen = true
 			}}
 		>
 			{#if pendingReturns().length > 0}
 				<div>
-					<label for="refund-return" class="mb-1 block text-sm font-medium text-on-surface">Linked to return</label>
-					<select id="refund-return" class="w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface focus:outline-2 focus:outline-primary" bind:value={refundReturnId}>
+					<label for="refund-return" class="field-label">Linked to return</label>
+					<select id="refund-return" class="field" bind:value={refundReturnId}>
 						<option value="">No return</option>
 						{#each pendingReturns() as r (r.id)}
 							<option value={r.id}>Return {r.id.slice(0, 8)} — {currency(r.amount, order.currency)}</option>
@@ -547,12 +568,12 @@
 				</div>
 			{/if}
 			<div>
-				<label for="refund-amount" class="mb-1 block text-sm font-medium text-on-surface">Amount (max {currency(refundable(), order.currency)})</label>
-				<input id="refund-amount" type="number" step="0.01" min="0.01" class="w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface focus:outline-2 focus:outline-primary" bind:value={refundAmount} required />
+				<label for="refund-amount" class="field-label">Amount (max {currency(refundable(), order.currency)})</label>
+				<input id="refund-amount" type="number" step="0.01" min="0.01" class="field" bind:value={refundAmount} required />
 			</div>
 			<div>
-				<label for="refund-method" class="mb-1 block text-sm font-medium text-on-surface">Method</label>
-				<select id="refund-method" class="w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface focus:outline-2 focus:outline-primary" bind:value={refundMethod}>
+				<label for="refund-method" class="field-label">Method</label>
+				<select id="refund-method" class="field" bind:value={refundMethod}>
 					<option value="original">Original payment method</option>
 				</select>
 			</div>
@@ -563,3 +584,30 @@
 		</form>
 	</Modal>
 {/if}
+
+<ConfirmDialog
+	open={returnStatusTarget !== null}
+	title={`Mark return ${returnStatusTarget?.status ?? ''}?`}
+	message="This updates the return status and may affect inventory."
+	confirmLabel={returnStatusTarget?.status === 'approved' ? 'Approve' : 'Reject'}
+	onConfirm={confirmReturnStatus}
+	onCancel={() => (returnStatusTarget = null)}
+/>
+
+<ConfirmDialog
+	open={cancelConfirmOpen}
+	title={`Cancel order #${order?.orderNumber}?`}
+	message="Inventory will be restocked. This cannot be undone."
+	confirmLabel="Cancel order"
+	onConfirm={cancelOrder}
+	onCancel={() => (cancelConfirmOpen = false)}
+/>
+
+<ConfirmDialog
+	open={refundConfirmOpen}
+	title={`Record refund of ${refundAmount || '—'}?`}
+	message="This records a refund against the order. This cannot be undone."
+	confirmLabel="Record refund"
+	onConfirm={doRefund}
+	onCancel={() => (refundConfirmOpen = false)}
+/>

@@ -19,13 +19,13 @@ import { connection } from '../src/database/client'
  */
 let ready: Promise<void> | null = null
 
-/** Resolve the migration SQL file from either cwd (apps/api) or the repo root. */
-const migrationPath = (): string => {
-  const fromCwd = path.join(process.cwd(), 'drizzle', '0029_enable_rls.sql')
+/** Resolve a migration SQL file from either cwd (apps/api) or the repo root. */
+const migrationPath = (name: string): string => {
+  const fromCwd = path.join(process.cwd(), 'drizzle', name)
   if (existsSync(fromCwd)) return fromCwd
-  const fromRoot = path.join(process.cwd(), 'apps', 'api', 'drizzle', '0029_enable_rls.sql')
+  const fromRoot = path.join(process.cwd(), 'apps', 'api', 'drizzle', name)
   if (existsSync(fromRoot)) return fromRoot
-  throw new Error('Could not locate drizzle/0029_enable_rls.sql for RLS test bootstrap')
+  throw new Error(`Could not locate drizzle/${name} for RLS test bootstrap`)
 }
 
 /**
@@ -82,17 +82,23 @@ const provision = async (): Promise<void> => {
     }
   }
 
-  // Enable + FORCE RLS and create per-table policies from migration 0029.
-  // Enabling alone is not enough: RLS must be FORCED, otherwise the table owner
-  // (e.g. app_runtime when it created the schema) still bypasses row-level
-  // security. `--> statement-breakpoint` lines are tooling markers; running the
-  // statements as one script is fine and the whole file is idempotent
-  // (policies are guarded by IF NOT EXISTS).
-  const script = readFileSync(migrationPath(), 'utf8')
-    .split('\n')
-    .filter((line) => !/^\s*--> statement-breakpoint\s*$/.test(line))
-    .join('\n')
-  await connection.unsafe(script)
+  // Enable + FORCE RLS and create per-table policies from migration 0029,
+  // then apply the 0033 security-hardening migration (new merchant columns,
+  // tenant policies for webhook_events/token_blacklist, platform_admins
+  // lockdown, hot-path indexes). Enabling alone is not enough: RLS must be
+  // FORCED, otherwise the table owner (e.g. app_runtime when it created the
+  // schema) still bypasses row-level security. `--> statement-breakpoint`
+  // lines are tooling markers; running the statements as one script is fine
+  // and the whole file is idempotent (policies are guarded by IF NOT EXISTS).
+  // NOTE: 0033 must run AFTER the grants above — it contains REVOKEs that the
+  // blanket grants would otherwise undo.
+  for (const name of ['0029_enable_rls.sql', '0033_security_hardening.sql', '0034_timestamptz.sql', '0035_merchant_deleted_at.sql']) {
+    const script = readFileSync(migrationPath(name), 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*--> statement-breakpoint\s*$/.test(line))
+      .join('\n')
+    await connection.unsafe(script)
+  }
 }
 
 export const ensureRls = (): Promise<void> => {

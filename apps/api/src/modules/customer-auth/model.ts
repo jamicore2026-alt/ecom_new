@@ -6,7 +6,7 @@ export const storeParams = t.Object({
 
 export const registerBody = t.Object({
   email: t.String({ format: 'email', maxLength: 255 }),
-  password: t.String({ minLength: 8, maxLength: 72 }),
+  password: t.String({ minLength: 10, maxLength: 72 }),
   firstName: t.Optional(t.String({ maxLength: 255 })),
   lastName: t.Optional(t.String({ maxLength: 255 })),
   /** Required when claiming an existing guest account — proof of mailbox ownership. */
@@ -15,7 +15,7 @@ export const registerBody = t.Object({
 
 export const changePasswordBody = t.Object({
   currentPassword: t.String({ minLength: 1, maxLength: 72 }),
-  newPassword: t.String({ minLength: 8, maxLength: 72 })
+  newPassword: t.String({ minLength: 10, maxLength: 72 })
 })
 
 export const loginBody = t.Object({
@@ -50,7 +50,7 @@ export const forgotPasswordBody = t.Object({
 
 export const resetPasswordBody = t.Object({
   token: t.String({ minLength: 1 }),
-  password: t.String({ minLength: 8, maxLength: 72 })
+  password: t.String({ minLength: 10, maxLength: 72 })
 })
 
 export const resendVerificationBody = t.Object({

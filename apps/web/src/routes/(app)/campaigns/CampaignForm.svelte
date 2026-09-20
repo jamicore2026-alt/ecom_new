@@ -11,8 +11,8 @@
 		onDone?: (id: string) => void
 	}>()
 
-	let id = $state(campaignId)
-	let loading = $state(campaignId ? true : false)
+	let id = $state<string | null>(null)
+	let loading = $state(false)
 	let saving = $state(false)
 
 	let fName = $state('')
@@ -22,6 +22,16 @@
 	let fTriggerType = $state('')
 	let fTriggerDelayHours = $state(0)
 	let fSchedule = $state('')
+
+	function resetForm() {
+		fName = ''
+		fType = 'email'
+		fSubject = ''
+		fContent = ''
+		fTriggerType = ''
+		fTriggerDelayHours = 0
+		fSchedule = ''
+	}
 
 	async function load() {
 		if (!id) return
@@ -44,9 +54,13 @@
 	}
 
 	$effect(() => {
-		if (campaignId !== id) {
-			id = campaignId
+		if ((campaignId ?? null) !== id) {
+			id = campaignId ?? null
 			if (id) load()
+			else {
+				resetForm()
+				loading = false
+			}
 		}
 	})
 

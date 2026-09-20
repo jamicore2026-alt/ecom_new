@@ -6,14 +6,23 @@
 
 	let { data }: PageProps = $props()
 	const store = $derived(data.store)
+	const title = $derived(`${t('navigation.shop')} — ${store.settings.name}`)
+	const description = $derived(t('products.browse', { count: data.products.meta.total, store: store.settings.name }))
+	const canonical = $derived(`${siteUrl(data.origin)}/${data.slug}/products`)
 </script>
 
 <svelte:head>
-	<title>{t('navigation.shop')} — {store.settings.name}</title>
-	<meta name="description" content={t('products.browse', { count: data.products.meta.total, store: store.settings.name })} />
-	<link rel="canonical" href={`${siteUrl(data.origin)}/${data.slug}/products`} />
+	<title>{title}</title>
+	<meta name="description" content={description} />
+	<link rel="canonical" href={canonical} />
 	<meta property="og:type" content="website" />
-	<meta property="og:title" content={`${t('navigation.shop')} — ${store.settings.name}`} />
+	<meta property="og:site_name" content={store.settings.name} />
+	<meta property="og:title" content={title} />
+	<meta property="og:description" content={description} />
+	<meta property="og:url" content={canonical} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
 </svelte:head>
 
 <div class="mx-auto max-w-7xl px-4 py-10">

@@ -1,7 +1,8 @@
 import { Elysia } from 'elysia'
-import { authPlugin, requirePermission } from '../../plugins/auth'
+import { authPlugin, hasPermission, requirePermission } from '../../plugins/auth'
 import type { AuthContext } from '../../plugins/auth'
 import { branchScopeOf } from '../../shared/outlet-scope'
+import { forbidden } from '../../shared/errors'
 import { auditFromRequest } from '../audit-logs'
 import { OrdersService } from './service'
 import {
@@ -14,16 +15,31 @@ import {
 
 const scopeOf = async (auth: AuthContext) => branchScopeOf(auth.db, auth)
 
+/** Per-route read guard — module-level `.use(requirePermission(...))` would
+ *  stack onto the write routes below, so reads assert inline instead. */
+const needOrderRead = ({ auth }: { auth: AuthContext }) => {
+  if (!hasPermission(auth, 'orders.read')) throw forbidden()
+}
+
 export const ordersModule = new Elysia({ prefix: '/api' })
   // Outlet scope: reads are filtered by the caller's branch scope
   // (branchOrderCondition in service.list/export) and row-level reads/writes
   // are asserted per order (assertOrderInBranchScope). Owners/admins are
   // merchant-wide. docs/outlet-isolation.md
   .use(authPlugin)
+  .get('/returns', async ({ query, auth }) =>
+    OrdersService.listReturns(auth.db, auth.merchant.id, query.orderId, await scopeOf(auth)),
+    { beforeHandle: needOrderRead }
+  )
+  .get('/refunds', async ({ query, auth }) =>
+    OrdersService.listRefunds(auth.db, auth.merchant.id, query.orderId, await scopeOf(auth)),
+    { beforeHandle: needOrderRead }
+  )
   .get('/orders', async ({ query, auth }) =>
     OrdersService.list(auth.db, auth.merchant.id, query, await scopeOf(auth)),
     {
-      query: orderQuery
+      query: orderQuery,
+      beforeHandle: needOrderRead
     }
   )
   // registered before '/orders/:id' so "export" is not captured as an id
@@ -35,16 +51,11 @@ export const ordersModule = new Elysia({ prefix: '/api' })
       set.headers['content-disposition'] = `attachment; filename="orders-${auth.merchant.slug}-${new Date().toISOString().slice(0, 10)}.csv"`
       return csv
     },
-    { detail: { summary: 'Export orders as CSV' } }
+    { detail: { summary: 'Export orders as CSV' }, beforeHandle: needOrderRead }
   )
   .get('/orders/:id', async ({ params, auth }) =>
-    OrdersService.get(auth.db, auth.merchant.id, params.id, await scopeOf(auth))
-  )
-  .get('/returns', async ({ query, auth }) =>
-    OrdersService.listReturns(auth.db, auth.merchant.id, query.orderId, await scopeOf(auth))
-  )
-  .get('/refunds', async ({ query, auth }) =>
-    OrdersService.listRefunds(auth.db, auth.merchant.id, query.orderId, await scopeOf(auth))
+    OrdersService.get(auth.db, auth.merchant.id, params.id, await scopeOf(auth)),
+    { beforeHandle: needOrderRead }
   )
   .use(requirePermission('orders.create', 'orders.update', 'orders.cancel'))
   .patch(

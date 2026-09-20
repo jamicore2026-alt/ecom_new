@@ -7,6 +7,7 @@
 	import Card from '$lib/components/Card.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte'
 	import { dateTime } from '$lib/format'
 	import type { DeliveryOrder, DeliveryStatus, DeliveryZone, Driver } from '$lib/types'
 
@@ -43,6 +44,9 @@
 
 	let statusFilter = $state('')
 	let selected = $state<DeliveryOrder | null>(null)
+
+	let driverTarget = $state<Driver | null>(null)
+	let zoneTarget = $state<DeliveryZone | null>(null)
 
 	// new delivery modal
 	let showNew = $state(false)
@@ -270,8 +274,10 @@
 		}
 	}
 
-	async function removeDriver(driver: Driver) {
-		if (!confirm(`Remove driver "${driver.name}"?`)) return
+	async function removeDriver() {
+		const driver = driverTarget
+		driverTarget = null
+		if (!driver) return
 		try {
 			await api.delete<{ success: boolean }>(`/api/drivers/${driver.id}`)
 			toast.success('Driver removed')
@@ -292,8 +298,10 @@
 		await loadAll()
 	}
 
-	async function removeZone(zone: DeliveryZone) {
-		if (!confirm(`Remove zone "${zone.name}"?`)) return
+	async function removeZone() {
+		const zone = zoneTarget
+		zoneTarget = null
+		if (!zone) return
 		try {
 			await api.delete<{ success: boolean }>(`/api/delivery-zones/${zone.id}`)
 			toast.success('Zone removed')
@@ -433,7 +441,7 @@
 										</Button>
 									{/if}
 									<Button size="sm" variant="secondary" onclick={() => openEditDriver(drv)}>Edit</Button>
-									<Button size="sm" variant="danger" onclick={() => removeDriver(drv)}>Remove</Button>
+									<Button size="sm" variant="danger" onclick={() => (driverTarget = drv)}>Remove</Button>
 								</div>
 							{/if}
 						</Card>
@@ -475,8 +483,8 @@
 <td class="py-2 text-right">
 									{#if canManageZones}
 										<div class="flex justify-end gap-1">
-											<button type="button" class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditZone(z)}>Edit</button>
-											<button type="button" class="rounded p-1.5 text-xs text-error hover:bg-error-container/40" onclick={() => removeZone(z)}>Remove</button>
+											<button type="button" class="min-h-11 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditZone(z)}>Edit</button>
+											<button type="button" class="min-h-11 rounded p-1.5 text-xs text-error hover:bg-error-container/40" onclick={() => (zoneTarget = z)}>Remove</button>
 										</div>
 									{/if}
 								</td>
@@ -674,3 +682,21 @@
 		</div>
 	</Modal>
 {/if}
+
+<ConfirmDialog
+	open={driverTarget !== null}
+	title={`Remove driver "${driverTarget?.name ?? ''}"?`}
+	message="The driver will no longer receive delivery assignments. This cannot be undone."
+	confirmLabel="Remove"
+	onConfirm={removeDriver}
+	onCancel={() => (driverTarget = null)}
+/>
+
+<ConfirmDialog
+	open={zoneTarget !== null}
+	title={`Remove zone "${zoneTarget?.name ?? ''}"?`}
+	message="Deliveries can no longer be routed through this zone. This cannot be undone."
+	confirmLabel="Remove"
+	onConfirm={removeZone}
+	onCancel={() => (zoneTarget = null)}
+/>

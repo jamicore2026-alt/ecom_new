@@ -26,6 +26,13 @@ export const invoicesModule = new Elysia({ prefix: '/api' })
     return InvoicesService.get(auth.db, auth.merchant.id, await branchScopeOf(auth.db, auth), params.id)
   })
 
+  .get('/invoices/:id/pdf', async ({ auth, params, set }) => {
+    const { buffer, filename } = await InvoicesService.pdf(auth.db, auth.merchant.id, await branchScopeOf(auth.db, auth), params.id)
+    set.headers['content-type'] = 'application/pdf'
+    set.headers['content-disposition'] = `inline; filename="${filename}"`
+    return buffer
+  })
+
   .get('/orders/:id/invoices', async ({ auth, params }) => {
     return InvoicesService.getByOrder(auth.db, auth.merchant.id, await branchScopeOf(auth.db, auth), params.id)
   })
