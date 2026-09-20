@@ -51,4 +51,13 @@ ALTER TABLE "platform_admins" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 ALTER TABLE "platform_admins" FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
-REVOKE ALL ON "platform_admins" FROM "app_runtime";
+-- Guarded: on a fresh database the tenant roles may not exist yet (they are
+-- created by 0029_manual_role_setup.sql, which is intentionally NOT part of
+-- the automated journal). An unguarded REVOKE aborts `db:migrate` with
+-- "role does not exist". RLS default-deny above still blocks the role once
+-- created; the manual setup file repeats the REVOKE after its grants.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
+    REVOKE ALL ON "platform_admins" FROM "app_runtime";
+  END IF;
+END $$;

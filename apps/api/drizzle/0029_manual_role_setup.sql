@@ -41,3 +41,8 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE O
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_runtime;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_admin;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_admin;
+
+-- platform_admins must never be visible to the tenant role: RLS default-deny
+-- (migration 0033) blocks it, and this REVOKE removes the blanket grant above
+-- for the existing table. Re-run this line after re-applying grants.
+REVOKE ALL ON platform_admins FROM app_runtime;
