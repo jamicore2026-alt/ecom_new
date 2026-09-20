@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { and, eq, inArray, like } from 'drizzle-orm'
 import { app } from '../src/app'
 import { db } from '../src/database/client'
+import { createTenantConnection } from '../src/database/tenant-context'
 import {
   merchants,
   products,
@@ -187,10 +188,24 @@ describe('Warehouse transfers — pool fallback, bulk & tenant safety', () => {
       const [check] = await db.select().from(productVariants).where(eq(productVariants.id, fVariant.id))
       expect(check).toBeTruthy()
 
+      // TEMP-CI-DIAG: pinpoints the failure layer if this flakes in CI again.
+      const [jm] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, 'jamicore-store'))
+      const tenancy = await createTenantConnection(jm.id)
+      try {
+        const vis = await tenancy.db
+          .select({ id: productVariants.id })
+          .from(productVariants)
+          .where(eq(productVariants.id, fVariant.id))
+        console.log(`DIAG tenant-sees-foreign-variant=${vis.length} variant=${fVariant.id} merchant=${fMerchant.id}`)
+      } finally {
+        await tenancy.end()
+      }
+
       const res = await call(
         '/api/transfers',
         apiJson(headers, { fromWarehouseId: src.id, toWarehouseId: dst.id, variantId: fVariant.id, quantity: 1 })
       )
+      console.log(`DIAG transfer-response status=${res.status} body=${JSON.stringify(res.body).slice(0, 200)}`)
       // Tenant isolation is enforced by row-level security: a foreign variant is
       // simply invisible, surfacing as VARIANT_NOT_FOUND rather than touching it.
       expect(res.status).toBe(404)
