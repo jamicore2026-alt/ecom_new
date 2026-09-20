@@ -3,6 +3,8 @@
   "ui": "tui",
   "globalEnv": [
     "DATABASE_URL",
+    "APP_RUNTIME_DATABASE_URL",
+    "APP_ADMIN_DATABASE_URL",
     "JWT_ACCESS_SECRET",
     "JWT_REFRESH_SECRET",
     "CORS_ORIGINS",
