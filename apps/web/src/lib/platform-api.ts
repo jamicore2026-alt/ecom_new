@@ -62,5 +62,17 @@ export const platformApi = {
 		envelope<{ merchant: { id: string; name: string; slug: string; status: string; from: string } }>(
 			`/api/platform/merchants/${id}/status`,
 			{ method: 'POST', body: JSON.stringify({ to, reason }) }
-		)
+		),
+	createMerchant: (input: {
+		name: string
+		slug: string
+		email: string
+		phone?: string
+		currency?: string
+		owner: { name: string; email: string; password: string }
+	}) =>
+		envelope<{
+			merchant: { id: string; name: string; slug: string; email: string; status: string }
+			owner: { id: string; email: string }
+		}>(`/api/platform/merchants`, { method: 'POST', body: JSON.stringify(input) })
 }

@@ -1,7 +1,7 @@
 import { Elysia, t } from 'elysia'
 import jwt from '@elysiajs/jwt'
 import { PlatformService } from './service'
-import { platformLoginBody, platformStatusBody, platformListQuery, platformIdParams } from './model'
+import { platformLoginBody, platformStatusBody, platformListQuery, platformIdParams, platformCreateMerchantBody } from './model'
 import { resolveSecret } from '../../plugins/auth'
 import { ok } from '../../shared/response'
 import { unauthorized } from '../../shared/errors'
@@ -92,6 +92,14 @@ export const platformModule = new Elysia({ prefix: '/api/platform' })
     }
   )
   .use(platformAuth)
+  .post(
+    '/merchants',
+    ({ body, platformAdmin }) => PlatformService.createMerchant(body, platformAdmin),
+    {
+      body: platformCreateMerchantBody,
+      detail: { tags: ['Platform'], summary: 'Create a merchant with owner login + defaults (audited)' }
+    }
+  )
   .get(
     '/merchants',
     ({ query }) => PlatformService.listMerchants(query),

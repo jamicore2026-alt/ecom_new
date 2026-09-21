@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { hash } from 'bcryptjs'
 import { app } from '../src/app'
 import { db } from '../src/database/client'
-import { merchants, users } from '../src/database/schema'
+import { merchants, outlets, users } from '../src/database/schema'
 import { eq } from 'drizzle-orm'
 import { ensurePlatformAdmin } from '../src/database/seed-platform-admin'
 import { AuditService } from '../src/modules/audit-logs/service'
@@ -236,6 +236,84 @@ describe('platform offboarding', () => {
       json({ email: `doomed-staff-${stamp}@jamicore.com`, password: 'password123' })
     )
     expect(login.status).toBe(403)
+  })
+})
+
+describe('platform merchant creation', () => {
+  const stamp = Date.now()
+  const slug = `acme-${stamp}`
+  const ownerEmail = `owner-${stamp}@acme.example.com`
+  let createdId = ''
+
+  it('creates a merchant with owner login + defaults', async () => {
+    const res = await base('/api/platform/merchants', {
+      ...json({
+        name: 'Acme Corp',
+        slug,
+        email: `hq-${stamp}@acme.example.com`,
+        currency: 'USD',
+        owner: { name: 'Acme Owner', email: ownerEmail, password: 'sup3rsecretpw' }
+      }),
+      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.merchant.slug).toBe(slug)
+    expect(body.data.merchant.status).toBe('trialing')
+    expect(body.data.owner.email).toBe(ownerEmail)
+    expect(body.data.owner).not.toHaveProperty('passwordHash')
+    createdId = body.data.merchant.id
+
+    // Owner can sign straight in (trialing is operational).
+    const login = await base(
+      '/api/auth/login',
+      json({ email: ownerEmail, password: 'sup3rsecretpw' })
+    )
+    expect(login.status).toBe(200)
+    expect((await login.json()).data.merchant.slug).toBe(slug)
+
+    // Appears in the merchant list.
+    const list = await base('/api/platform/merchants?search=acme', {
+      headers: { cookie: sessionCookie }
+    })
+    expect((await list.json()).data.items.map((m: { slug: string }) => m.slug)).toContain(slug)
+
+    // Default outlet provisioned.
+    const [outlet] = await db.select().from(outlets).where(eq(outlets.merchantId, createdId))
+    expect(outlet?.code).toBe('MAIN')
+  })
+
+  it('rejects a duplicate slug', async () => {
+    const res = await base('/api/platform/merchants', {
+      ...json({
+        name: 'Acme Clone',
+        slug,
+        email: `clone-${stamp}@acme.example.com`,
+        owner: { name: 'Clone Owner', email: `clone-${stamp}@acme.example.com`, password: 'sup3rsecretpw' }
+      }),
+      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+    })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error.code).toBe('MERCHANT_SLUG_TAKEN')
+  })
+
+  it('rejects a short owner password', async () => {
+    const res = await base('/api/platform/merchants', {
+      ...json({
+        name: 'Acme Short',
+        slug: `acme-short-${stamp}`,
+        email: `short-${stamp}@acme.example.com`,
+        owner: { name: 'Short Owner', email: `short-${stamp}@acme.example.com`, password: 'tiny' }
+      }),
+      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('cleans up the created merchant', async () => {
+    await db.delete(merchants).where(eq(merchants.id, createdId))
+    const [gone] = await db.select().from(merchants).where(eq(merchants.id, createdId))
+    expect(gone).toBeUndefined()
   })
 })
 

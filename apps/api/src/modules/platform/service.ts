@@ -1,9 +1,10 @@
 import { and, count, desc, eq, ilike } from 'drizzle-orm'
-import { compare, hashSync } from 'bcryptjs'
+import { compare, hash, hashSync } from 'bcryptjs'
 import { db } from '../../database/client'
-import { merchants, platformAdmins, users } from '../../database/schema'
+import { merchantModules, merchants, outlets, platformAdmins, roles, users } from '../../database/schema'
 import { ok } from '../../shared/response'
-import { badRequest, notFound, unauthorized } from '../../shared/errors'
+import { badRequest, conflict, notFound, unauthorized } from '../../shared/errors'
+import { DEFAULT_MODULES, DEFAULT_ROLES, type ModuleId } from '../../shared/types'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import {
   assertTransition,
@@ -104,6 +105,103 @@ export class PlatformService {
       },
       allowedNextStatuses: nextStatuses(merchant.status),
       recentAudit: recentAudit.data
+    })
+  }
+
+  /**
+   * Create a merchant with its owner login, default outlet, modules and
+   * system roles — everything a fresh store needs to operate immediately.
+   * Starts in `trialing` so the owner can sign in right away; the platform
+   * can move it through the lifecycle afterwards.
+   */
+  static async createMerchant(
+    input: {
+      name: string
+      slug: string
+      email: string
+      phone?: string
+      currency?: string
+      timezone?: string
+      country?: string
+      owner: { name: string; email: string; password: string }
+    },
+    actor: PlatformActor
+  ) {
+    const slug = input.slug.trim().toLowerCase()
+    const email = input.email.trim().toLowerCase()
+    const ownerEmail = input.owner.email.trim().toLowerCase()
+
+    const [slugTaken] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, slug))
+    if (slugTaken) throw conflict('MERCHANT_SLUG_TAKEN', 'A merchant with this slug already exists')
+
+    const [merchant] = await db
+      .insert(merchants)
+      .values({
+        name: input.name.trim(),
+        slug,
+        email,
+        phone: input.phone?.trim() || null,
+        currency: input.currency?.trim().toUpperCase() || 'USD',
+        timezone: input.timezone?.trim() || 'UTC',
+        country: input.country?.trim().toUpperCase() || null,
+        status: 'trialing'
+      })
+      .returning()
+
+    const [owner] = await db
+      .insert(users)
+      .values({
+        merchantId: merchant.id,
+        name: input.owner.name.trim(),
+        email: ownerEmail,
+        passwordHash: await hash(input.owner.password, 12),
+        role: 'owner',
+        permissions: [],
+        status: 'active'
+      })
+      .returning({ id: users.id, email: users.email })
+
+    await db.insert(outlets).values({
+      merchantId: merchant.id,
+      name: 'Main Outlet',
+      code: 'MAIN',
+      address: {},
+      status: 'active'
+    })
+
+    const modules: ModuleId[] = [...DEFAULT_MODULES.commerce, 'restaurant', 'tables', 'kitchen', 'delivery']
+    await db.insert(merchantModules).values(modules.map((module) => ({ merchantId: merchant.id, module, enabled: true })))
+
+    await db.insert(roles).values(
+      DEFAULT_ROLES.map((r) => ({
+        merchantId: merchant.id,
+        name: r.name,
+        isSystem: true,
+        permissions: r.permissions as never,
+        scope: r.scope as never,
+        status: 'active'
+      }))
+    )
+
+    await AuditService.log(db, {
+      merchantId: merchant.id,
+      actorUserId: null,
+      actorName: actor.email,
+      action: 'platform.merchant.created',
+      entityType: 'merchant',
+      entityId: merchant.id,
+      metadata: { slug, ownerEmail }
+    })
+
+    return ok({
+      merchant: {
+        id: merchant.id,
+        name: merchant.name,
+        slug: merchant.slug,
+        email: merchant.email,
+        status: merchant.status
+      },
+      owner: { id: owner.id, email: owner.email }
     })
   }
 
