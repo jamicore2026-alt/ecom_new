@@ -47,8 +47,7 @@ export const createTenantConnection = async (merchantId: string): Promise<Tenant
   const connection = postgres(RUNTIME_DATABASE_URL, {
     max: 1,
     idle_timeout: 10,
-    connection: { statement_timeout: 30_000, idle_in_transaction_session_timeout: 30_000 },
-    ...(process.env.NODE_ENV === 'production' ? { ssl: 'require' as const } : {})
+    connection: { statement_timeout: 30_000, idle_in_transaction_session_timeout: 30_000 }
   })
   // SET does not accept bind parameters, so use set_config (parameterized).
   // is_local=false keeps the value for the whole session — safe because the
@@ -91,8 +90,7 @@ export const withTenantTransaction = async <T>(
   const connection = postgres(RUNTIME_DATABASE_URL, {
     max: 1,
     idle_timeout: 10,
-    connection: { statement_timeout: 30_000 },
-    ...(process.env.NODE_ENV === 'production' ? { ssl: 'require' as const } : {})
+    connection: { statement_timeout: 30_000 }
   })
   try {
     const tenantDb = drizzle(connection, { schema })
