@@ -109,7 +109,7 @@ export interface ProductOption {
 	id: string
 	name: string
 	nameAr: string | null
-	type: 'radio' | 'checkbox'
+	type: 'radio' | 'checkbox' | 'select' | 'swatch' | 'number' | 'text'
 	required: boolean
 	minSelections: number
 	maxSelections: number

@@ -4,7 +4,7 @@ import { db } from '../../database/client'
 import { merchantModules, merchants, outlets, platformAdmins, roles, users } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, conflict, notFound, unauthorized } from '../../shared/errors'
-import { DEFAULT_MODULES, DEFAULT_ROLES, type ModuleId } from '../../shared/types'
+import { DEFAULT_MODULES, DEFAULT_ROLES, MODULES, type ModuleId } from '../../shared/types'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import {
   assertTransition,
@@ -203,6 +203,60 @@ export class PlatformService {
       },
       owner: { id: owner.id, email: owner.email }
     })
+  }
+
+  /**
+   * Full module catalog for one merchant (platform view). Merchants without a
+   * row for a module yet report it as disabled so the UI can show the whole
+   * catalog with accurate on/off state.
+   */
+  static async listModulesForMerchant(id: string) {
+    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.id, id))
+    if (!merchant) throw notFound('MERCHANT_NOT_FOUND', 'Merchant not found')
+
+    const rows = await db
+      .select()
+      .from(merchantModules)
+      .where(eq(merchantModules.merchantId, id))
+    const byId = new Map(rows.map((r) => [r.module, r.enabled]))
+    return ok(MODULES.map((module) => ({ module, enabled: byId.get(module) ?? false })))
+  }
+
+  /** Upsert a single merchant_modules row (platform toggle). */
+  static async setMerchantModule(id: string, module: string, enabled: boolean, actor: PlatformActor) {
+    const mod = module as ModuleId
+    if (!MODULES.includes(mod)) throw badRequest('UNKNOWN_MODULE', `Unknown module: ${module}`)
+
+    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.id, id))
+    if (!merchant) throw notFound('MERCHANT_NOT_FOUND', 'Merchant not found')
+
+    const [existing] = await db
+      .select({ id: merchantModules.id })
+      .from(merchantModules)
+      .where(and(eq(merchantModules.merchantId, id), eq(merchantModules.module, mod)))
+
+    const [row] = existing
+      ? await db
+          .update(merchantModules)
+          .set({ enabled })
+          .where(and(eq(merchantModules.merchantId, id), eq(merchantModules.module, mod)))
+          .returning()
+      : await db
+          .insert(merchantModules)
+          .values({ merchantId: id, module: mod, enabled })
+          .returning()
+
+    await AuditService.log(db, {
+      merchantId: id,
+      actorUserId: null,
+      actorName: actor.email,
+      action: 'platform.merchant.module_changed',
+      entityType: 'merchant',
+      entityId: id,
+      metadata: { module: mod, enabled }
+    })
+
+    return ok(row)
   }
 
   static async changeStatus(id: string, to: string, reason: string, actor: PlatformActor) {

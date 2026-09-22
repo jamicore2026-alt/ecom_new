@@ -1254,7 +1254,13 @@ export class StorefrontService {
       }
 
       const email = body.email.trim().toLowerCase()
+      // Guest checkout (no email): skip the customer row entirely — customers
+      // requires a non-empty email and '' would collide on the per-merchant
+      // unique index across guest orders. The order keeps customerId null.
       let customerId: string | null
+      if (!email) {
+        customerId = null
+      } else {
       const [existing] = await tx
         .select()
         .from(customers)
@@ -1299,6 +1305,7 @@ export class StorefrontService {
             .set({ ordersCount: sql`${customers.ordersCount} + 1`, lastOrderAt: new Date() })
             .where(eq(customers.id, raced.id))
         }
+      }
       }
 
       const [order] = await tx
@@ -1422,6 +1429,54 @@ export class StorefrontService {
             reason: 'sale',
             reference: orderNumber
           })
+
+          // Per-value option inventory: values flagged with their own
+          // quantity participate in the sale. Decrement each matched value
+          // (clamped at 0, negative → OUT_OF_STOCK) in the same transaction.
+          const optEntries = Object.entries(
+            (item.optionValues ?? {}) as Record<string, string>
+          )
+          if (optEntries.length > 0) {
+            const opts = await tx
+              .select()
+              .from(productOptions)
+              .where(
+                and(
+                  eq(productOptions.productId, item.productId),
+                  eq(productOptions.merchantId, store.merchant.id)
+                )
+              )
+            for (const o of opts) {
+              const ctl = o.allowControl as { perValueQuantity?: boolean } | null
+              if (!ctl?.perValueQuantity) continue
+              const wanted = new Set(
+                optEntries
+                  .filter(([k]) => k === o.id || k === o.name)
+                  .map(([, v]) => v)
+              )
+              if (wanted.size === 0) continue
+              const vals = await tx
+                .select()
+                .from(productOptionValues)
+                .where(
+                  and(
+                    eq(productOptionValues.optionId, o.id),
+                    eq(productOptionValues.merchantId, store.merchant.id)
+                  )
+                )
+              for (const v of vals) {
+                if (!wanted.has(v.value)) continue
+                if (v.quantity === null) continue
+                const vAfter = v.quantity - item.quantity
+                if (vAfter < 0)
+                  throw badRequest('OUT_OF_STOCK', `Not enough stock for ${o.name}: ${v.value}`)
+                await tx
+                  .update(productOptionValues)
+                  .set({ quantity: vAfter })
+                  .where(eq(productOptionValues.id, v.id))
+              }
+            }
+          }
 
           // Fulfillment allocation: decrement the chosen warehouse's stock for
           // this variant so per-location availability reflects the sale. Skips

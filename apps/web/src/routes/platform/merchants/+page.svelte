@@ -177,6 +177,7 @@
 						<th class="px-table-cell-x py-table-cell-y font-semibold">Currency</th>
 						<th class="px-table-cell-x py-table-cell-y font-semibold">Timezone</th>
 						<th class="px-table-cell-x py-table-cell-y font-semibold">Created</th>
+						<th class="px-table-cell-x py-table-cell-y font-semibold">Modules</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-outline-variant/60">
@@ -191,6 +192,15 @@
 							<td class="px-table-cell-x py-table-cell-y text-secondary">{m.currency}</td>
 							<td class="px-table-cell-x py-table-cell-y text-secondary">{m.timezone}</td>
 							<td class="whitespace-nowrap px-table-cell-x py-table-cell-y text-secondary">{dateTimeFull(m.createdAt)}</td>
+							<td class="whitespace-nowrap px-table-cell-x py-table-cell-y">
+								<a
+									href={`/platform/merchants/${m.id}#modules`}
+									class="font-medium text-primary hover:underline"
+									onclick={(e) => e.stopPropagation()}
+								>
+									Manage
+								</a>
+							</td>
 						</tr>
 					{/each}
 				</tbody>

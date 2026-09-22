@@ -28,6 +28,7 @@ export const menuGroupParams = t.Object({ id: t.String(), groupId: t.String() })
 
 export const modifierGroupBody = t.Object({
   name: t.String({ minLength: 1, maxLength: 120 }),
+  nameAr: t.Optional(t.String({ maxLength: 120 })),
   required: t.Optional(t.Boolean()),
   minSelections: t.Optional(t.Number({ minimum: 0 })),
   maxSelections: t.Optional(t.Number({ minimum: 1 })),
@@ -39,6 +40,7 @@ export const modifierGroupUpdateBody = t.Partial(modifierGroupBody)
 
 export const modifierBody = t.Object({
   name: t.String({ minLength: 1, maxLength: 120 }),
+  nameAr: t.Optional(t.String({ maxLength: 120 })),
   priceAdjustment: t.Optional(t.Number()),
   available: t.Optional(t.Boolean()),
   sortOrder: t.Optional(t.Number()),

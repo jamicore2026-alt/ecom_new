@@ -31,9 +31,9 @@
 	let visible = $state(true)
 
 	let groupModal = $state<null | { mode: 'create' } | { mode: 'edit'; group: MenuModifierGroup }>(null)
-	let groupForm = $state({ name: '', minSelections: '1', maxSelections: '1', required: false })
+	let groupForm = $state({ name: '', nameAr: '', minSelections: '1', maxSelections: '1', required: false })
 	let modifierModal = $state<null | { mode: 'add'; groupId: string } | { mode: 'edit'; groupId: string; modifier: MenuModifier }>(null)
-	let modifierForm = $state({ name: '', priceAdjustment: '0', available: true })
+	let modifierForm = $state({ name: '', nameAr: '', priceAdjustment: '0', available: true })
 
 	const catById = $derived(new Map(categories.map((c) => [c.id, c])))
 
@@ -198,13 +198,14 @@
 
 	function openCreateGroup() {
 		groupModal = { mode: 'create' }
-		groupForm = { name: '', minSelections: '1', maxSelections: '1', required: false }
+		groupForm = { name: '', nameAr: '', minSelections: '1', maxSelections: '1', required: false }
 	}
 
 	function openEditGroup(group: MenuModifierGroup) {
 		groupModal = { mode: 'edit', group }
 		groupForm = {
 			name: group.name,
+			nameAr: group.nameAr ?? '',
 			minSelections: String(group.minSelections),
 			maxSelections: String(group.maxSelections),
 			required: group.required
@@ -215,6 +216,7 @@
 		if (!groupForm.name.trim()) return toast.error('Enter a group name')
 		const body = {
 			name: groupForm.name.trim(),
+			nameAr: groupForm.nameAr.trim() || null,
 			minSelections: Number(groupForm.minSelections) || 0,
 			maxSelections: Number(groupForm.maxSelections) || 1,
 			required: groupForm.required
@@ -247,13 +249,14 @@
 
 	function openAddModifier(group: MenuModifierGroup) {
 		modifierModal = { mode: 'add', groupId: group.id }
-		modifierForm = { name: '', priceAdjustment: '0', available: true }
+		modifierForm = { name: '', nameAr: '', priceAdjustment: '0', available: true }
 	}
 
 	function openEditModifier(group: MenuModifierGroup, modifier: MenuModifier) {
 		modifierModal = { mode: 'edit', groupId: group.id, modifier }
 		modifierForm = {
 			name: modifier.name,
+			nameAr: modifier.nameAr ?? '',
 			priceAdjustment: String(modifier.priceAdjustment),
 			available: modifier.available ?? true
 		}
@@ -263,6 +266,7 @@
 		if (!modifierForm.name.trim()) return toast.error('Enter a modifier name')
 		const body = {
 			name: modifierForm.name.trim(),
+			nameAr: modifierForm.nameAr.trim() || null,
 			priceAdjustment: Number(modifierForm.priceAdjustment) || 0,
 			available: modifierForm.available
 		}
@@ -402,6 +406,9 @@
 								<div class="mb-2 flex items-center justify-between gap-2">
 									<div class="flex min-w-0 items-center gap-2">
 										<span class="truncate font-medium text-on-surface">{group.name}</span>
+										{#if group.nameAr}
+											<span class="truncate text-sm text-secondary" dir="rtl">{group.nameAr}</span>
+										{/if}
 										{#if group.required}
 											<span class="rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning ring-1 ring-inset ring-warning">Required</span>
 										{/if}
@@ -443,6 +450,9 @@
 											<li class="flex items-center justify-between gap-2">
 												<div class="flex min-w-0 items-center gap-2">
 													<span class="truncate">{m.name}</span>
+													{#if m.nameAr}
+														<span class="truncate text-xs text-secondary" dir="rtl">{m.nameAr}</span>
+													{/if}
 													{#if m.available}
 														<span class="rounded bg-success/10 px-1.5 py-0.5 text-xs text-success">Available</span>
 													{:else}
@@ -573,6 +583,9 @@
 														<div class="flex items-center justify-between gap-2">
 															<div class="flex min-w-0 items-center gap-2">
 																<span class="truncate text-sm font-medium text-on-surface">{g.name}</span>
+																{#if g.nameAr}
+																	<span class="truncate text-xs text-secondary" dir="rtl">{g.nameAr}</span>
+																{/if}
 																{#if g.required}
 																	<span class="rounded bg-warning/10 px-1.5 py-0.5 text-xs text-warning">Required</span>
 																{/if}
@@ -593,6 +606,9 @@
 																	<li class="flex items-center justify-between text-sm text-on-surface-variant">
 																		<span class="flex min-w-0 items-center gap-2">
 																			<span class="truncate">{m.name}</span>
+																			{#if m.nameAr}
+																				<span class="truncate text-xs text-secondary" dir="rtl">{m.nameAr}</span>
+																			{/if}
 																			{#if m.available}
 																				<span class="rounded bg-success/10 px-1.5 py-0.5 text-xs text-success">Available</span>
 																			{:else}
@@ -695,6 +711,10 @@
 				<label for="group-name" class="field-label">Name</label>
 				<input id="group-name" class="field" bind:value={groupForm.name} placeholder="Size, Extra toppings…" />
 			</div>
+			<div>
+				<label for="group-name-ar" class="field-label">Name (Arabic)</label>
+				<input id="group-name-ar" class="field" dir="rtl" bind:value={groupForm.nameAr} placeholder="الحجم، إضافات…" />
+			</div>
 			<div class="flex gap-4">
 				<div class="flex-1">
 					<label for="group-min" class="field-label">Min selections</label>
@@ -724,6 +744,10 @@
 			<div>
 				<label for="modifier-name" class="field-label">Name</label>
 				<input id="modifier-name" class="field" bind:value={modifierForm.name} placeholder="Large, Extra cheese…" />
+			</div>
+			<div>
+				<label for="modifier-name-ar" class="field-label">Name (Arabic)</label>
+				<input id="modifier-name-ar" class="field" dir="rtl" bind:value={modifierForm.nameAr} placeholder="كبير، جبن إضافي…" />
 			</div>
 			<div>
 				<label for="modifier-price" class="field-label">Price adjustment</label>

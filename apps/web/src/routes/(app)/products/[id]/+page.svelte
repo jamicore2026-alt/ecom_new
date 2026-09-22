@@ -28,6 +28,7 @@
 	let vUnlimited = $state(false)
 	let vImage = $state('')
 	let optionValues = $state<Array<{ key: string; value: string }>>([{ key: '', value: '' }])
+	let optionValuesAr = $state<Array<{ key: string; value: string }>>([{ key: '', value: '' }])
 	let vSaving = $state(false)
 	let vFieldErrors = $state<Record<string, string>>({})
 
@@ -97,6 +98,7 @@
 		vUnlimited = false
 		vImage = ''
 		optionValues = [{ key: '', value: '' }]
+		optionValuesAr = [{ key: '', value: '' }]
 		variantModal = true
 	}
 
@@ -110,6 +112,8 @@
 		vImage = v.image ?? ''
 		optionValues = Object.entries(v.optionValues ?? {}).map(([key, value]) => ({ key, value }))
 		if (optionValues.length === 0) optionValues = [{ key: '', value: '' }]
+		optionValuesAr = Object.entries(v.optionValuesAr ?? {}).map(([key, value]) => ({ key, value }))
+		if (optionValuesAr.length === 0) optionValuesAr = [{ key: '', value: '' }]
 		variantModal = true
 	}
 
@@ -121,9 +125,14 @@
 			for (const row of optionValues) {
 				if (row.key.trim()) ov[row.key.trim()] = row.value.trim()
 			}
+			const ovAr: Record<string, string> = {}
+			for (const row of optionValuesAr) {
+				if (row.key.trim() && row.value.trim()) ovAr[row.key.trim()] = row.value.trim()
+			}
 			const body: Record<string, unknown> = {
 				sku: vSku || undefined,
 				optionValues: ov,
+				optionValuesAr: ovAr,
 				price: vPrice ? Number(vPrice) : undefined,
 				compareAtPrice: vCompareAt ? Number(vCompareAt) : undefined,
 				inventory: Number(vInventory || 0),
@@ -341,6 +350,12 @@
 													<span class="text-on-surface-variant">
 														{Object.entries(v.optionValues).map(([k, val]) => `${k}: ${val}`).join(', ')}
 													</span>
+													{#if Object.keys(v.optionValuesAr ?? {}).length}
+														<br />
+														<span class="text-secondary" dir="auto">
+															{Object.entries(v.optionValuesAr).map(([k, val]) => `${k}: ${val}`).join(', ')}
+														</span>
+													{/if}
 												{:else}
 													<span class="text-secondary">Default</span>
 												{/if}
@@ -471,6 +486,28 @@
 				</div>
 				<button type="button" class="mt-2 text-xs font-medium text-primary hover:text-on-primary-fixed-variant" onclick={() => (optionValues = [...optionValues, { key: '', value: '' }])}>
 					+ Add option
+				</button>
+			</div>
+
+			<div>
+				<p class="mb-1 block text-sm font-medium text-on-surface-variant">Options (Arabic)</p>
+				<div class="space-y-2">
+					{#each optionValuesAr as row, i (i)}
+						<div class="flex gap-2">
+							<input class="w-1/3 rounded-lg border border-outline-variant px-3 py-1.5 text-sm" placeholder="Size" bind:value={optionValuesAr[i].key} />
+							<input class="flex-1 rounded-lg border border-outline-variant px-3 py-1.5 text-sm" dir="auto" placeholder="القيمة بالعربية" bind:value={optionValuesAr[i].value} />
+							<button
+								type="button"
+								class="px-2 text-secondary hover:text-error"
+								onclick={() => (optionValuesAr = optionValuesAr.filter((_, j) => j !== i))}
+							>
+								×
+							</button>
+						</div>
+					{/each}
+				</div>
+				<button type="button" class="mt-2 text-xs font-medium text-primary hover:text-on-primary-fixed-variant" onclick={() => (optionValuesAr = [...optionValuesAr, { key: '', value: '' }])}>
+					+ Add Arabic option
 				</button>
 			</div>
 

@@ -4,6 +4,7 @@ import {
   orders,
   foodOrderItems,
   menuItems,
+  modifierGroups,
   products,
   modifiers,
   menuItemModifiers,
@@ -39,6 +40,7 @@ const ORDER_COLUMNS = {
 type ResolverCtx = {
   menuGroups: Map<string, Set<string>>
   mods: typeof modifiers.$inferSelect[]
+  groups: Map<string, { required: boolean; minSelections: number; maxSelections: number; name: string }>
 }
 
 /**
@@ -334,7 +336,25 @@ export class FoodOrdersService {
     const mods = groupIds.length
       ? await db.select().from(modifiers).where(and(eq(modifiers.merchantId, merchantId), inArray(modifiers.modifierGroupId, groupIds)))
       : []
-    return { menuGroups, mods }
+    const groupRows = groupIds.length
+      ? await db
+          .select({
+            id: modifierGroups.id,
+            name: modifierGroups.name,
+            required: modifierGroups.required,
+            minSelections: modifierGroups.minSelections,
+            maxSelections: modifierGroups.maxSelections
+          })
+          .from(modifierGroups)
+          .where(and(eq(modifierGroups.merchantId, merchantId), inArray(modifierGroups.id, groupIds)))
+      : []
+    const groups = new Map(
+      groupRows.map((g) => [
+        g.id,
+        { required: g.required, minSelections: g.minSelections, maxSelections: g.maxSelections, name: g.name }
+      ])
+    )
+    return { menuGroups, mods, groups }
   }
 
   private static computeLines(
@@ -357,6 +377,7 @@ export class FoodOrdersService {
       const groupIds = ctx.menuGroups.get(menu.id) ?? new Set()
       let modifierTotal = 0
       const modifierSnapshot: (typeof foodOrderItems.$inferInsert)['modifiers'] = []
+      const countsByGroup = new Map<string, number>()
       for (const r of req.modifiers ?? []) {
         const mod = ctx.mods.find((m) => m.id === r.modifierId)
         if (!mod) throw notFound('MODIFIER_NOT_FOUND', `Modifier not found: ${r.modifierId}`)
@@ -364,7 +385,25 @@ export class FoodOrdersService {
         if (mod.status !== 'active' || !mod.available) throw conflict('MODIFIER_UNAVAILABLE', `Modifier ${mod.name} is unavailable`)
         const qty = r.quantity ?? 1
         modifierTotal += Number(mod.priceAdjustment) * qty
+        countsByGroup.set(mod.modifierGroupId, (countsByGroup.get(mod.modifierGroupId) ?? 0) + qty)
         modifierSnapshot.push({ modifierId: mod.id, groupName: '', name: mod.name, priceAdjustment: Number(mod.priceAdjustment), quantity: qty })
+      }
+
+      // Enforce per-group required/min/max bounds for every group offered on
+      // this item (both create and update paths funnel through here).
+      for (const groupId of groupIds) {
+        const group = ctx.groups.get(groupId)
+        if (!group) continue
+        const count = countsByGroup.get(groupId) ?? 0
+        if (group.required && count === 0) {
+          throw badRequest('MODIFIER_REQUIRED', `Please choose ${group.name} for ${menu.productName}`)
+        }
+        if (count < group.minSelections || count > group.maxSelections) {
+          throw badRequest(
+            'INVALID_MODIFIER_SELECTION',
+            `${group.name} allows between ${group.minSelections} and ${group.maxSelections} selections`
+          )
+        }
       }
 
       const unit = Number(menu.productPrice) + round2(modifierTotal)

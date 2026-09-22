@@ -129,3 +129,24 @@ export const platformModule = new Elysia({ prefix: '/api/platform' })
       detail: { tags: ['Platform'], summary: 'Change merchant lifecycle status (audited)' }
     }
   )
+  .get(
+    '/merchants/:id/modules',
+    ({ params }) => PlatformService.listModulesForMerchant(params.id),
+    {
+      params: platformIdParams,
+      detail: { tags: ['Platform'], summary: 'List module toggles for a merchant' }
+    }
+  )
+  .put(
+    '/merchants/:id/modules',
+    ({ params, body, platformAdmin }) =>
+      PlatformService.setMerchantModule(params.id, body.module, body.enabled, platformAdmin),
+    {
+      params: platformIdParams,
+      body: t.Object({
+        module: t.String({ minLength: 1, maxLength: 30 }),
+        enabled: t.Boolean()
+      }),
+      detail: { tags: ['Platform'], summary: 'Toggle a module for a merchant (audited)' }
+    }
+  )

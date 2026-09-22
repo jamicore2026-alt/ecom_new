@@ -209,7 +209,7 @@ export interface ProductOption {
 	productId: string
 	name: string
 	nameAr: string | null
-	type: 'radio' | 'checkbox'
+	type: 'radio' | 'checkbox' | 'select' | 'swatch' | 'number' | 'text'
 	required: boolean
 	minSelections: number
 	maxSelections: number
@@ -677,6 +677,7 @@ export interface MenuProductLite {
 export interface MenuModifier {
 	id: string
 	name: string
+	nameAr?: string | null
 	priceAdjustment: number
 	available: boolean
 	status: string
@@ -685,6 +686,7 @@ export interface MenuModifier {
 export interface MenuModifierGroup {
 	id: string
 	name: string
+	nameAr?: string | null
 	required: boolean
 	minSelections: number
 	maxSelections: number

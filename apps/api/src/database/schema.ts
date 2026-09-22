@@ -220,6 +220,8 @@ export const modifiers = pgTable(
       .notNull()
       .references(() => modifierGroups.id, { onDelete: 'cascade' }),
     name: varchar('name', { length: 120 }).notNull(),
+    /** Arabic label (Mnasati bilingual pattern). Falls back to `name`. */
+    nameAr: varchar('name_ar', { length: 120 }),
     priceAdjustment: money('price_adjustment').notNull().default(0),
     available: boolean('available').notNull().default(true),
     sortOrder: integer('sort_order').notNull().default(0),

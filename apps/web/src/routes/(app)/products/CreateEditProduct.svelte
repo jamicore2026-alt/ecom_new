@@ -132,7 +132,7 @@
 			</div>
 
 			<div>
-				<label for="price" class="field-label">Price *</label>
+				<label for="price" class="field-label">Sale Price *</label>
 				<input id="price" type="number" step="0.01" min="0" class="field" bind:value={price} required />
 			</div>
 			<div>

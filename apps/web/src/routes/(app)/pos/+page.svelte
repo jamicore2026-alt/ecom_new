@@ -61,7 +61,7 @@
 				api.get<{ success: boolean; data: { id: string; name: string }[] }>('/api/categories')
 			])
 			menu = menuRes.data.items.filter(
-				(it) => it.status === 'active' && it.available
+				(it) => it.status === 'active' && it.available && isPosVisible(it)
 			)
 			categories = catRes.data
 			if (!category && categories.length) category = categories[0].id
@@ -70,6 +70,13 @@
 		} finally {
 			loading = false
 		}
+	}
+
+	// Only POS-visible products are sellable here. The menu payload may not
+	// carry visibility (older API) — treat a missing flag as visible.
+	function isPosVisible(it: MenuItem) {
+		const vis = (it.product as { visibility?: string }).visibility
+		return !vis || vis === 'pos' || vis === 'both'
 	}
 
 	function visibleItems() {

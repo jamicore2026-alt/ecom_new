@@ -53,7 +53,9 @@ export const checkoutPreviewBody = t.Object({
 export const checkoutBody = t.Object({
   items: t.Array(checkoutItem, { minItems: 1, maxItems: 50 }),
   couponCode: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
-  email: t.String({ format: 'email', maxLength: 255 }),
+  // Email is optional (guest checkout): empty string means "no email". A
+  // non-empty value must still be a valid address.
+  email: t.Union([t.String({ format: 'email', maxLength: 255 }), t.Literal('')]),
   shippingAddress: addressBody,
   billingAddress: t.Optional(addressBody),
   paymentMethod: t.String({ maxLength: 50 }),

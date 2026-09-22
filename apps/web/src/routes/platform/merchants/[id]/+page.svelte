@@ -20,7 +20,48 @@
 	let target = $state('')
 	let reason = $state('')
 
+	type MerchantModule = { module: string; enabled: boolean }
+	let modules = $state<MerchantModule[]>([])
+	let modulesLoading = $state(false)
+	let toggling = $state('')
+
 	const id = () => page.params.id as string
+
+	async function loadModules() {
+		modulesLoading = true
+		try {
+			const res = await fetch(`/api/platform/merchants/${id()}/modules`, { credentials: 'same-origin' })
+			if (!res.ok) throw new Error(`Failed to load modules (${res.status})`)
+			const body = await res.json()
+			modules = body.data
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			modulesLoading = false
+		}
+	}
+
+	async function toggleModule(module: string, enabled: boolean) {
+		toggling = module
+		try {
+			const res = await fetch(`/api/platform/merchants/${id()}/modules`, {
+				method: 'PUT',
+				credentials: 'same-origin',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ module, enabled })
+			})
+			if (!res.ok) {
+				const text = await res.text()
+				throw new Error(text || `Failed to update module (${res.status})`)
+			}
+			modules = modules.map((m) => (m.module === module ? { ...m, enabled } : m))
+			toast.success(`${module} ${enabled ? 'enabled' : 'disabled'}`)
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			toggling = ''
+		}
+	}
 
 	async function load() {
 		loading = true
@@ -36,7 +77,10 @@
 		}
 	}
 
-	onMount(load)
+	onMount(() => {
+		load()
+		loadModules()
+	})
 
 	async function submitTransition() {
 		if (!target || !merchant) return
@@ -152,6 +196,41 @@
 						</form>
 					{/if}
 					<p class="mt-3 text-xs text-secondary">Every transition is written to the audit log with the acting admin's email.</p>
+				</Card>
+
+				<Card title="Modules" subtitle="Toggle which products this merchant can use">
+					<div id="modules">
+						{#if modulesLoading}
+							<div class="space-y-2">
+								{#each Array(4) as _}
+									<div class="h-10 animate-pulse rounded bg-surface-container"></div>
+								{/each}
+							</div>
+						{:else if modules.length === 0}
+							<p class="text-sm text-secondary">No modules found.</p>
+						{:else}
+							<ul class="divide-y divide-outline-variant/60">
+								{#each modules as m (m.module)}
+									<li class="flex items-center justify-between gap-3 py-2.5">
+										<span class="text-sm font-medium text-on-surface">{m.module}</span>
+										<button
+											type="button"
+											role="switch"
+											aria-checked={m.enabled}
+											aria-label={`Toggle ${m.module}`}
+											disabled={toggling === m.module}
+											onclick={() => toggleModule(m.module, !m.enabled)}
+											class="relative h-6 w-11 shrink-0 rounded-full transition-colors {m.enabled ? 'bg-primary' : 'bg-outline-variant'} disabled:opacity-50"
+										>
+											<span
+												class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all {m.enabled ? 'left-[22px]' : 'left-0.5'}"
+											></span>
+										</button>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</div>
 				</Card>
 			</div>
 

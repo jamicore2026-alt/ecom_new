@@ -28,7 +28,7 @@ export const productOptionValueInput = t.Object({
 export const productOptionInput = t.Object({
   name: t.String({ minLength: 1, maxLength: 100 }),
   nameAr: t.Optional(t.String({ maxLength: 100 })),
-  type: t.Optional(t.Enum({ radio: 'radio', checkbox: 'checkbox' })),
+  type: t.Optional(t.Enum({ radio: 'radio', checkbox: 'checkbox', select: 'select', swatch: 'swatch', number: 'number', text: 'text' })),
   required: t.Optional(t.Boolean()),
   minSelections: t.Optional(t.Integer({ minimum: 0 })),
   maxSelections: t.Optional(t.Integer({ minimum: 1 })),

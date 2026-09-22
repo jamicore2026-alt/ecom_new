@@ -49,7 +49,7 @@
 		try {
 			const body: Record<string, unknown> = {
 				name,
-				nameAr: nameAr || undefined,
+				nameAr: nameAr === '' ? null : nameAr,
 				parentId: parentId || null,
 				sortOrder: Number(sortOrder || 0),
 				status,
@@ -151,6 +151,9 @@
 					<Icon name="folder" size="text-[16px]" class="shrink-0 text-secondary" />
 					<span class="min-w-0 flex-1 truncate text-sm text-on-surface-variant">
 						<span class="font-medium text-on-surface">{c.name}</span>
+						{#if c.nameAr}
+							<span class="ml-1 text-xs text-secondary" dir="auto">· {c.nameAr}</span>
+						{/if}
 						{#if c.status !== 'active'}
 							<span class="ml-1 text-xs text-outline">({c.status})</span>
 						{/if}

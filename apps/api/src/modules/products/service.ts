@@ -17,6 +17,7 @@ import { parseCsv, toCsv } from '../../shared/csv'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
 import type { NewProduct, NewProductVariant } from '../../database/schema'
+import type { OptionType } from '../../shared/types'
 
 const slugify = (s: string) =>
   s
@@ -718,7 +719,7 @@ export class ProductsService {
     input: Array<{
       name: string
       nameAr?: string
-      type?: string
+      type?: OptionType
       required?: boolean
       minSelections?: number
       maxSelections?: number
@@ -755,6 +756,11 @@ export class ProductsService {
 
       for (const [i, o] of input.entries()) {
         const perValueQuantity = o.perValueQuantity ?? false
+        const minSelections = clamp(o.minSelections ?? 1, 0, 99)
+        const maxSelections = clamp(o.maxSelections ?? 1, 1, 99)
+        if (minSelections > maxSelections) {
+          throw badRequest('BAD_REQUEST', `Option "${o.name}" has min selections greater than max selections`)
+        }
         const [opt] = await tx
           .insert(productOptions)
           .values({
@@ -762,10 +768,10 @@ export class ProductsService {
             productId,
             name: o.name,
             nameAr: o.nameAr ?? null,
-            type: (o.type ?? 'radio') as 'radio' | 'checkbox',
+            type: o.type ?? 'radio',
             required: o.required ?? false,
-            minSelections: clamp(o.minSelections ?? 1, 0, 99),
-            maxSelections: clamp(o.maxSelections ?? 1, 1, 99),
+            minSelections,
+            maxSelections,
             allowControl: { perValueQuantity, unlimited: o.unlimited ?? false },
             sortOrder: o.sortOrder ?? i,
             status: o.status ?? 'active'
@@ -825,6 +831,43 @@ export class ProductsService {
       combos = next
     }
 
+    // Arabic labels for each combination, resolved from the option valueAr map.
+    const valueArByOption = new Map<string, Map<string, string>>()
+    const qtyByOption = new Map<string, Map<string, number>>()
+    const perValueQtyByOption = new Map<string, boolean>()
+    for (const opt of opts) {
+      const arMap = new Map<string, string>()
+      const qtyMap = new Map<string, number>()
+      for (const v of values.filter((row) => row.optionId === opt.id)) {
+        if (v.valueAr) arMap.set(v.value, v.valueAr)
+        if (v.quantity !== null && v.quantity !== undefined) qtyMap.set(v.value, v.quantity)
+      }
+      valueArByOption.set(opt.name, arMap)
+      qtyByOption.set(opt.name, qtyMap)
+      perValueQtyByOption.set(
+        opt.name,
+        (opt.allowControl as { perValueQuantity?: boolean } | null)?.perValueQuantity ?? false
+      )
+    }
+    const optionValuesArFor = (combo: Record<string, string>) => {
+      const ar: Record<string, string> = {}
+      for (const [name, value] of Object.entries(combo)) {
+        const label = valueArByOption.get(name)?.get(value)
+        if (label) ar[name] = label
+      }
+      return ar
+    }
+    const inventoryFor = (combo: Record<string, string>) => {
+      let seed = 0
+      let seeded = false
+      for (const [name, value] of Object.entries(combo)) {
+        if (!perValueQtyByOption.get(name)) continue
+        seed += qtyByOption.get(name)?.get(value) ?? 0
+        seeded = true
+      }
+      return seeded ? seed : 0
+    }
+
     const existing = await db
       .select()
       .from(productVariants)
@@ -836,10 +879,10 @@ export class ProductsService {
         productId,
         sku: null,
         optionValues: c,
-        optionValuesAr: {},
+        optionValuesAr: optionValuesArFor(c),
         price: product.price,
         compareAtPrice: null,
-        inventory: 0,
+        inventory: inventoryFor(c),
         unlimited: false,
         image: null
       }))
@@ -987,8 +1030,10 @@ export class ProductsService {
     const headers = [
       'sku',
       'name',
+      'name_ar',
       'slug',
       'description',
+      'description_ar',
       'price',
       'compare_at_price',
       'cost',
@@ -998,6 +1043,7 @@ export class ProductsService {
       'low_stock_threshold',
       'variant_sku',
       'option_values',
+      'option_values_ar',
       'inventory'
     ]
 
@@ -1006,8 +1052,10 @@ export class ProductsService {
       const base = [
         p.sku ?? '',
         p.name,
+        p.nameAr ?? '',
         p.slug,
         p.description,
+        p.descriptionAr ?? '',
         p.price,
         p.compareAtPrice ?? '',
         p.cost,
@@ -1018,13 +1066,14 @@ export class ProductsService {
       ]
       const vs = variantsByProduct.get(p.id) ?? []
       if (vs.length === 0) {
-        rows.push([...base, '', '', ''])
+        rows.push([...base, '', '', '', ''])
       } else {
         for (const v of vs) {
           rows.push([
             ...base,
             v.sku ?? '',
             JSON.stringify(v.optionValues ?? {}),
+            JSON.stringify(v.optionValuesAr ?? {}),
             v.inventory
           ])
         }
@@ -1100,6 +1149,8 @@ export class ProductsService {
         const compareAtPrice = num(first.cells, 'compare_at_price')
         const cost = num(first.cells, 'cost')
         const description = str(first.cells, 'description')
+        const descriptionAr = str(first.cells, 'description_ar')
+        const nameAr = str(first.cells, 'name_ar')
         const categorySlug = str(first.cells, 'category_slug')
         let categoryId: string | null | undefined
         if (categorySlug !== undefined) {
@@ -1122,8 +1173,10 @@ export class ProductsService {
           if (existing) {
             const patch: Partial<typeof products.$inferInsert> = {}
             if (header.includes('name')) patch.name = name
+            if (header.includes('name_ar') && nameAr !== undefined) patch.nameAr = nameAr || null
             if (header.includes('slug') && str(first.cells, 'slug')) patch.slug = slugify(str(first.cells, 'slug')!)
             if (header.includes('description') && description !== undefined) patch.description = description
+            if (header.includes('description_ar') && descriptionAr !== undefined) patch.descriptionAr = descriptionAr ?? ''
             if (price !== null) patch.price = price
             if (header.includes('compare_at_price')) patch.compareAtPrice = compareAtPrice
             if (cost !== null) patch.cost = cost
@@ -1144,8 +1197,10 @@ export class ProductsService {
               merchantId,
               sku,
               name,
+              nameAr: nameAr || null,
               slug: await this.uniqueSlug(tx as unknown as DB, merchantId, name),
               description: description ?? '',
+              descriptionAr: descriptionAr ?? '',
               price,
               compareAtPrice: compareAtPrice ?? null,
               cost: cost ?? 0,
@@ -1172,6 +1227,7 @@ export class ProductsService {
           for (const { cells } of lines) {
             const vSku = str(cells, 'variant_sku') || null
             const ovRaw = str(cells, 'option_values')
+            const ovArRaw = str(cells, 'option_values_ar')
             let optionValues: Record<string, string> | undefined
             if (ovRaw) {
               try {
@@ -1181,6 +1237,17 @@ export class ProductsService {
                 }
               } catch {
                 throw new RowError(`Invalid option_values JSON on a "${name}" row`)
+              }
+            }
+            let optionValuesAr: Record<string, string> | undefined
+            if (ovArRaw) {
+              try {
+                const parsedOvAr = JSON.parse(ovArRaw)
+                if (parsedOvAr && typeof parsedOvAr === 'object' && !Array.isArray(parsedOvAr)) {
+                  optionValuesAr = parsedOvAr
+                }
+              } catch {
+                throw new RowError(`Invalid option_values_ar JSON on a "${name}" row`)
               }
             }
             const vPrice = num(cells, 'price')
@@ -1196,6 +1263,7 @@ export class ProductsService {
               const pricePatch: Partial<typeof productVariants.$inferInsert> = {}
               if (vPrice !== null) pricePatch.price = vPrice
               if (optionValues !== undefined) pricePatch.optionValues = optionValues
+              if (optionValuesAr !== undefined) pricePatch.optionValuesAr = optionValuesAr
               const inventoryChanged =
                 inventory !== undefined && inventory !== match.inventory
               if (inventoryChanged || Object.keys(pricePatch).length > 0) {
@@ -1203,7 +1271,7 @@ export class ProductsService {
                 // concurrent sale between the earlier read and this write is
                 // never lost; price/option updates ride the same transaction.
                 await db.transaction(async (tx) => {
-                  if (pricePatch.price !== undefined || pricePatch.optionValues !== undefined) {
+                  if (pricePatch.price !== undefined || pricePatch.optionValues !== undefined || pricePatch.optionValuesAr !== undefined) {
                     await tx
                       .update(productVariants)
                       .set(pricePatch)
@@ -1222,6 +1290,7 @@ export class ProductsService {
                 productId,
                 sku: vSku,
                 optionValues: optionValues ?? {},
+                optionValuesAr: optionValuesAr ?? {},
                 price: vPrice ?? price,
                 compareAtPrice:
                   header.includes('compare_at_price') ? (compareAtPrice ?? null) : null,

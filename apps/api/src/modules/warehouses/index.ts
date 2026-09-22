@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 import { t } from 'elysia'
 import { authPlugin, requirePermission } from '../../plugins/auth'
+import { outletGuard } from '../../plugins/outlet'
 import { WarehousesService } from './service'
 
 const warehouseBody = t.Object({
@@ -43,6 +44,7 @@ const bulkTransferBody = t.Object({
 
 export const warehousesModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(outletGuard({ module: 'inventory' }))
   .use(requirePermission('inventory.read'))
 
   .get('/warehouses', async ({ auth }) => WarehousesService.list(auth.db, auth.merchant.id))

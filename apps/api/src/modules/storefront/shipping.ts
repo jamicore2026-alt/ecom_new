@@ -123,6 +123,10 @@ const REQUIRED_FIELD_LABELS: Record<string, string> = {
  * shipping address. Email is optional by default; everything else defaults to
  * required (PDF-correction). Only fields the address actually fails are
  * reported — the first missing field raises MISSING_FIELD.
+ *
+ * Note: this check is presence-only. Email *format* is enforced by the
+ * checkout body schema, and only when a non-empty value is supplied — an
+ * empty email passes here unless the merchant explicitly requires email.
  */
 export function validateRequiredFields(
   requiredFields: CheckoutFieldRequirements | undefined,

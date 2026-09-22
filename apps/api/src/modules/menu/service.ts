@@ -228,13 +228,17 @@ export class MenuService {
     return ok(rows.map((g) => ({ ...g, modifiers: mods.filter((m) => m.modifierGroupId === g.id) })))
   }
 
-  static async createGroup(db: DB, merchantId: string, input: { name: string; required?: boolean; minSelections?: number; maxSelections?: number; sortOrder?: number; status?: string }) {
+  static async createGroup(db: DB, merchantId: string, input: { name: string; nameAr?: string | null; required?: boolean; minSelections?: number; maxSelections?: number; sortOrder?: number; status?: string }) {
+    const min = input.minSelections ?? 0
+    const max = input.maxSelections ?? 1
+    if (min > max) throw badRequest('INVALID_SELECTION_RANGE', 'minSelections must be <= maxSelections')
     const [row] = await db.insert(modifierGroups).values({
       merchantId,
       name: input.name,
+      nameAr: input.nameAr ?? null,
       required: input.required ?? false,
-      minSelections: input.minSelections ?? 0,
-      maxSelections: input.maxSelections ?? 1,
+      minSelections: min,
+      maxSelections: max,
       sortOrder: input.sortOrder ?? 0,
       status: input.status ?? 'active'
     }).returning()
@@ -244,7 +248,14 @@ export class MenuService {
   static async updateGroup(db: DB, merchantId: string, id: string, input: Record<string, unknown>) {
     const [existing] = await db.select().from(modifierGroups).where(and(eq(modifierGroups.id, id), eq(modifierGroups.merchantId, merchantId)))
     if (!existing) throw notFound('NOT_FOUND', 'Modifier group not found')
-    const [row] = await db.update(modifierGroups).set(input).where(and(eq(modifierGroups.id, id), eq(modifierGroups.merchantId, merchantId))).returning()
+    const set: Record<string, unknown> = {}
+    for (const key of ['name', 'nameAr', 'required', 'minSelections', 'maxSelections', 'sortOrder', 'status'] as const) {
+      if (input[key] !== undefined) set[key] = input[key]
+    }
+    const min = (set.minSelections ?? existing.minSelections) as number
+    const max = (set.maxSelections ?? existing.maxSelections) as number
+    if (min > max) throw badRequest('INVALID_SELECTION_RANGE', 'minSelections must be <= maxSelections')
+    const [row] = await db.update(modifierGroups).set(set).where(and(eq(modifierGroups.id, id), eq(modifierGroups.merchantId, merchantId))).returning()
     return ok(row)
   }
 
@@ -255,13 +266,14 @@ export class MenuService {
     return ok({ id })
   }
 
-  static async addModifier(db: DB, merchantId: string, groupId: string, input: { name: string; priceAdjustment?: number; available?: boolean; sortOrder?: number; status?: string }) {
+  static async addModifier(db: DB, merchantId: string, groupId: string, input: { name: string; nameAr?: string | null; priceAdjustment?: number; available?: boolean; sortOrder?: number; status?: string }) {
     const [group] = await db.select().from(modifierGroups).where(and(eq(modifierGroups.id, groupId), eq(modifierGroups.merchantId, merchantId)))
     if (!group) throw notFound('NOT_FOUND', 'Modifier group not found')
     const [row] = await db.insert(modifiers).values({
       merchantId,
       modifierGroupId: groupId,
       name: input.name,
+      nameAr: input.nameAr ?? null,
       priceAdjustment: input.priceAdjustment ?? 0,
       available: input.available ?? true,
       sortOrder: input.sortOrder ?? 0,
@@ -273,7 +285,11 @@ export class MenuService {
   static async updateModifier(db: DB, merchantId: string, id: string, input: Record<string, unknown>) {
     const [existing] = await db.select().from(modifiers).where(and(eq(modifiers.id, id), eq(modifiers.merchantId, merchantId)))
     if (!existing) throw notFound('NOT_FOUND', 'Modifier not found')
-    const [row] = await db.update(modifiers).set(input).where(and(eq(modifiers.id, id), eq(modifiers.merchantId, merchantId))).returning()
+    const set: Record<string, unknown> = {}
+    for (const key of ['name', 'nameAr', 'priceAdjustment', 'available', 'sortOrder', 'status'] as const) {
+      if (input[key] !== undefined) set[key] = input[key]
+    }
+    const [row] = await db.update(modifiers).set(set).where(and(eq(modifiers.id, id), eq(modifiers.merchantId, merchantId))).returning()
     return ok(row)
   }
 

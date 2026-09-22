@@ -256,7 +256,11 @@
 							<p class="mt-0.5 text-xs text-secondary">{p.sku ?? '—'} · {dateTime(p.updatedAt)}</p>
 							<p class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
 								<span class="font-mono-label text-mono-label text-on-surface">{currency(p.price)}</span>
+								{#if p.compareAtPrice != null}
+									<span class="font-mono-label text-mono-label text-secondary line-through">{currency(p.compareAtPrice)}</span>
+								{/if}
 								<Badge label={p.status} />
+								<Badge label={p.visibility} />
 								<span class:font-semibold={p.stock > 0} class:text-error={p.stock <= 0 && p.trackInventory} class:text-on-surface-variant={p.stock > 0}>
 									{t('products.inStock', { n: p.stock })}
 								</span>
@@ -287,6 +291,8 @@
 							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.name')}</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.sku')}</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.price')}</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Sale</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Visibility</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.stock')}</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.status')}</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.updated')}</th>
@@ -318,6 +324,8 @@
 								</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{p.sku ?? '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{currency(p.price)}</td>
+								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface-variant">{p.compareAtPrice != null ? currency(p.compareAtPrice) : '—'}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{p.visibility}</td>
 								<td class="px-table-cell-x py-table-cell-y">
 									<span class:font-semibold={p.stock > 0} class:text-error={p.stock <= 0 && p.trackInventory} class:text-on-surface-variant={p.stock > 0}>
 										{number(p.stock)}

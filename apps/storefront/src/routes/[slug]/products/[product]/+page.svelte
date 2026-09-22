@@ -33,7 +33,14 @@
 	let selectedVariantId = $state<string | null>(defaultVariantId())
 	let quantity = $state(1)
 	let notice = $state('')
+	let optionError = $state('')
 	let activeImage = $state(0)
+
+	// Custom (non-variant) option selections: checkbox multi-select, single
+	// choice for select/swatch, free input for number/text.
+	let customMulti = $state<Record<string, string[]>>({})
+	let customSingle = $state<Record<string, string>>({})
+	let customInputs = $state<Record<string, string>>({})
 
 	let reviews = $state<ProductReview[]>([])
 	let reviewsPage = $state(1)
@@ -54,6 +61,10 @@
 		selectedVariantId = defaultVariantId()
 		quantity = 1
 		notice = ''
+		optionError = ''
+		customMulti = {}
+		customSingle = {}
+		customInputs = {}
 		activeImage = 0
 		reviews = data.reviews?.items ?? []
 		reviewsPage = data.reviews?.meta.page ?? 1
@@ -158,13 +169,19 @@
 
 	const addToCart = () => {
 		if (!available) return
+		const customErr = validateCustomOptions()
+		if (customErr) {
+			optionError = customErr
+			return
+		}
+		optionError = ''
 		const variant = selectedVariant ?? product.variants[0]
 		cart.add({
 			productId: product.id,
 			variantId: variant?.id ?? product.id,
 			name: localized(product.name, product.nameAr),
 			sku: variant?.sku ?? product.sku,
-			price: selectedVariant?.price ?? product.price,
+			price: displayPrice,
 			compareAtPrice: selectedVariant?.compareAtPrice ?? product.compareAtPrice,
 			image: variant?.image ?? product.image,
 			optionValues: variant?.optionValues ?? {},
@@ -191,11 +208,84 @@
 		return val && val.priceAdjustment ? ` · +${money(val.priceAdjustment, store.merchant.currency)}` : ''
 	}
 	const valueAvailable = (name: string, value: string) => {
+		const def = optionDef(name)
+		if (def?.perValueQuantity) {
+			const vd = def.values.find((v) => v.value === value)
+			if (vd && vd.quantity !== null && vd.quantity <= 0) return false
+		}
 		if (!product.trackInventory) return true
 		return product.variants.some(
 			(v) => v.optionValues?.[name] === value && (v.unlimited || v.inventory > 0)
 		)
 	}
+
+	// Non-variant options (checkbox / select / swatch / number / text) render
+	// their own controls below. Radio options are covered by the variant
+	// buttons above, as are select/swatch options already in the variant set.
+	const customOptions = $derived(
+		(product.options ?? []).filter((o) => {
+			if (o.type === 'radio') return false
+			if ((o.type === 'select' || o.type === 'swatch') && optionNames.includes(o.name)) return false
+			return true
+		})
+	)
+	const customCount = (name: string) => {
+		const def = optionDef(name)
+		if (!def) return 0
+		if (def.type === 'checkbox') return customMulti[name]?.length ?? 0
+		if (def.type === 'select' || def.type === 'swatch') return customSingle[name] ? 1 : 0
+		return customInputs[name]?.trim() ? 1 : 0
+	}
+	const validateCustomOptions = (): string | null => {
+		for (const o of customOptions) {
+			const count = customCount(o.name)
+			const label = optionNameLabel(o.name)
+			const min = o.required ? Math.max(1, o.minSelections) : o.minSelections
+			if (count < min) {
+				return min === 1
+					? `"${label}" is required`
+					: `Select at least ${min} options for "${label}"`
+			}
+			if (o.maxSelections > 0 && count > o.maxSelections) {
+				return `Select at most ${o.maxSelections} options for "${label}"`
+			}
+		}
+		return null
+	}
+	// Client-side display total: base price plus selected option adjustments.
+	const optionsExtra = $derived(
+		customOptions.reduce((sum, o) => {
+			if (o.type === 'checkbox') {
+				for (const v of customMulti[o.name] ?? []) {
+					sum += o.values.find((x) => x.value === v)?.priceAdjustment ?? 0
+				}
+			} else if (o.type === 'select' || o.type === 'swatch') {
+				const sel = customSingle[o.name]
+				if (sel) sum += o.values.find((x) => x.value === sel)?.priceAdjustment ?? 0
+			}
+			return sum
+		}, 0)
+	)
+	const displayPrice = $derived(price + optionsExtra)
+
+	const toggleCustomMulti = (name: string, value: string) => {
+		const cur = new Set(customMulti[name] ?? [])
+		if (cur.has(value)) {
+			cur.delete(value)
+		} else {
+			const def = optionDef(name)
+			const max = def?.maxSelections ?? 0
+			if (max > 0 && cur.size >= max) {
+				optionError = `Select at most ${max} options for "${optionNameLabel(name)}"`
+				return
+			}
+			cur.add(value)
+		}
+		optionError = ''
+		customMulti = { ...customMulti, [name]: [...cur] }
+	}
+	const swatchColor = (value: string) =>
+		/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim()) ? value.trim() : null
 
 	const starString = (value: number) => '★★★★★'.slice(0, Math.round(value)) + '☆☆☆☆☆'.slice(0, 5 - Math.round(value))
 
@@ -344,8 +434,8 @@
 			{/if}
 
 			<div class="flex items-baseline gap-3">
-				<span class="text-2xl font-semibold text-neutral-900">{money(price, store.merchant.currency)}</span>
-				{#if compareAt && compareAt > price}
+				<span class="text-2xl font-semibold text-neutral-900">{money(displayPrice, store.merchant.currency)}</span>
+				{#if compareAt && compareAt > displayPrice}
 					<span class="text-lg text-neutral-400 line-through">{money(compareAt, store.merchant.currency)}</span>
 				{/if}
 			</div>
@@ -378,6 +468,93 @@
 						</div>
 					</div>
 				{/each}
+			{/if}
+
+		{#if customOptions.length}
+				{#each customOptions as opt (opt.id)}
+					<div>
+						<p class="text-sm font-medium text-neutral-700">
+							{optionNameLabel(opt.name)}
+							{#if opt.required}<span class="text-rose-500">*</span>{/if}
+							{#if opt.maxSelections > 1}
+								<span class="ml-1 text-xs font-normal text-neutral-400">
+									(up to {opt.maxSelections})
+								</span>
+							{/if}
+						</p>
+						{#if opt.type === 'checkbox'}
+							<div class="mt-2 flex flex-wrap gap-2">
+								{#each opt.values as val (val.value)}
+									{@const selected = (customMulti[opt.name] ?? []).includes(val.value)}
+									<button
+										type="button"
+										aria-pressed={selected}
+										class="rounded-lg border px-4 py-2 text-sm font-medium transition
+											{selected
+												? 'border-brand-600 bg-brand-600 text-white'
+												: 'border-neutral-300 text-neutral-700 hover:border-brand-400'}"
+										onclick={() => toggleCustomMulti(opt.name, val.value)}
+									>
+										{localized(val.value, val.valueAr)}{val.priceAdjustment ? ` · +${money(val.priceAdjustment, store.merchant.currency)}` : ''}
+									</button>
+								{/each}
+							</div>
+						{:else if opt.type === 'select'}
+							<select
+								class="mt-2 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+								value={customSingle[opt.name] ?? ''}
+								onchange={(e) => {
+									optionError = ''
+									customSingle = { ...customSingle, [opt.name]: e.currentTarget.value }
+								}}
+							>
+								<option value="">—</option>
+								{#each opt.values as val (val.value)}
+									<option value={val.value}>
+										{localized(val.value, val.valueAr)}{val.priceAdjustment ? ` · +${money(val.priceAdjustment, store.merchant.currency)}` : ''}
+									</option>
+								{/each}
+							</select>
+						{:else if opt.type === 'swatch'}
+							<div class="mt-2 flex flex-wrap gap-2">
+								{#each opt.values as val (val.value)}
+									{@const color = swatchColor(val.value)}
+									{@const selected = customSingle[opt.name] === val.value}
+									<button
+										type="button"
+										title={localized(val.value, val.valueAr)}
+										aria-label={localized(val.value, val.valueAr)}
+										aria-pressed={selected}
+										class="flex h-11 min-w-11 items-center justify-center rounded-full border-2 px-2 text-xs font-medium transition
+											{selected ? 'border-brand-600' : 'border-neutral-300 hover:border-brand-400'}"
+										style={color ? `background-color: ${color}` : undefined}
+										onclick={() => {
+											optionError = ''
+											customSingle = { ...customSingle, [opt.name]: selected ? '' : val.value }
+										}}
+									>
+										{#if !color}<span class="px-1">{localized(val.value, val.valueAr)}</span>{/if}
+									</button>
+								{/each}
+							</div>
+						{:else}
+							<input
+								type={opt.type === 'number' ? 'number' : 'text'}
+								class="mt-2 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+								placeholder={optionNameLabel(opt.name)}
+								value={customInputs[opt.name] ?? ''}
+								oninput={(e) => {
+									optionError = ''
+									customInputs = { ...customInputs, [opt.name]: e.currentTarget.value }
+								}}
+							/>
+						{/if}
+					</div>
+				{/each}
+			{/if}
+
+			{#if optionError}
+				<p class="rounded-lg bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{optionError}</p>
 			{/if}
 
 			<div class="flex items-center gap-4">

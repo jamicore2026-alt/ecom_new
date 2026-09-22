@@ -1,11 +1,13 @@
 import { Elysia } from 'elysia'
 import { authPlugin, requirePermission } from '../../plugins/auth'
+import { outletGuard } from '../../plugins/outlet'
 import { auditFromRequest } from '../audit-logs'
 import { InventoryService } from './service'
 import { adjustBody, historyQuery, inventoryQuery } from './model'
 
 export const inventoryModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(outletGuard({ module: 'inventory' }))
   .use(requirePermission('inventory.read'))
   .get('/inventory', async ({ query, auth }) => InventoryService.list(auth.db, auth.merchant.id, query), {
     query: inventoryQuery

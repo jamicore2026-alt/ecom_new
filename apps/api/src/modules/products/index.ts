@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 import { authPlugin, hasPermission, requirePermission } from '../../plugins/auth'
+import { outletGuard } from '../../plugins/outlet'
 import type { AuthContext } from '../../plugins/auth'
 import { forbidden } from '../../shared/errors'
 import { auditFromRequest } from '../audit-logs'
@@ -23,6 +24,7 @@ const needProductRead = ({ auth }: { auth: AuthContext }) => {
 
 export const productsModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
+  .use(outletGuard({ module: 'commerce' }))
   .get('/products', async ({ query, auth }) => ProductsService.list(auth.db, auth.merchant.id, query), {
     query: productQuery,
     beforeHandle: needProductRead

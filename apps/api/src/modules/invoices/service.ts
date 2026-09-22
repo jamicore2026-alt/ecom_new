@@ -1,6 +1,6 @@
 import { and, count, desc, eq, like, sql } from 'drizzle-orm'
 import type { DB } from '../../database/client'
-import { invoiceSettings, invoices, orderItems, orders, storeSettings } from '../../database/schema'
+import { invoiceSettings, invoices, orderItems, orders, storeSettings, customers } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, conflict, notFound } from '../../shared/errors'
 import { makeMeta, parsePagination } from '../../shared/pagination'
@@ -192,12 +192,31 @@ export class InvoicesService {
       .from(storeSettings)
       .where(eq(storeSettings.merchantId, merchantId))
 
+    // Shopper name for the bill-to block (guest orders keep customerId null).
+    let customerName: string | null = null
+    if (row.orders.customerId) {
+      const [customer] = await db
+        .select({
+          firstName: customers.firstName,
+          lastName: customers.lastName,
+          email: customers.email
+        })
+        .from(customers)
+        .where(eq(customers.id, row.orders.customerId))
+      if (customer) {
+        customerName =
+          [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim() ||
+          customer.email
+      }
+    }
+
     const buffer = await renderInvoicePdf({
       invoice: row.invoices,
       order: row.orders,
       items,
       settings: settings ?? {},
-      store: store ?? null
+      store: store ?? null,
+      customerName
     })
 
     const filename = `${(row.invoices.invoiceNumber || 'invoice').replace(/[^a-zA-Z0-9._-]/g, '_')}.pdf`

@@ -269,4 +269,46 @@ describe('Invoice PDF download + invoice customization', () => {
     const bytes = new Uint8Array(allowed.body as ArrayBuffer)
     expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe('%PDF-')
   })
+
+  it('renders Arabic content with an embedded Arabic font', async () => {
+    const { renderInvoicePdf } = await import('../src/modules/invoices/pdf')
+    const buf = await renderInvoicePdf({
+      invoice: {
+        invoiceNumber: 'ACME-AR-1',
+        invoiceDate: new Date(),
+        status: 'paid',
+        invoiceType: 'invoice',
+        subtotal: 50,
+        discountTotal: 0,
+        shippingTotal: 0,
+        taxTotal: 0,
+        total: 50,
+        gstin: null,
+        billingAddress: {
+          name: 'أحمد محمد',
+          line1: 'شارع السالمية ١٢',
+          city: 'مدينة الكويت',
+          country: 'الكويت'
+        },
+        shippingAddress: null
+      } as never,
+      order: { orderNumber: 'ORD-AR-1', currency: 'KWD', billingAddress: null, shippingAddress: null } as never,
+      items: [{ name: 'منتج تجريبي (Widget)', sku: 'SKU-AR', price: 50, quantity: 1, total: 50 }],
+      settings: {
+        businessName: 'متجر الكويت',
+        headerNote: 'شكرا لكم',
+        footerNote: 'الإرجاع خلال ١٤ يوم',
+        displayFields: { columns: ['item', 'sku', 'qty', 'price', 'total'], showDiscount: true, showTax: true },
+        layout: 'standard'
+      },
+      store: { name: 'Fallback', logo: null },
+      customerName: 'أحمد محمد'
+    })
+    expect(buf.length).toBeGreaterThan(1500)
+    const raw = buf.toString('latin1')
+    expect(raw.slice(0, 5)).toBe('%PDF-')
+    // Arabic font must be embedded (no tofu boxes), Helvetica kept for Latin.
+    expect(raw).toContain('NotoNaskhArabic')
+    expect(raw).toContain('Helvetica')
+  })
 })
