@@ -36,7 +36,7 @@
 	type OptionDraft = {
 		name: string
 		nameAr: string
-		type: 'radio' | 'checkbox'
+		type: 'radio' | 'checkbox' | 'select' | 'swatch' | 'number' | 'text'
 		required: boolean
 		minSelections: string
 		maxSelections: string

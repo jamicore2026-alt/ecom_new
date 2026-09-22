@@ -3,7 +3,7 @@
 	import { page } from '$app/state'
 	import { goto } from '$app/navigation'
 	import { initials } from '$lib/format'
-	import { NAV_GROUP_ICONS } from '$lib/navigation'
+	import { NAV_GROUP_ICONS, NAV_GROUP_ORDER } from '$lib/navigation'
 	import { i18n, t } from '$lib/i18n'
 	import { theme } from '$lib/i18n/theme.svelte'
 	import Icon from '$lib/components/Icon.svelte'
@@ -15,7 +15,45 @@
 	let active = $derived(page.url.pathname)
 	let user = $derived(session.user)
 	let merchant = $derived(session.merchant)
-	let navGroups = $derived(session.visibleNav)
+	let navGroups = $derived.by(() => {
+		const groups = session.visibleNav
+		// Stable sidebar order; any unexpected group falls to the end.
+		return Object.fromEntries(
+			[...NAV_GROUP_ORDER, ...Object.keys(groups).filter((g) => !NAV_GROUP_ORDER.includes(g))]
+				.filter((g) => groups[g]?.length)
+				.map((g) => [g, groups[g]])
+		)
+	})
+
+	/** Collapsed nav groups, persisted across sessions. */
+	let collapsed = $state<Record<string, boolean>>({})
+	if (typeof window !== 'undefined') {
+		try {
+			collapsed = JSON.parse(localStorage.getItem('md.navCollapsed') ?? '{}')
+		} catch {
+			collapsed = {}
+		}
+	}
+
+	function isGroupActive(items: { route: string }[]) {
+		return items.some((i) => active === i.route || active.startsWith(i.route + '/'))
+	}
+
+	// The group holding the current route always stays open; persist toggles.
+	$effect(() => {
+		for (const [group, items] of Object.entries(navGroups)) {
+			if (isGroupActive(items) && collapsed[group]) {
+				collapsed[group] = false
+			}
+		}
+		if (typeof window !== 'undefined') {
+			localStorage.setItem('md.navCollapsed', JSON.stringify(collapsed))
+		}
+	})
+
+	function toggleGroup(group: string) {
+		collapsed[group] = !collapsed[group]
+	}
 
 	function cycleTheme() {
 		const next = theme.mode === 'light' ? 'dark' : theme.mode === 'dark' ? 'system' : 'light'
@@ -91,34 +129,42 @@
 					</div>
 				</div>
 
-				<nav class="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-stack-comfortable">
+				<nav class="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-stack-comfortable" aria-label={t('nav.main')}>
 					{#each Object.entries(navGroups) as [group, items]}
-						<div>
-							<p
-								class="mb-1.5 flex items-center gap-2 px-3 text-[11px] font-semibold uppercase tracking-widest text-secondary"
+						{@const open = !collapsed[group]}
+						<div class="overflow-hidden rounded-lg border border-transparent transition-colors" class:border-outline-variant={!open && isGroupActive(items)}>
+							<button
+								onclick={() => toggleGroup(group)}
+								aria-expanded={open}
+								aria-controls="nav-group-{group}"
+								class="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-widest transition-colors hover:bg-surface-container-low {isGroupActive(items) ? 'text-primary' : 'text-secondary'}"
 							>
-								<Icon name={NAV_GROUP_ICONS[group] ?? 'menu'} size="text-[14px]" />
-								{t('nav.' + group.toLowerCase())}
-							</p>
-							<div class="space-y-0.5">
-								{#each items as item}
-									<a
-										href={item.route}
-										onclick={() => (sidebarOpen = false)}
-										title={t(item.key ?? item.label)}
-										class="flex items-center gap-3 rounded border-s-2 px-3 py-2.5 text-sm font-medium transition-colors"
-										class:bg-surface-container={active === item.route || active.startsWith(item.route + '/')}
-										class:text-primary={active === item.route || active.startsWith(item.route + '/')}
-										class:border-primary={active === item.route || active.startsWith(item.route + '/')}
-										class:border-transparent={!(active === item.route || active.startsWith(item.route + '/'))}
-										class:text-secondary={!(active === item.route || active.startsWith(item.route + '/'))}
-										class:hover:bg-surface-container-low={!(active === item.route || active.startsWith(item.route + '/'))}
-									>
-										<Icon name={item.icon} size="text-[18px]" />
-										{t(item.key ?? item.label)}
-									</a>
-								{/each}
-							</div>
+								<Icon name={NAV_GROUP_ICONS[group] ?? 'menu'} size="text-[16px]" />
+								<span class="flex-1 text-start">{t('nav.' + group.toLowerCase())}</span>
+								<span class="rounded-full bg-surface-container px-1.5 py-0.5 text-[10px] font-bold normal-case tracking-normal text-secondary">{items.length}</span>
+								<Icon name="expand_more" size="text-[16px]" class="transition-transform {open ? '' : '-rotate-90 rtl:rotate-90'}" />
+							</button>
+							{#if open}
+								<div id="nav-group-{group}" class="space-y-0.5 pb-1 pt-0.5">
+									{#each items as item}
+										<a
+											href={item.route}
+											onclick={() => (sidebarOpen = false)}
+											title={t(item.key ?? item.label)}
+											class="flex items-center gap-3 rounded border-s-2 px-3 py-2.5 ps-9 text-sm font-medium transition-colors"
+											class:bg-surface-container={active === item.route || active.startsWith(item.route + '/')}
+											class:text-primary={active === item.route || active.startsWith(item.route + '/')}
+											class:border-primary={active === item.route || active.startsWith(item.route + '/')}
+											class:border-transparent={!(active === item.route || active.startsWith(item.route + '/'))}
+											class:text-secondary={!(active === item.route || active.startsWith(item.route + '/'))}
+											class:hover:bg-surface-container-low={!(active === item.route || active.startsWith(item.route + '/'))}
+										>
+											<Icon name={item.icon} size="text-[18px]" />
+											{t(item.key ?? item.label)}
+										</a>
+									{/each}
+								</div>
+							{/if}
 						</div>
 					{/each}
 				</nav>

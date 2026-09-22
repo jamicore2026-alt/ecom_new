@@ -1,7 +1,11 @@
 export const en: Record<string, string> = {
 	// Shell / nav groups
+	'nav.main': 'Main navigation',
 	'nav.general': 'General',
 	'nav.sell': 'Sell',
+	'nav.catalog': 'Catalog',
+	'nav.marketing': 'Marketing',
+	'nav.fulfillment': 'Fulfillment',
 	'nav.restaurant': 'Restaurant',
 	'nav.insights': 'Insights',
 	'nav.overview': 'Overview',
@@ -99,6 +103,17 @@ export const en: Record<string, string> = {
 	'dash.salesLast30Days': 'Sales vs last 30 days',
 	'dash.recentOrders': 'Recent orders',
 	'dash.viewAll': 'View all',
+	'dash.quickActions': 'Quick actions',
+	'dash.qaOrders': 'Orders',
+	'dash.qaProducts': 'Products',
+	'dash.qaInventory': 'Inventory',
+	'dash.qaPos': 'Open POS',
+	'dash.qaAnalytics': 'Analytics',
+	'dash.avgLine': '14-day average',
+	'dash.salesTable': 'View sales data as a table',
+	'dash.tableDate': 'Date',
+	'dash.tableRevenue': 'Revenue',
+	'dash.tableOrders': 'Orders',
 
 	// Products
 	'products.title': 'Products',

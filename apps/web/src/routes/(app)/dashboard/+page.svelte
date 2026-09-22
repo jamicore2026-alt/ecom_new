@@ -26,6 +26,19 @@
 
 	let currencyCode = $derived(session.merchant?.currency ?? data?.currency ?? 'USD')
 
+	/** Routes the current user may see (module + permission gated, same as sidebar). */
+	let allowedRoutes = $derived(
+		new Set(Object.values(session.visibleNav ?? {}).flat().map((i) => i.route))
+	)
+
+	const quickActions = [
+		{ label: 'dash.qaOrders', route: '/orders', icon: 'receipt_long' },
+		{ label: 'dash.qaProducts', route: '/products', icon: 'inventory_2' },
+		{ label: 'dash.qaInventory', route: '/inventory', icon: 'warehouse' },
+		{ label: 'dash.qaPos', route: '/pos', icon: 'point_of_sale' },
+		{ label: 'dash.qaAnalytics', route: '/analytics', icon: 'insights' }
+	]
+
 	let chart = $derived.by(() => {
 		if (!data || data.salesChart.length === 0) return null
 		const max = Math.max(...data.salesChart.map((p) => p.revenue), 1)
@@ -38,7 +51,9 @@
 			x: pad + i * stepX,
 			y: chartH - pad - (p.revenue / max) * (chartH - pad * 2)
 		}))
-		return { max, pts, chartW, chartH, pad }
+		const avg = data.salesChart.reduce((s, p) => s + p.revenue, 0) / n
+		const avgY = chartH - pad - (avg / max) * (chartH - pad * 2)
+		return { max, pts, chartW, chartH, pad, avg, avgY }
 	})
 
 	let chartTicks = $derived.by(() => {
@@ -68,12 +83,12 @@
 	}
 
 	const stats = [
-		{ label: t('dash.todaySales'), key: 'todaySales' as const },
-		{ label: t('dash.ordersToday'), key: 'ordersToday' as const },
-		{ label: t('dash.avgOrderValue'), key: 'avgOrderValue' as const },
-		{ label: t('dash.pendingOrders'), key: 'pendingOrders' as const },
-		{ label: t('dash.lowStock'), key: 'lowStockCount' as const },
-		{ label: t('dash.outOfStock'), key: 'outOfStockCount' as const }
+		{ label: t('dash.todaySales'), key: 'todaySales' as const, route: '/orders', icon: 'payments' },
+		{ label: t('dash.ordersToday'), key: 'ordersToday' as const, route: '/orders', icon: 'receipt_long' },
+		{ label: t('dash.avgOrderValue'), key: 'avgOrderValue' as const, route: '/analytics', icon: 'insights' },
+		{ label: t('dash.pendingOrders'), key: 'pendingOrders' as const, route: '/orders', icon: 'schedule' },
+		{ label: t('dash.lowStock'), key: 'lowStockCount' as const, route: '/inventory', icon: 'warning' },
+		{ label: t('dash.outOfStock'), key: 'outOfStockCount' as const, route: '/inventory', icon: 'error' }
 	]
 </script>
 
@@ -91,7 +106,7 @@
 		</div>
 	</div>
 {:else if data}
-	<div class="space-y-6">
+	<div class="dash-enter space-y-6">
 		<!-- Page header -->
 		<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 			<div>
@@ -107,17 +122,42 @@
 			</a>
 		</div>
 
+		<!-- Quick actions (only routes this user may access) -->
+		<div class="flex flex-wrap gap-2" role="navigation" aria-label={t('dash.quickActions')}>
+			{#each quickActions.filter((a) => allowedRoutes.has(a.route)) as a, i (a.route)}
+				<a
+					href={a.route}
+					class="dash-item inline-flex min-h-11 items-center gap-2 rounded-full border border-outline-variant bg-surface-container-lowest px-4 text-sm font-medium text-on-surface-variant shadow-sm backdrop-blur transition-all hover:-translate-y-0.5 hover:border-primary hover:text-primary hover:shadow-md"
+					style="animation-delay: {i * 60}ms"
+				>
+					<Icon name={a.icon} size="text-[18px]" />
+					{t(a.label)}
+				</a>
+			{/each}
+		</div>
+
 		<!-- Stat cards -->
 		<div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-			{#each stats as s}
-				<div class="relative flex flex-col rounded border border-outline-variant bg-surface-container-lowest p-4 transition-colors hover:border-primary">
-					<span class="font-mono-label text-mono-label uppercase tracking-wider text-secondary">{s.label}</span>
+			{#each stats as s, i (s.key)}
+				{@const Wrapper = allowedRoutes.has(s.route) ? 'a' : 'div'}
+				<svelte:element
+					this={Wrapper}
+					{...(allowedRoutes.has(s.route) ? { href: s.route } : {})}
+					class="dash-item group relative flex flex-col overflow-hidden rounded border border-outline-variant bg-surface-container-lowest/80 p-4 shadow-sm backdrop-blur transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
+					style="animation-delay: {(i + 2) * 60}ms"
+					aria-label={allowedRoutes.has(s.route) ? `${s.label} — ${t('dash.viewAll')}` : s.label}
+				>
+					<span class="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-primary to-success opacity-0 transition-opacity group-hover:opacity-100"></span>
+					<span class="flex items-center gap-1.5 font-mono-label text-mono-label uppercase tracking-wider text-secondary">
+						<Icon name={s.icon} size="text-[16px]" />
+						{s.label}
+					</span>
 					<span class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">
 						{s.key === 'todaySales' || s.key === 'avgOrderValue'
 							? currency(data![s.key], currencyCode)
 							: number(data![s.key])}
 					</span>
-				</div>
+				</svelte:element>
 			{/each}
 		</div>
 
@@ -133,11 +173,11 @@
 							{@const chartW = chart?.chartW ?? 600}
 							{@const chartH = chart?.chartH ?? 200}
 							{@const pad = chart?.pad ?? 10}
-							<svg viewBox="0 0 680 280" class="h-full w-full" preserveAspectRatio="none">
+							<svg viewBox="0 0 680 280" class="h-full w-full" preserveAspectRatio="none" role="img" aria-label={t('dash.revenue14')}>
 								<defs>
 									<linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
-										<stop offset="0%" stop-color="#004ac6" stop-opacity="0.2" />
-										<stop offset="100%" stop-color="#004ac6" stop-opacity="0" />
+										<stop offset="0%" stop-color="#22C55E" stop-opacity="0.25" />
+										<stop offset="100%" stop-color="#22C55E" stop-opacity="0" />
 									</linearGradient>
 								</defs>
 								{#if chartTicks}
@@ -154,13 +194,25 @@
 									<polyline
 										points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
 										fill="none"
-										stroke="#004ac6"
+										stroke="#22C55E"
 										stroke-width="2.5"
 										stroke-linecap="round"
 										stroke-linejoin="round"
 									/>
+									<!-- 14-day average (dashed: series distinguished by style, not hue alone) -->
+									<line
+										x1={pad}
+										y1={chart?.avgY}
+										x2={chartW - pad}
+										y2={chart?.avgY}
+										stroke="#94A3B8"
+										stroke-width="1.5"
+										stroke-dasharray="6 4"
+									>
+										<title>{t('dash.avgLine')}: {currency(chart?.avg ?? 0, currencyCode)}</title>
+									</line>
 									{#each pts as p, i (i)}
-										<circle cx={p.x} cy={p.y} r="3" fill="#004ac6">
+										<circle cx={p.x} cy={p.y} r="3" fill="#22C55E">
 											<title>{currency(data.salesChart[i].revenue, currencyCode)} — {data.salesChart[i].date}</title>
 										</circle>
 									{/each}
@@ -173,6 +225,28 @@
 									{/each}
 								{/if}
 							</svg>
+							<!-- Screen-reader data table fallback -->
+							<details class="mt-2 text-xs text-secondary">
+								<summary class="cursor-pointer hover:text-primary">{t('dash.salesTable')}</summary>
+								<table class="mt-2 w-full text-left">
+									<thead>
+										<tr>
+											<th class="py-1 pe-4">{t('dash.tableDate')}</th>
+											<th class="py-1 pe-4">{t('dash.tableRevenue')}</th>
+											<th class="py-1">{t('dash.tableOrders')}</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each data.salesChart as p (p.date)}
+											<tr class="border-t border-outline-variant/60">
+												<td class="py-1 pe-4">{p.date}</td>
+												<td class="py-1 pe-4">{currency(p.revenue, currencyCode)}</td>
+												<td class="py-1">{number(p.orders)}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</details>
 						{/if}
 					</div>
 				</Card>
@@ -233,6 +307,12 @@
 						</tbody>
 					</table>
 				</div>
+				<div class="flex justify-end p-4">
+					<a href="/orders" class="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-primary hover:underline">
+						{t('dash.viewAll')}
+						<Icon name="chevron_right" size="text-[18px]" />
+					</a>
+				</div>
 			{/if}
 		</Card>
 	</div>
@@ -241,3 +321,28 @@
 		{t('common.loadFailed')}
 	</div>
 {/if}
+
+<style>
+	/* Stagger-in (Standard tier); static snapshot under reduced motion. */
+	.dash-enter .dash-item {
+		animation: dash-in 0.4s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+	}
+	@keyframes dash-in {
+		from {
+			opacity: 0;
+			transform: translateY(16px) scale(0.98);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.dash-enter .dash-item {
+			animation: none;
+		}
+		.dash-enter a {
+			transition: none;
+		}
+	}
+</style>

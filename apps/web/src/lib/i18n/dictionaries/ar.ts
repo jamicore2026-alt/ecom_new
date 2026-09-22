@@ -1,7 +1,11 @@
 export const ar: Record<string, string> = {
 	// Shell / nav groups
+	'nav.main': 'التنقل الرئيسي',
 	'nav.general': 'عام',
 	'nav.sell': 'البيع',
+	'nav.catalog': 'الكتالوج والمخزون',
+	'nav.marketing': 'التسويق',
+	'nav.fulfillment': 'التنفيذ والفواتير',
 	'nav.restaurant': 'المطعم',
 	'nav.insights': 'التحليلات',
 	'nav.overview': 'نظرة عامة',
@@ -99,6 +103,17 @@ export const ar: Record<string, string> = {
 	'dash.salesLast30Days': 'المبيعات خلال آخر 30 يوم',
 	'dash.recentOrders': 'الطلبات الأخيرة',
 	'dash.viewAll': 'عرض الكل',
+	'dash.quickActions': 'إجراءات سريعة',
+	'dash.qaOrders': 'الطلبات',
+	'dash.qaProducts': 'المنتجات',
+	'dash.qaInventory': 'المخزون',
+	'dash.qaPos': 'فتح نقطة البيع',
+	'dash.qaAnalytics': 'التحليلات',
+	'dash.avgLine': 'متوسط ١٤ يوم',
+	'dash.salesTable': 'عرض بيانات المبيعات كجدول',
+	'dash.tableDate': 'التاريخ',
+	'dash.tableRevenue': 'الإيرادات',
+	'dash.tableOrders': 'الطلبات',
 
 	// Products
 	'products.title': 'المنتجات',
