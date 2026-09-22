@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { app } from './app'
 import { pruneBlacklist } from './plugins/auth'
 import { StorefrontService } from './modules/storefront/service'
@@ -43,6 +45,22 @@ const sweepAbandonedCarts = () =>
   CartsService.sweepAbandonedCarts(db, ABANDON_AFTER_MS).catch((err) =>
     log.error('abandoned-cart sweep failed', err)
   )
+
+// Schema drift (e.g. a column added in code but never migrated on the
+// deployed database) surfaces as 500s on live traffic. Applying pending
+// migrations at boot keeps every environment self-healing: drizzle skips
+// already-applied entries, so this is a fast no-op on a current database.
+// A migration failure is fatal on purpose — a deploy must visibly fail
+// instead of serving 500s from a half-migrated schema.
+try {
+  migrate(db, {
+    migrationsFolder: fileURLToPath(new URL('../drizzle', import.meta.url))
+  })
+  log.info('Database migrations up to date')
+} catch (err) {
+  log.error('Database migration failed — refusing to boot', err)
+  process.exit(1)
+}
 
 app.listen(port, () => {
   logStorageDriver()
