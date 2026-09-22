@@ -78,16 +78,16 @@ describe('Products CSV export/import', () => {
 
     const rows = parseCsv(text)
     expect(rows[0][0]).toBe('sku')
-    expect(rows[0].length).toBe(14)
+    expect(rows[0].length).toBe(17)
 
-    const mine = rows.filter((r) => r[0] === FIX_A || r[11] === `${FIX_A}-S` || r[11] === `${FIX_A}-M`)
+    const mine = rows.filter((r) => r[0] === FIX_A || r[13] === `${FIX_A}-S` || r[13] === `${FIX_A}-M`)
     // parent sku repeats on each variant row
     expect(mine.length).toBe(2)
-    const sRow = mine.find((r) => r[11] === `${FIX_A}-S`)
-    expect(sRow?.[12]).toBe('{"Size":"S"}')
-    expect(sRow?.[13]).toBe('5')
+    const sRow = mine.find((r) => r[13] === `${FIX_A}-S`)
+    expect(sRow?.[14]).toBe('{"Size":"S"}')
+    expect(sRow?.[16]).toBe('5')
     // tricky description survived quoting
-    expect(sRow?.[3]).toBe('Has, a "tricky" description.')
+    expect(sRow?.[4]).toBe('Has, a "tricky" description.')
     expect(sRow?.[1]).toBe('CSV Fixture Alpha')
 
     // staff without products.read cannot export products (permission-gated reads)
@@ -107,25 +107,28 @@ describe('Products CSV export/import', () => {
     const mine = all.filter((r, i) => i > 0 && r[0] === FIX_A)
 
     // bump price + inventory on the -S row
-    const sIdx = mine.findIndex((r) => r[11] === `${FIX_A}-S`)
-    mine[sIdx][4] = '12.5'
-    mine[sIdx][13] = '20'
+    const sIdx = mine.findIndex((r) => r[13] === `${FIX_A}-S`)
+    mine[sIdx][6] = '12.5'
+    mine[sIdx][16] = '20'
 
-    // add a brand-new single-variant product
+    // add a brand-new single-variant product (with Arabic name)
     mine.push([
       'CSVFIX-BETA',
       'CSV Fixture Beta',
+      'بيتا',
       '',
       'Fresh import',
+      'وصف بيتا',
       '7.25',
       '',
-      '2',
+      '',
       'draft',
       '',
       'true',
-      '3',
+      '',
       'CSVFIX-BETA-ONE',
       '{"Color":"Red"}',
+      '',
       '4'
     ])
 
@@ -154,12 +157,14 @@ describe('Products CSV export/import', () => {
       }
     }
 
-    // beta exists as its own product
+    // beta exists as its own product (Arabic fields survived the round-trip)
     const beta = await call('/api/products?search=CSVFIX-BETA', {
       headers: { authorization: `Bearer ${adminToken}` }
     })
     expect(beta.body.data.meta.total).toBeGreaterThanOrEqual(1)
     createdIds.push(beta.body.data.items[0].id)
+    expect(beta.body.data.items[0].nameAr).toBe('بيتا')
+    expect(beta.body.data.items[0].descriptionAr).toBe('وصف بيتا')
   })
 
   it('reports per-row errors without blocking other blocks', async () => {
