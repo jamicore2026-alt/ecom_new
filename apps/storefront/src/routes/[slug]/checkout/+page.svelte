@@ -123,7 +123,8 @@
 		items: cart.items.map((i) => ({
 			productId: i.productId,
 			variantId: i.variantId,
-			quantity: i.quantity
+			quantity: i.quantity,
+			selections: i.selections
 		})),
 		couponCode: couponCode.trim() || undefined,
 		// Preview accepts city/state/postal/country so the quoted shipping
@@ -282,7 +283,8 @@
 				items: cart.items.map((i) => ({
 					productId: i.productId,
 					variantId: i.variantId,
-					quantity: i.quantity
+					quantity: i.quantity,
+					selections: i.selections
 				})),
 				couponCode: couponCode.trim() || undefined,
 				email: email.trim(),

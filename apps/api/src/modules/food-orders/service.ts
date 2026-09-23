@@ -169,7 +169,8 @@ export class FoodOrdersService {
         taxRate: menuItems.taxRate,
         productId: menuItems.productId,
         productName: products.name,
-        productPrice: products.price
+        productPrice: products.price,
+        productVisibility: products.visibility
       })
       .from(menuItems)
       .innerJoin(products, eq(menuItems.productId, products.id))
@@ -304,7 +305,7 @@ export class FoodOrdersService {
     if (input.items) {
       const menuIds = [...new Set(input.items.map((i) => i.menuItemId))]
       const loaded = await db
-        .select({ id: menuItems.id, available: menuItems.available, status: menuItems.status, taxRate: menuItems.taxRate, productId: menuItems.productId, productName: products.name, productPrice: products.price })
+        .select({ id: menuItems.id, available: menuItems.available, status: menuItems.status, taxRate: menuItems.taxRate, productId: menuItems.productId, productName: products.name, productPrice: products.price, productVisibility: products.visibility })
         .from(menuItems)
         .innerJoin(products, eq(menuItems.productId, products.id))
         .where(and(eq(menuItems.merchantId, merchantId), inArray(menuItems.id, menuIds)))
@@ -361,7 +362,7 @@ export class FoodOrdersService {
     db: DB,
     merchantId: string,
     orderId: string,
-    byId: Map<string, { id: string; available: boolean; status: string; taxRate: number; productId: string; productName: string; productPrice: number }>,
+    byId: Map<string, { id: string; available: boolean; status: string; taxRate: number; productId: string; productName: string; productPrice: number; productVisibility: string | null }>,
     ctx: ResolverCtx,
     items: { menuItemId: string; quantity: number; modifiers?: { modifierId: string; quantity?: number }[] }[]
   ) {
@@ -373,6 +374,11 @@ export class FoodOrdersService {
       const menu = byId.get(req.menuItemId)
       if (!menu) throw notFound('MENU_ITEM_NOT_FOUND', `Menu item not found: ${req.menuItemId}`)
       if (menu.status !== 'active' || !menu.available) throw conflict('ITEM_UNAVAILABLE', `${menu.productName} is not currently available`)
+      // Channel gating (server-side): website-only products are not servable
+      // through POS / food-order channels, no matter what the client sends.
+      if (menu.productVisibility === 'website') {
+        throw conflict('ITEM_UNAVAILABLE', `${menu.productName} is not available on this channel`)
+      }
 
       const groupIds = ctx.menuGroups.get(menu.id) ?? new Set()
       let modifierTotal = 0

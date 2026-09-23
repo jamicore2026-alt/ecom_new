@@ -192,6 +192,7 @@ export interface CartItemInput {
 	productId: string
 	variantId: string
 	quantity: number
+	selections?: Array<{ optionId: string; values: string[] }>
 }
 
 export interface CheckoutLine {

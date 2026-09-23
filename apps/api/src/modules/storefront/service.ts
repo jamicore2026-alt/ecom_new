@@ -64,6 +64,7 @@ export interface CheckoutItemInput {
   productId: string
   variantId: string
   quantity: number
+  selections?: Array<{ optionId: string; values: string[] }>
 }
 
 export interface CheckoutInput extends CheckoutPreviewInput {
@@ -207,6 +208,8 @@ interface CheckoutLine {
   image: string | null
   categoryId: string | null
   optionValues: Record<string, string>
+  /** Validated custom-option picks (option name → chosen values). */
+  customSelections: Record<string, string[]>
   trackInventory: boolean
   quantity: number
   total: number
@@ -886,6 +889,43 @@ export class StorefrontService {
     const productMap = new Map(productRows.map((p) => [p.id, p]))
     const variantMap = new Map(variantRows.map((v) => [v.id, v]))
 
+    // Custom-option definitions for selection validation (required/min/max,
+    // known values, price adjustments). Only active options participate.
+    const optionRows = productIds.length
+      ? await db
+          .select()
+          .from(productOptions)
+          .where(
+            and(
+              inArray(productOptions.productId, productIds),
+              eq(productOptions.merchantId, merchantId),
+              eq(productOptions.status, 'active')
+            )
+          )
+      : []
+    const optionIds = optionRows.map((o) => o.id)
+    const valueRows = optionIds.length
+      ? await db
+          .select()
+          .from(productOptionValues)
+          .where(
+            and(
+              inArray(productOptionValues.optionId, optionIds),
+              eq(productOptionValues.merchantId, merchantId)
+            )
+          )
+      : []
+    const optionsByProduct = new Map<string, typeof optionRows>()
+    for (const o of optionRows) {
+      if (!optionsByProduct.has(o.productId)) optionsByProduct.set(o.productId, [])
+      optionsByProduct.get(o.productId)!.push(o)
+    }
+    const valuesByOption = new Map<string, typeof valueRows>()
+    for (const v of valueRows) {
+      if (!valuesByOption.has(v.optionId)) valuesByOption.set(v.optionId, [])
+      valuesByOption.get(v.optionId)!.push(v)
+    }
+
     return items.map((item) => {
       const product = productMap.get(item.productId)
       if (!product) throw badRequest('PRODUCT_NOT_FOUND', `Product not found: ${item.productId}`)
@@ -902,7 +942,45 @@ export class StorefrontService {
       if (product.trackInventory && !variant.unlimited && variant.inventory < item.quantity) {
         throw badRequest('OUT_OF_STOCK', `Only ${variant.inventory} of ${product.name} available`)
       }
-      const price = number(variant.price)
+      // Server-side custom-option enforcement: every required option (or one
+      // with minSelections > 0) must be present, counts must sit inside
+      // [min, max], and option ids + values must belong to this product.
+      // Forged requests cannot bypass what the storefront validates in UI.
+      const defs = optionsByProduct.get(product.id) ?? []
+      const defById = new Map(defs.map((d) => [d.id, d]))
+      const seenOptions = new Set<string>()
+      let adjustment = 0
+      const customSelections: Record<string, string[]> = {}
+      for (const sel of item.selections ?? []) {
+        const def = defById.get(sel.optionId)
+        if (!def) throw badRequest('INVALID_OPTION', `Unknown option for ${product.name}`)
+        if (seenOptions.has(sel.optionId)) throw badRequest('INVALID_OPTION', `Duplicate option for ${product.name}`)
+        seenOptions.add(sel.optionId)
+        const known = new Map((valuesByOption.get(def.id) ?? []).map((v) => [v.value, v]))
+        const isFreeInput = def.type === 'number' || def.type === 'text'
+        if (!isFreeInput) {
+          for (const val of sel.values) {
+            if (!known.has(val)) throw badRequest('INVALID_OPTION_VALUE', `"${val}" is not a valid choice for ${def.name}`)
+          }
+        }
+        if (sel.values.length < def.minSelections || (def.maxSelections > 0 && sel.values.length > def.maxSelections)) {
+          throw badRequest(
+            'INVALID_OPTION_SELECTION',
+            `${def.name} allows between ${def.minSelections} and ${def.maxSelections} selections`
+          )
+        }
+        for (const val of sel.values) {
+          adjustment += Number(known.get(val)?.priceAdjustment ?? 0)
+        }
+        customSelections[def.name] = [...sel.values]
+      }
+      for (const def of defs) {
+        const min = def.required ? Math.max(1, def.minSelections) : def.minSelections
+        if (min > 0 && !seenOptions.has(def.id)) {
+          throw badRequest('OPTION_REQUIRED', `"${def.name}" is required for ${product.name}`)
+        }
+      }
+      const price = roundForCurrency(number(variant.price) + adjustment, currency)
       return {
         productId: product.id,
         variantId: variant.id,
@@ -912,6 +990,7 @@ export class StorefrontService {
         image: variant.image ?? null,
         categoryId: product.categoryId ?? null,
         optionValues: variant.optionValues,
+        customSelections,
         trackInventory: product.trackInventory && !variant.unlimited,
         quantity: item.quantity,
         total: roundForCurrency(price * item.quantity, currency)
@@ -1433,9 +1512,15 @@ export class StorefrontService {
           // Per-value option inventory: values flagged with their own
           // quantity participate in the sale. Decrement each matched value
           // (clamped at 0, negative → OUT_OF_STOCK) in the same transaction.
-          const optEntries = Object.entries(
-            (item.optionValues ?? {}) as Record<string, string>
-          )
+          // Covers both variant-baked picks and custom selections.
+          const optEntries = [
+            ...Object.entries((item.optionValues ?? {}) as Record<string, string>).map(
+              ([k, v]) => [k, v] as [string, string]
+            ),
+            ...Object.entries(item.customSelections ?? {}).flatMap(([name, vals]) =>
+              vals.map((v) => [name, v] as [string, string])
+            )
+          ]
           if (optEntries.length > 0) {
             const opts = await tx
               .select()

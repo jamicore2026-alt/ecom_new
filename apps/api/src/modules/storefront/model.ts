@@ -28,7 +28,19 @@ export const productReviewsQuery = t.Object({
 const checkoutItem = t.Object({
   productId: t.String({ maxLength: 30 }),
   variantId: t.String({ maxLength: 30 }),
-  quantity: t.Integer({ minimum: 1, maximum: 99 })
+  quantity: t.Integer({ minimum: 1, maximum: 99 }),
+  /** Custom (non-variant) option picks, e.g. checkbox multi-selects or
+   *  number/text inputs. Validated server-side against the product's option
+   *  definitions (required/min/max, known values); price adjustments apply. */
+  selections: t.Optional(
+    t.Array(
+      t.Object({
+        optionId: t.String({ maxLength: 30 }),
+        values: t.Array(t.String({ maxLength: 200 }), { minItems: 1, maxItems: 20 })
+      }),
+      { maxItems: 20 }
+    )
+  )
 })
 
 export const addressBody = t.Object({

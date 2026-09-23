@@ -9,17 +9,25 @@ const storeParams = t.Object({ slug: t.String() })
 const saveCartBody = t.Object({
   cartId: t.Optional(t.String()),
   customerId: t.Optional(t.String()),
-  items: t.Array(
-    t.Object({
-      variantId: t.String(),
-      productId: t.Optional(t.String()),
-      name: t.String(),
-      price: t.Number(),
-      quantity: t.Integer({ minimum: 1 }),
-      image: t.Optional(t.Nullable(t.String())),
-      slug: t.Optional(t.String())
-    })
-  )
+    items: t.Array(
+      t.Object({
+        variantId: t.String(),
+        productId: t.Optional(t.String()),
+        name: t.String(),
+        price: t.Number(),
+        quantity: t.Integer({ minimum: 1 }),
+        image: t.Optional(t.Nullable(t.String())),
+        slug: t.Optional(t.String()),
+        selections: t.Optional(
+          t.Array(
+            t.Object({
+              optionId: t.String(),
+              values: t.Array(t.String())
+            })
+          )
+        )
+      })
+    )
 })
 
 const cartQuery = t.Object({

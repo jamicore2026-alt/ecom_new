@@ -6,8 +6,9 @@ import { products } from '../database/schema'
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`)
 
 /**
- * Hybrid product search condition: indexed tsvector match (word-level, ranked)
- * plus ILIKE substring fallback so partial words / SKUs still hit.
+ * Hybrid product search condition: indexed tsvector match (word-level, ranked,
+ * English + Arabic) plus ILIKE substring fallback so partial words / SKUs and
+ * Arabic substrings still hit.
  */
 export function productSearchCondition(term: string): SQL | undefined {
   const q = term.trim()
@@ -15,7 +16,9 @@ export function productSearchCondition(term: string): SQL | undefined {
   const like = `%${escapeLike(q)}%`
   return or(
     sql`${products.searchVector} @@ websearch_to_tsquery('english', ${q})`,
+    sql`${products.searchVector} @@ websearch_to_tsquery('arabic', ${q})`,
     ilike(products.name, like),
+    ilike(products.nameAr, like),
     ilike(products.sku, like)
   )
 }

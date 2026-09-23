@@ -11,6 +11,8 @@ export interface CartLine {
 	compareAtPrice: number | null
 	image: string | null
 	optionValues: Record<string, string>
+	/** Custom (non-variant) option picks validated server-side at checkout. */
+	selections?: Array<{ optionId: string; values: string[] }>
 	quantity: number
 }
 
@@ -24,6 +26,7 @@ const toSnapshot = (line: CartLine) => ({
 	price: line.price,
 	quantity: line.quantity,
 	image: line.image ?? null,
+	selections: line.selections ?? undefined,
 	slug: undefined as string | undefined
 })
 
@@ -81,7 +84,12 @@ class Cart {
 	}
 
 	add(line: CartLine) {
-		const idx = this.items.findIndex((i) => i.variantId === line.variantId)
+		// Lines with different custom selections stay separate: merging them
+		// would silently drop paid option picks.
+		const selKey = JSON.stringify(line.selections ?? [])
+		const idx = this.items.findIndex(
+			(i) => i.variantId === line.variantId && JSON.stringify(i.selections ?? []) === selKey
+		)
 		if (idx >= 0) this.items[idx].quantity = Math.min(99, this.items[idx].quantity + line.quantity)
 		else this.items = [...this.items, line]
 		this.saveLocal()

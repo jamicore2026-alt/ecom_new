@@ -37,6 +37,22 @@ interface ProductQuery {
   lowStock?: string
 }
 
+/**
+ * Promo-integrity guard: a compare-at ("was") price is only meaningful above
+ * the sale price. Rejects fake sales instead of silently storing them.
+ */
+function assertValidSalePrice(price: number | null | undefined, compareAtPrice: number | null | undefined) {
+  if (
+    compareAtPrice !== null &&
+    compareAtPrice !== undefined &&
+    price !== null &&
+    price !== undefined &&
+    compareAtPrice <= price
+  ) {
+    throw badRequest('INVALID_SALE_PRICE', 'Compare-at price must be higher than the sale price')
+  }
+}
+
 export class ProductsService {
   /* ------------------------------- helpers ------------------------------- */
 
@@ -233,6 +249,10 @@ export class ProductsService {
     if (input.variants?.some((v) => (v.inventory ?? 0) < 0)) {
       throw badRequest('BAD_REQUEST', 'Variant inventory cannot be negative')
     }
+    assertValidSalePrice(input.price, input.compareAtPrice)
+    for (const v of input.variants ?? []) {
+      assertValidSalePrice(v.price ?? input.price, v.compareAtPrice)
+    }
     if (input.categoryId) {
       const [cat] = await db
         .select()
@@ -327,6 +347,11 @@ export class ProductsService {
       .from(products)
       .where(and(eq(products.id, id), eq(products.merchantId, merchantId)))
     if (!product) throw notFound('NOT_FOUND', 'Product not found')
+
+    assertValidSalePrice(
+      (input.price as number | undefined) ?? product.price,
+      input.compareAtPrice !== undefined ? (input.compareAtPrice as number | null) : product.compareAtPrice
+    )
 
     if (input.categoryId) {
       const [cat] = await db
@@ -918,6 +943,7 @@ export class ProductsService {
     const product = await this.findProduct(db, merchantId, productId)
     if (!product) throw notFound('NOT_FOUND', 'Product not found')
     if ((input.inventory ?? 0) < 0) throw badRequest('BAD_REQUEST', 'Variant inventory cannot be negative')
+    assertValidSalePrice(input.price ?? product.price, input.compareAtPrice)
     const [variant] = await db.transaction(async (tx) =>
       tx
         .insert(productVariants)
@@ -958,6 +984,10 @@ export class ProductsService {
     if ((input.inventory ?? variant.inventory) < 0) {
       throw badRequest('BAD_REQUEST', 'Variant inventory cannot be negative')
     }
+    assertValidSalePrice(
+      input.price ?? variant.price,
+      input.compareAtPrice !== undefined ? input.compareAtPrice : variant.compareAtPrice
+    )
 
     const values: Partial<NewProductVariant> = {}
     if (input.sku !== undefined) values.sku = input.sku ?? null

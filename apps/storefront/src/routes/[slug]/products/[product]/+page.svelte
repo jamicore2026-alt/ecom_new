@@ -176,6 +176,18 @@
 		}
 		optionError = ''
 		const variant = selectedVariant ?? product.variants[0]
+		// Custom (non-variant) picks travel with the cart line so checkout can
+		// validate bounds server-side and charge price adjustments.
+		const selections = customOptions.flatMap((o) => {
+			const def = optionDef(o.name)
+			if (!def?.id) return []
+			let values: string[] = []
+			if (def.type === 'checkbox') values = customMulti[o.name] ?? []
+			else if (def.type === 'select' || def.type === 'swatch') {
+				if (customSingle[o.name]) values = [customSingle[o.name]]
+			} else if (customInputs[o.name]?.trim()) values = [customInputs[o.name].trim()]
+			return values.length > 0 ? [{ optionId: def.id, values }] : []
+		})
 		cart.add({
 			productId: product.id,
 			variantId: variant?.id ?? product.id,
@@ -185,6 +197,7 @@
 			compareAtPrice: selectedVariant?.compareAtPrice ?? product.compareAtPrice,
 			image: variant?.image ?? product.image,
 			optionValues: variant?.optionValues ?? {},
+			selections,
 			quantity
 		})
 		notice = t('product.addedToCart', { qty: quantity, name: localized(product.name, product.nameAr) })

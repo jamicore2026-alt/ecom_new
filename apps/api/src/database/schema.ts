@@ -334,7 +334,7 @@ export const products = pgTable(
       .notNull()
       .default('both'),
     searchVector: tsvector('search_vector').generatedAlwaysAs(
-      sql`to_tsvector('english', coalesce(name, '') || ' ' || coalesce(sku, '') || ' ' || coalesce(description, ''))`
+      sql`to_tsvector('english', coalesce(name, '') || ' ' || coalesce(sku, '') || ' ' || coalesce(description, '')) || to_tsvector('arabic', coalesce(name_ar, '') || ' ' || coalesce(description_ar, ''))`
     ),
     createdAt: tstz('created_at').defaultNow().notNull(),
     updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
