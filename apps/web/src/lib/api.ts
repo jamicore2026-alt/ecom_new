@@ -200,13 +200,21 @@ export const api = {
 	}
 }
 
-export async function login(input: { email: string; password: string; merchantSlug?: string }): Promise<AuthResponse> {
+export interface MfaChallengeResponse {
+	success: boolean
+	data: {
+		mfaRequired: true
+		mfaToken: string
+	}
+}
+
+export async function login(input: { email: string; password: string; merchantSlug?: string }): Promise<AuthResponse | MfaChallengeResponse> {
 	const res = await fetch('/api/auth/login', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(input)
 	})
-	const body = (await res.json().catch(() => null)) as AuthResponse | ApiErrorBody | null
+	const body = (await res.json().catch(() => null)) as AuthResponse | MfaChallengeResponse | ApiErrorBody | null
 	if (!res.ok || !body || !('data' in body)) {
 		throw new ApiError(
 			body && 'error' in body ? body.error : { code: 'REQUEST_FAILED', message: 'Login failed' },
@@ -215,6 +223,28 @@ export async function login(input: { email: string; password: string; merchantSl
 	}
 	// Access token lives in the httpOnly cookie — never store it in JS.
 	// Persist only the refresh csrfToken for cookie-based refresh calls.
+	const data = body.data as AuthDataWithCsrf
+	if (data.csrfToken) setRefreshCsrf(data.csrfToken)
+	return body as AuthResponse | MfaChallengeResponse
+}
+
+export function isMfaChallenge(res: AuthResponse | MfaChallengeResponse): res is MfaChallengeResponse {
+	return (res.data as { mfaRequired?: boolean }).mfaRequired === true
+}
+
+export async function verifyMfa(input: { mfaToken: string; code?: string; backupCode?: string }): Promise<AuthResponse> {
+	const res = await fetch('/api/auth/mfa/verify', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(input)
+	})
+	const body = (await res.json().catch(() => null)) as AuthResponse | ApiErrorBody | null
+	if (!res.ok || !body || !('data' in body)) {
+		throw new ApiError(
+			body && 'error' in body ? body.error : { code: 'MFA_FAILED', message: 'Verification failed' },
+			res.status
+		)
+	}
 	const data = body.data as AuthDataWithCsrf
 	if (data.csrfToken) setRefreshCsrf(data.csrfToken)
 	return body

@@ -1,5 +1,4 @@
 import { and, count, desc, eq, inArray, sql } from 'drizzle-orm'
-import { db } from '../../database/client'
 import type { DB } from '../../database/client'
 import {
   billOfMaterials,
@@ -17,7 +16,7 @@ import { badRequest, conflict, notFound } from '../../shared/errors'
 import { setVariantInventoryTx } from '../../shared/inventory'
 import { emit } from '../../shared/event-dispatch'
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+type Tx = Parameters<Parameters<DB['transaction']>[0]>[0]
 
 const PO_STATUS_TRANSITIONS: Record<string, string[]> = {
   planned: ['in_progress', 'cancelled'],

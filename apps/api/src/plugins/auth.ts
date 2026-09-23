@@ -5,9 +5,10 @@ import { db } from '../database/client'
 import { createTenantConnection } from '../database/tenant-context'
 import { merchants, roles, tokenBlacklist, users } from '../database/schema'
 import { unauthorized, forbidden } from '../shared/errors'
-import type { Permission } from '../shared/types'
+import type { ApiKeyScope, Permission } from '../shared/types'
 import { resolvePermissions } from '../shared/types'
 import { constantTimeEqual } from '../shared/crypto'
+import { ApiKeysService } from '../modules/api-keys/service'
 import { OPERATE_STATUSES } from '../shared/merchant-lifecycle'
 import type { DB } from '../database/client'
 import type { Merchant, Role, User } from '../database/schema'
@@ -39,6 +40,13 @@ export interface AuthContext {
   /** The user's assigned roles row (null when the user has no roleId). */
   role: Role | null
   /**
+   * Present when the request authenticated with an `x-api-key` merchant API
+   * key instead of a user JWT. Permissions then come ONLY from the key's
+   * scopes (see hasPermission) — the `user` row above is just the merchant's
+   * owner loaded for audit attribution and outlet-context lookups.
+   */
+  apiKey?: { id: string; name: string; scopes: string[] }
+  /**
    * Request-scoped tenant connection. Runs as the `app_runtime` role with
    * `app.current_merchant_id` set, so Row Level Security confines every query
    * to this merchant. Never reuse it outside the request it was created for.
@@ -61,7 +69,40 @@ export interface AuthIdentity {
 export const isAdmin = (auth: AuthContext): boolean =>
   auth.user.role === 'owner' || auth.user.role === 'admin'
 
+/**
+ * API-key scope (`API_KEY_SCOPES` in shared/types) → dotted permissions used
+ * by hasPermission. Write scopes always include the matching read permission
+ * so a write key can also read what it manages.
+ */
+export const API_KEY_SCOPE_PERMISSIONS: Record<ApiKeyScope, readonly Permission[]> = {
+  'products:read': ['products.read'],
+  'products:write': ['products.read', 'products.create', 'products.update', 'products.delete'],
+  'orders:read': ['orders.read'],
+  'orders:write': ['orders.read', 'orders.create', 'orders.update', 'orders.cancel'],
+  'customers:read': ['customers.read'],
+  'customers:write': ['customers.read', 'customers.write'],
+  'inventory:read': ['inventory.read'],
+  'inventory:write': ['inventory.read', 'inventory.adjust', 'inventory.manage'],
+  'webhooks:read': ['settings.read'],
+  'webhooks:write': ['settings.read', 'settings.manage']
+}
+
+/** Expand API-key scopes to the dotted permissions they grant. Unknown scopes
+ *  (e.g. stored before scope validation existed) grant nothing. */
+export const mapApiKeyScopeToPermissions = (scope: string): readonly Permission[] =>
+  (API_KEY_SCOPE_PERMISSIONS as Record<string, readonly Permission[]>)[scope] ?? []
+
 export const hasPermission = (auth: AuthContext, ...perms: Permission[]): boolean => {
+  // API-key callers are admin-equivalent ONLY within their key scopes: the
+  // owner's isAdmin bypass below must not apply, so scopes are checked first.
+  if (auth.apiKey) {
+    const granted = new Set(
+      auth.apiKey.scopes
+        .flatMap(mapApiKeyScopeToPermissions)
+        .flatMap((p) => resolvePermissions(p))
+    )
+    return perms.some((p) => resolvePermissions(p).some((expanded) => granted.has(expanded)))
+  }
   if (isAdmin(auth)) return true
   const granted = new Set(
     [...(auth.role?.permissions ?? []), ...auth.user.permissions].flatMap((p) =>
@@ -88,8 +129,24 @@ const decodeTokenPayload = (token: string): Record<string, unknown> => {
   return JSON.parse(Buffer.from(b64, 'base64').toString('utf8'))
 }
 
+/** Merchant that owns a user id (null when unknown). Used to stamp blacklist
+ *  rows with their merchant — the column is nullable for legacy rows. */
+const merchantIdForUser = async (userId: string): Promise<string | null> => {
+  if (!userId) return null
+  const [row] = await db
+    .select({ merchantId: users.merchantId })
+    .from(users)
+    .where(eq(users.id, userId))
+  return row?.merchantId ?? null
+}
+
 /** Revoke a token's jti by storing its hash until it expires. */
-export const revokeToken = async (token: string, expiresAt: Date, userId?: string) => {
+export const revokeToken = async (
+  token: string,
+  expiresAt: Date,
+  userId?: string,
+  merchantId?: string
+) => {
   const payload = decodeTokenPayload(token)
   const jti = String(payload.jti ?? '')
   const sub = String(payload.sub ?? userId ?? '')
@@ -98,6 +155,7 @@ export const revokeToken = async (token: string, expiresAt: Date, userId?: strin
     .delete(tokenBlacklist)
     .where(eq(tokenBlacklist.jti, hashToken(jti)))
   await db.insert(tokenBlacklist).values({
+    merchantId: merchantId ?? (await merchantIdForUser(sub)),
     userId: sub,
     jti: hashToken(jti),
     expiresAt
@@ -112,14 +170,21 @@ export const revokeToken = async (token: string, expiresAt: Date, userId?: strin
 export const claimRefreshToken = async (
   token: string,
   expiresAt: Date,
-  userId?: string
+  userId?: string,
+  merchantId?: string
 ): Promise<boolean> => {
   const payload = decodeTokenPayload(token)
   const jti = String(payload.jti ?? '')
   if (!jti) return true
+  const sub = String(payload.sub ?? userId ?? '')
   const inserted = await db
     .insert(tokenBlacklist)
-    .values({ userId: String(payload.sub ?? userId ?? ''), jti: hashToken(jti), expiresAt })
+    .values({
+      merchantId: merchantId ?? (await merchantIdForUser(sub)),
+      userId: sub,
+      jti: hashToken(jti),
+      expiresAt
+    })
     .onConflictDoNothing({ target: tokenBlacklist.jti })
     .returning({ id: tokenBlacklist.id })
   return inserted.length > 0
@@ -146,10 +211,57 @@ export const pruneBlacklist = async (): Promise<number> => {
   return deleted.length
 }
 
+/**
+ * Authenticate a merchant API key from the `x-api-key: <prefix>.<secret>`
+ * header. Keys are merchant-scoped: the context carries the key's merchant
+ * with an owner row loaded for audit attribution, `role: null`, and the key's
+ * scopes in `apiKey` (the sole permission source — see hasPermission).
+ */
+const authenticateApiKey = async (providedKey: string): Promise<{ auth: AuthContext }> => {
+  const resolved = await ApiKeysService.resolve(db, providedKey)
+  // Same 401 for unknown prefix, bad secret, revoked, and expired keys so
+  // callers cannot distinguish which check failed.
+  if (!resolved) throw unauthorized('Invalid API key')
+
+  const [merchant] = await db
+    .select()
+    .from(merchants)
+    .where(and(eq(merchants.id, resolved.merchant), inArray(merchants.status, OPERATE_STATUSES)))
+  if (!merchant) throw unauthorized('Store is not active')
+
+  // Attribution identity: prefer the merchant owner, then an admin, then any
+  // active user. Never null in practice (merchants always have an owner).
+  const candidates = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.merchantId, merchant.id), eq(users.status, 'active')))
+  const user =
+    candidates.find((u) => u.role === 'owner') ??
+    candidates.find((u) => u.role === 'admin') ??
+    candidates[0]
+  if (!user) throw unauthorized('API key has no active user')
+
+  const tenancy = await createTenantConnection(merchant.id)
+
+  return {
+    auth: {
+      user,
+      merchant,
+      role: null,
+      db: tenancy.db,
+      close: tenancy.end,
+      apiKey: { id: resolved.id, name: resolved.name, scopes: resolved.scopes }
+    }
+  }
+}
+
 export const authPlugin = new Elysia({ name: 'auth' })
   .use(accessJwt)
   .use(refreshJwt)
   .derive({ as: 'scoped' }, async ({ accessJwt, headers, cookie, request }): Promise<{ auth: AuthContext }> => {
+    const apiKeyHeader = (headers as Record<string, string | undefined>)['x-api-key']
+    if (apiKeyHeader) return authenticateApiKey(apiKeyHeader)
+
     const bearer = headers.authorization?.startsWith('Bearer ')
       ? headers.authorization.slice(7)
       : undefined

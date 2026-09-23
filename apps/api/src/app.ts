@@ -4,6 +4,7 @@ import { swagger } from '@elysiajs/swagger'
 import { errorHandler } from './plugins/errors'
 import { rateLimiter, initializeRateLimitStore } from './shared/rate-limit'
 import { authModule } from './modules/auth'
+import { mfaModule } from './modules/mfa'
 import { overviewModule } from './modules/overview'
 import { productsModule } from './modules/products'
 import { ordersModule } from './modules/orders'
@@ -138,6 +139,7 @@ export const app = new Elysia({
   .get('/health', () => ({ status: 'ok' }))
   .get('/', () => ({ status: 'ok', service: 'merchant-dashboard-api' }))
   .use(authModule)
+  .use(mfaModule)
   .use(overviewModule)
   .use(productsModule)
   .use(ordersModule)

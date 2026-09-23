@@ -84,6 +84,11 @@ export const users = pgTable(
       onDelete: 'set null'
     }),
     status: varchar('status', { length: 20 }).notNull().default('active'),
+    /** TOTP MFA: base32 secret (NULL until enrolled), enrollment flag, and
+     *  SHA-256 hashes of single-use backup codes. */
+    mfaSecret: text('mfa_secret'),
+    mfaEnabled: boolean('mfa_enabled').notNull().default(false),
+    mfaBackupCodes: jsonb('mfa_backup_codes').$type<string[]>().notNull().default([]),
     createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('users_merchant_email_idx').on(t.merchantId, t.email)]
@@ -1307,6 +1312,31 @@ export const tokenBlacklist = pgTable(
   ]
 )
 
+/** Staff/owner login sessions (ASVS 7.4): listable + revocable per user so a
+ *  compromised or departing session can be killed before token expiry. */
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    userId: varchar('user_id', { length: 30 })
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** SHA-256 of the refresh-token jti (never the token itself). */
+    jtiHash: varchar('jti_hash', { length: 64 }).notNull(),
+    ip: varchar('ip', { length: 64 }),
+    userAgent: varchar('user_agent', { length: 512 }),
+    lastSeenAt: tstz('last_seen_at').defaultNow().notNull(),
+    expiresAt: tstz('expires_at').notNull(),
+    revokedAt: tstz('revoked_at'),
+    createdAt: tstz('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('sessions_jti_hash_idx').on(t.jtiHash),
+    index('sessions_merchant_user_idx').on(t.merchantId, t.userId)
+  ]
+)
+
 
 /* ----------------------------- outbound webhooks ---------------------------- */
 
@@ -1318,6 +1348,10 @@ export const webhookEndpoints = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     url: varchar('url', { length: 1024 }).notNull(),
     secret: varchar('secret', { length: 255 }).notNull(),
+    /** Previous secret kept during rotation (dual-secret support): signatures
+     *  are verified against both, new deliveries sign with `secret`. */
+    secretPrev: varchar('secret_prev', { length: 255 }),
+    secretVersion: integer('secret_version').notNull().default(1),
     enabled: boolean('enabled').notNull().default(true),
     events: jsonb('events').$type<string[]>().notNull().default([]),
     status: varchar('status', { length: 20 }).notNull().default('active'),
@@ -1345,6 +1379,8 @@ export const webhookDeliveries = pgTable(
     responseBody: text('response_body'),
     lastError: text('last_error'),
     nextRetryAt: tstz('next_retry_at'),
+    /** Set when retries are exhausted — the operator dead-letter queue. */
+    deadLetteredAt: tstz('dead_lettered_at'),
     sentAt: tstz('sent_at'),
     createdAt: tstz('created_at').defaultNow().notNull()
   },

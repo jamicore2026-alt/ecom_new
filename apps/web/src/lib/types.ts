@@ -1095,6 +1095,8 @@ export interface WebhookEndpoint {
 	name: string
 	url: string
 	secret: string
+	secretPrev?: string | null
+	secretVersion: number
 	enabled: boolean
 	events: string[]
 	status: string
@@ -1103,7 +1105,7 @@ export interface WebhookEndpoint {
 	lastDeliveryAt?: string | null
 }
 
-export type WebhookDeliveryStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'skipped'
+export type WebhookDeliveryStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'dead' | 'skipped'
 
 export interface WebhookDelivery {
 	id: string
@@ -1118,6 +1120,7 @@ export interface WebhookDelivery {
 	responseBody: string | null
 	lastError: string | null
 	nextRetryAt: string | null
+	deadLetteredAt: string | null
 	sentAt: string | null
 	createdAt: string
 }

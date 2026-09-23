@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm'
-import { db, type DB } from '../../database/client'
+import type { DB } from '../../database/client'
 import {
   stockTransfers,
   warehouseInventory,
@@ -11,8 +11,8 @@ import {
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
 
-/** Drizzle transaction type matching `db.transaction(...)` callbacks. */
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+/** Drizzle transaction type matching `DB['transaction'](...)` callbacks. */
+type Tx = Parameters<Parameters<DB['transaction']>[0]>[0]
 
 interface TransferVariant {
   variantId: string

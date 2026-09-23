@@ -1,5 +1,4 @@
 import { and, count, desc, eq, sql } from 'drizzle-orm'
-import { db } from '../../database/client'
 import type { DB } from '../../database/client'
 import {
   goodsReceipts,
@@ -30,7 +29,7 @@ const PO_STATUS_TRANSITIONS: Record<string, string[]> = {
 const nextNumber = (prefix: string) =>
   `${prefix}${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+type Tx = Parameters<Parameters<DB['transaction']>[0]>[0]
 
 const assertPoInMerchant = async (db: DB, merchantId: string, poId: string) => {
   const [row] = await db

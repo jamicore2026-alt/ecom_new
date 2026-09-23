@@ -83,6 +83,15 @@ export const en: Record<string, string> = {
 	'auth.password': 'Password',
 	'auth.invalidCredentials': 'Invalid email or password',
 	'auth.storeSlug': 'Store slug (optional)',
+	'auth.mfaPrompt': 'This account uses two-factor authentication. Enter the 6-digit code from your authenticator app.',
+	'auth.verificationCode': 'Verification code',
+	'auth.invalidCode': 'Enter the 6-digit code from your authenticator app.',
+	'auth.verify': 'Verify',
+	'auth.backupCode': 'Backup code',
+	'auth.backupCodeHint': 'Single-use codes shown when you enabled two-factor authentication.',
+	'auth.backupCodeRequired': 'Enter one of your backup codes.',
+	'auth.useBackupCode': 'Use a backup code instead',
+	'auth.useAuthenticatorApp': 'Use authenticator app instead',
 
 	// Dashboard
 	'dash.todaySales': 'Today’s sales',

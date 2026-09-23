@@ -22,6 +22,10 @@ export const outboundWebhooksModule = new Elysia({ prefix: '/api' })
     const endpoint = await OutboundWebhooksService.updateEndpoint(auth.db, auth.merchant.id, params.id, body)
     return endpoint
   }, { body: OutboundWebhooksService.endpointBodySchema })
+  .post('/webhook-endpoints/:id/rotate', async ({ auth, params, body }) => {
+    const result = await OutboundWebhooksService.rotateSecret(auth.db, auth.merchant.id, params.id, body)
+    return result
+  }, { body: OutboundWebhooksService.rotateSecretBodySchema })
   .delete('/webhook-endpoints/:id', async ({ auth, params }) => {
     const endpoint = await OutboundWebhooksService.deleteEndpoint(auth.db, auth.merchant.id, params.id)
     return endpoint
@@ -33,6 +37,14 @@ export const outboundWebhooksModule = new Elysia({ prefix: '/api' })
   })
   .get('/webhook-deliveries/:id', async ({ auth, params }) => {
     const delivery = await OutboundWebhooksService.getDelivery(auth.db, auth.merchant.id, params.id)
+    return delivery
+  })
+  .post('/webhook-deliveries/replay-all-dead', async ({ auth }) => {
+    const result = await OutboundWebhooksService.replayAllDead(auth.db, auth.merchant.id)
+    return result
+  })
+  .post('/webhook-deliveries/:id/replay', async ({ auth, params }) => {
+    const delivery = await OutboundWebhooksService.replayDelivery(auth.db, auth.merchant.id, params.id)
     return delivery
   })
   .post('/webhook-deliveries/:id/retry', async ({ auth, params }) => {

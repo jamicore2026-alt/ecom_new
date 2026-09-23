@@ -3,11 +3,24 @@ import { and, count, desc, eq } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import { apiKeys } from '../../database/schema'
 import { ok } from '../../shared/response'
-import { notFound } from '../../shared/errors'
+import { badRequest, notFound } from '../../shared/errors'
+import { API_KEY_SCOPES } from '../../shared/types'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { constantTimeEqual } from '../../shared/crypto'
 
 const SK_PREFIX = 'ecom_'
+
+/** Default scopes for keys created without an explicit list. */
+export const DEFAULT_API_KEY_SCOPES: string[] = ['orders:read', 'products:read']
+
+/** Reject any scope outside the API_KEY_SCOPES vocabulary. */
+export const assertValidScopes = (scopes: readonly string[]): void => {
+  const allowed = API_KEY_SCOPES as readonly string[]
+  const unknown = scopes.filter((s) => !allowed.includes(s))
+  if (unknown.length > 0) {
+    throw badRequest('INVALID_API_KEY_SCOPE', `Unknown API key scope(s): ${unknown.join(', ')}`)
+  }
+}
 
 export class ApiKeysService {
   static async list(db: DB, merchantId: string, query: { page?: string; limit?: string } = {}) {
@@ -39,6 +52,9 @@ export class ApiKeysService {
     merchantId: string,
     input: { name: string; scopes?: string[]; expiresAt?: Date }
   ) {
+    const scopes = input.scopes ?? DEFAULT_API_KEY_SCOPES
+    assertValidScopes(scopes)
+
     const secret = randomBytes(32).toString('hex') // 64 hex chars
     const prefix = `${SK_PREFIX}${createHash('sha1').update(secret).digest('hex').slice(0, 8)}`
     const secretHash = this.hashSecret(secret)
@@ -50,7 +66,7 @@ export class ApiKeysService {
         name: input.name,
         keyPrefix: prefix,
         secretHash,
-        scopes: input.scopes ?? ['read:orders', 'read:products'],
+        scopes,
         status: 'active',
         expiresAt: input.expiresAt ?? null
       })
@@ -70,7 +86,7 @@ export class ApiKeysService {
     return ok({ id: row.id, status: row.status })
   }
 
-  static async resolve(db: DB, providedKey: string): Promise<{ merchant: string; scopes: string[] } | null> {
+  static async resolve(db: DB, providedKey: string): Promise<{ id: string; name: string; merchant: string; scopes: string[] } | null> {
     const [prefix, secret] = splitKey(providedKey)
     if (!prefix || !secret) return null
 
@@ -88,7 +104,7 @@ export class ApiKeysService {
       .where(eq(apiKeys.id, row.id))
       .catch(() => {})
 
-    return { merchant: row.merchantId, scopes: row.scopes }
+    return { id: row.id, name: row.name, merchant: row.merchantId, scopes: row.scopes }
   }
 
   static hashSecret(secret: string): string {

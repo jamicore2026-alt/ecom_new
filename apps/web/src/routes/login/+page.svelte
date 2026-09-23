@@ -15,6 +15,15 @@
 	let hydrated = $state(false)
 	let fieldErrors = $state<Record<string, string>>({})
 
+	// MFA challenge state (step 2 after a password login for enrolled users).
+	let mfaStep = $state(false)
+	let mfaToken = $state('')
+	let mfaCode = $state('')
+	let backupCode = $state('')
+	let useBackup = $state(false)
+	let mfaLoading = $state(false)
+	let mfaError = $state('')
+
 	onMount(() => {
 		hydrated = true
 	})
@@ -31,7 +40,16 @@
 		loading = true
 		fieldErrors = {}
 		try {
-			await session.login({ email, password, ...(merchantSlug ? { merchantSlug } : {}) })
+			const res = await session.login({ email, password, ...(merchantSlug ? { merchantSlug } : {}) })
+			if ('data' in res && (res.data as { mfaRequired?: boolean }).mfaRequired) {
+				mfaToken = (res.data as { mfaToken: string }).mfaToken
+				mfaStep = true
+				mfaCode = ''
+				backupCode = ''
+				useBackup = false
+				mfaError = ''
+				return
+			}
 			toast.success(t('auth.signedIn'))
 			goto('/dashboard')
 		} catch (e) {
@@ -43,6 +61,40 @@
 		} finally {
 			loading = false
 		}
+	}
+
+	async function submitMfa() {
+		mfaLoading = true
+		mfaError = ''
+		try {
+			if (useBackup) {
+				if (!backupCode.trim()) {
+					mfaError = t('auth.backupCodeRequired')
+					return
+				}
+				await session.verifyMfa(mfaToken, { backupCode: backupCode.trim() })
+			} else {
+				if (!/^\d{6}$/.test(mfaCode.trim())) {
+					mfaError = t('auth.invalidCode')
+					return
+				}
+				await session.verifyMfa(mfaToken, { code: mfaCode.trim() })
+			}
+			toast.success(t('auth.signedIn'))
+			goto('/dashboard')
+		} catch (e) {
+			mfaError = (e as Error).message ?? t('auth.loginFailed')
+		} finally {
+			mfaLoading = false
+		}
+	}
+
+	function backToPassword() {
+		mfaStep = false
+		mfaToken = ''
+		mfaCode = ''
+		backupCode = ''
+		mfaError = ''
 	}
 </script>
 
@@ -78,6 +130,7 @@
 			<p class="mt-1 text-sm text-secondary">{t('auth.loginTitle')}</p>
 		</div>
 
+		{#if !mfaStep}
 		<form
 			class="rounded border border-outline-variant bg-surface-container-lowest p-6"
 			onsubmit={(e) => {
@@ -141,6 +194,69 @@
 				{t('common.signIn')}
 			</Button>
 		</form>
+		{:else}
+		<form
+			class="rounded border border-outline-variant bg-surface-container-lowest p-6"
+			onsubmit={(e) => {
+				e.preventDefault()
+				submitMfa()
+			}}
+		>
+			<div class="space-y-4">
+				<div class="flex items-center gap-2 rounded bg-primary-container/40 px-3 py-2 text-xs text-on-surface">
+					<Icon name="lock" size="text-[16px]" />
+					<span>{t('auth.mfaPrompt')}</span>
+				</div>
+
+				{#if !useBackup}
+				<div>
+					<label class="mb-1 block text-sm font-medium text-on-surface" for="mfaCode">{t('auth.verificationCode')}</label>
+					<input
+						id="mfaCode"
+						type="text"
+						inputmode="numeric"
+						autocomplete="one-time-code"
+						maxlength="6"
+						required
+						bind:value={mfaCode}
+						class="w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-center font-mono text-lg tracking-[0.5em] text-on-surface placeholder:text-secondary focus:outline-2 focus:outline-primary"
+						placeholder="••••••"
+					/>
+				</div>
+				{:else}
+				<div>
+					<label class="mb-1 block text-sm font-medium text-on-surface" for="backupCode">{t('auth.backupCode')}</label>
+					<input
+						id="backupCode"
+						type="text"
+						autocomplete="off"
+						required
+						bind:value={backupCode}
+						class="w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 font-mono text-sm uppercase text-on-surface placeholder:text-secondary focus:outline-2 focus:outline-primary"
+						placeholder="XXXX-XXXX"
+					/>
+					<p class="mt-1 text-xs text-secondary">{t('auth.backupCodeHint')}</p>
+				</div>
+				{/if}
+
+				{#if mfaError}
+					<p class="text-xs text-error">{mfaError}</p>
+				{/if}
+			</div>
+
+			<Button type="submit" class="mt-6 w-full" loading={mfaLoading} disabled={mfaLoading}>
+				{t('auth.verify')}
+			</Button>
+			<div class="mt-3 flex items-center justify-between text-xs">
+				<button type="button" class="font-medium text-primary hover:underline" onclick={() => { useBackup = !useBackup; mfaError = '' }}>
+					{useBackup ? t('auth.useAuthenticatorApp') : t('auth.useBackupCode')}
+				</button>
+				<button type="button" class="font-medium text-secondary hover:text-on-surface hover:underline" onclick={backToPassword}>
+					{t('common.back')}
+				</button>
+			</div>
+		</form>
+		{/if}
 
 		<p class="mt-6 text-center text-xs text-secondary">Demo: admin@jamicore.com / password123</p>
 	</div>

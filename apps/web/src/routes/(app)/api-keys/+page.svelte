@@ -35,6 +35,9 @@
 
 	let revokeTarget = $state<ApiKey | null>(null)
 	let endpointTarget = $state<WebhookEndpoint | null>(null)
+	let rotated = $state<{ name: string; secret: string } | null>(null)
+	let rotatingId = $state('')
+	let replayingAll = $state(false)
 
 	const canManage = () => session.can('settings.manage')
 
@@ -48,6 +51,7 @@
 	const deliveryTone: Record<string, string> = {
 		completed: 'bg-success/10 text-success',
 		failed: 'bg-error/10 text-error',
+		dead: 'bg-error/10 text-error',
 		pending: 'bg-warning/10 text-warning',
 		processing: 'bg-info/10 text-info',
 		skipped: 'bg-secondary/10 text-secondary'
@@ -159,11 +163,38 @@
 
 	async function retry(d: WebhookDelivery) {
 		try {
-			await api.post(`/api/webhook-deliveries/${d.id}/retry`)
-			toast.success('Delivery queued for retry')
+			await api.post(`/api/webhook-deliveries/${d.id}/replay`)
+			toast.success('Delivery queued for replay')
 			await load()
 		} catch (e) {
 			toast.error((e as Error).message)
+		}
+	}
+
+	async function replayAllDead() {
+		replayingAll = true
+		try {
+			const res = await api.post<{ success: boolean; data: { replayed: number } }>('/api/webhook-deliveries/replay-all-dead')
+			toast.success(res.data.replayed ? `${res.data.replayed} dead delivery(ies) re-queued` : 'No dead deliveries to replay')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			replayingAll = false
+		}
+	}
+
+	async function rotateEndpoint(ep: WebhookEndpoint) {
+		rotatingId = ep.id
+		try {
+			const res = await api.post<{ success: boolean; data: { endpoint: WebhookEndpoint; secret: string } }>(`/api/webhook-endpoints/${ep.id}/rotate`, {})
+			rotated = { name: ep.name, secret: res.data.secret }
+			toast.success('Secret rotated — previous secret still verifies in-flight deliveries')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			rotatingId = ''
 		}
 	}
 </script>
@@ -279,10 +310,11 @@
 									</div>
 								</td>
 								<td class="px-table-cell-x py-table-cell-y text-secondary">{ep.lastDeliveryAt ? dateTime(ep.lastDeliveryAt) : '—'}</td>
-								<td class="px-table-cell-x py-table-cell-y"><Badge label={ep.enabled ? 'active' : 'disabled'} /></td>
+								<td class="px-table-cell-x py-table-cell-y"><Badge label={ep.enabled ? 'active' : 'disabled'} /><span class="ml-1 font-mono-label text-[11px] text-secondary" title="Signing secret version">v{ep.secretVersion ?? 1}</span></td>
 								<td class="px-table-cell-x py-table-cell-y">
 									{#if canManage()}
 										<div class="flex justify-end gap-1">
+											<button class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => rotateEndpoint(ep)} aria-label="Rotate signing secret" title="Rotate signing secret" disabled={rotatingId === ep.id}><Icon name="key" size="text-[18px]" /></button>
 											<button class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => toggleEndpoint(ep)} aria-label="Toggle endpoint"><Icon name={ep.enabled ? 'toggle_on' : 'toggle_off'} size="text-[18px]" /></button>
 											<button class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-secondary hover:bg-error/10 hover:text-error" onclick={() => (endpointTarget = ep)} aria-label="Delete endpoint"><Icon name="delete" size="text-[18px]" /></button>
 										</div>
@@ -298,6 +330,11 @@
 			</div>
 		</Card>
 	{:else if tab === 'deliveries'}
+		{#if canManage() && deliveries.some((d) => d.status === 'dead' || (d.status === 'failed' && d.deadLetteredAt))}
+			<div class="flex justify-end">
+				<Button size="sm" variant="secondary" onclick={replayAllDead} loading={replayingAll}><Icon name="refresh" size="text-[16px]" /> Replay all dead</Button>
+			</div>
+		{/if}
 		<Card padded={false}>
 			<div class="overflow-x-auto">
 				<table class="w-full text-left text-sm">
@@ -320,9 +357,9 @@
 								<td class="px-table-cell-x py-table-cell-y text-secondary">{d.responseCode ?? '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y text-secondary">{d.sentAt ? dateTime(d.sentAt) : '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y">
-									{#if d.status === 'failed' && canManage()}
+									{#if (d.status === 'failed' || d.status === 'dead') && canManage()}
 										<div class="flex justify-end">
-											<button class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-secondary hover:bg-primary/10 hover:text-primary" onclick={() => retry(d)} aria-label="Retry delivery"><Icon name="refresh" size="text-[18px]" /></button>
+											<button class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-secondary hover:bg-primary/10 hover:text-primary" onclick={() => retry(d)} aria-label="Replay delivery"><Icon name="refresh" size="text-[18px]" /></button>
 										</div>
 									{/if}
 								</td>
@@ -453,3 +490,21 @@
 	onConfirm={removeEndpoint}
 	onCancel={() => (endpointTarget = null)}
 />
+
+{#if rotated}
+	<Modal title={`New secret for "${rotated.name}"`} open={true} onClose={() => (rotated = null)}>
+		<div class="space-y-4">
+			<div class="rounded border border-success/30 bg-success/10 p-4">
+				<p class="text-sm font-semibold text-on-surface">Copy the new secret now</p>
+				<p class="mt-1 text-xs text-secondary">The previous secret still verifies in-flight deliveries. This is the only time the new secret is shown.</p>
+				<div class="mt-3 flex items-center gap-2">
+					<code class="flex-1 break-all rounded bg-surface-container px-2 py-1.5 font-mono-label text-[13px] text-on-surface">{rotated.secret}</code>
+					<Button size="sm" variant="secondary" onclick={() => { if (rotated) { navigator.clipboard.writeText(rotated.secret); toast.success('Copied') } }}>Copy</Button>
+				</div>
+			</div>
+			<div class="flex justify-end">
+				<Button size="sm" onclick={() => (rotated = null)}>Done</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}

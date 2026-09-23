@@ -2,6 +2,8 @@ import {
 	fetchMe,
 	login,
 	logout,
+	verifyMfa,
+	isMfaChallenge,
 	getSelectedOutletId,
 	setSelectedOutletId
 } from './api'
@@ -146,6 +148,19 @@ export const session = {
 	},
 	async login(input: { email: string; password: string; merchantSlug?: string }) {
 		const res = await login(input)
+		if (isMfaChallenge(res)) return res
+		user = res.data.user
+		merchant = res.data.merchant
+		try {
+			const me = await fetchMe()
+			applyMe(me)
+		} catch {
+			settings = null
+		}
+		return res
+	},
+	async verifyMfa(mfaToken: string, secondFactor: { code?: string; backupCode?: string }) {
+		const res = await verifyMfa({ mfaToken, ...secondFactor })
 		user = res.data.user
 		merchant = res.data.merchant
 		try {

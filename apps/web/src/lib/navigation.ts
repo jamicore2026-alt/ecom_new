@@ -63,6 +63,7 @@ export const NAV_ITEMS: NavItem[] = [
 	{ label: 'Profit & Loss', key: 'nav.profit', route: '/profit', icon: 'account_balance', group: 'Insights', module: 'analytics', permission: 'reports.read' },
 	{ label: 'Audit Log', key: 'nav.audit', route: '/audit', icon: 'admin_panel_settings', group: 'Insights' },
 	{ label: 'Staff', key: 'nav.staff', route: '/staff', icon: 'group', group: 'Insights', permission: 'staff.read' },
+	{ label: 'Security', route: '/security', icon: 'lock', group: 'Insights' },
 	{ label: 'Roles', key: 'nav.roles', route: '/roles', icon: 'manage_accounts', group: 'Insights', permission: 'staff.read' },
 	{ label: 'API & Webhooks', key: 'nav.apiKeys', route: '/api-keys', icon: 'code', group: 'Insights', permission: ['settings.manage', 'settings:write'] },
 	{ label: 'Modules', key: 'nav.modules', route: '/modules', icon: 'widgets', group: 'Insights', permission: 'settings.manage' },

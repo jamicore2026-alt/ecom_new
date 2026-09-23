@@ -83,6 +83,15 @@ export const ar: Record<string, string> = {
 	'auth.password': 'كلمة المرور',
 	'auth.invalidCredentials': 'البريد الإلكتروني أو كلمة المرور غير صحيحة',
 	'auth.storeSlug': 'معرّف المتجر (اختياري)',
+	'auth.mfaPrompt': 'هذا الحساب يستخدم المصادقة الثنائية. أدخل الرمز المكوّن من 6 أرقام من تطبيق المصادقة.',
+	'auth.verificationCode': 'رمز التحقق',
+	'auth.invalidCode': 'أدخل الرمز المكوّن من 6 أرقام من تطبيق المصادقة.',
+	'auth.verify': 'تحقق',
+	'auth.backupCode': 'رمز احتياطي',
+	'auth.backupCodeHint': 'رموز تُستخدم مرة واحدة وتظهر عند تفعيل المصادقة الثنائية.',
+	'auth.backupCodeRequired': 'أدخل أحد الرموز الاحتياطية.',
+	'auth.useBackupCode': 'استخدام رمز احتياطي بدلاً من ذلك',
+	'auth.useAuthenticatorApp': 'استخدام تطبيق المصادقة بدلاً من ذلك',
 
 	// Dashboard
 	'dash.todaySales': 'مبيعات اليوم',

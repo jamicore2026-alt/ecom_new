@@ -1,4 +1,5 @@
-import { and, eq, isNull, lt, or } from 'drizzle-orm'
+import { createHmac, timingSafeEqual } from 'node:crypto'
+import { and, desc, eq, isNull, lt, or } from 'drizzle-orm'
 import { db } from '../database/client'
 import { webhookDeliveries, webhookEndpoints } from '../database/schema'
 import { signWebhookPayload } from './outbound-webhook'
@@ -6,8 +7,158 @@ import { decryptJson } from './crypto'
 import { buildOutboundUrl } from './outbound-url'
 import type { DB } from '../database/client'
 
+export const MAX_DELIVERY_ATTEMPTS = 5
+/** Base for exponential backoff (attempt 1 ceiling); doubled per attempt. */
+export const RETRY_BASE_MS = 30_000
+/** Upper bound for any single retry delay, including Retry-After values. */
+export const RETRY_CAP_MS = 3_600_000
+/** Consecutive terminal failures after which the endpoint is auto-disabled. */
+export const CIRCUIT_BREAKER_FAILURES = 20
+
+/** Hosts where plain `http://` is tolerated (local development only). */
+export const isLoopbackHostname = (hostname: string): boolean => {
+  const host = hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase()
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+}
+
 /**
- * Process pending webhook deliveries with exponential backoff.
+ * HTTPS-only URL construction for deliveries. Loopback `http://` targets are
+ * allowed (local dev); everything else goes through the SSRF-guarded,
+ * https-only `buildOutboundUrl` with no `allowHttp` escape hatch.
+ */
+export const buildDeliveryUrl = (raw: string): URL => {
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    throw new Error('Webhook URL is invalid')
+  }
+  if (isLoopbackHostname(parsed.hostname)) {
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new Error('Webhook URL must be http(s)')
+    }
+    return parsed
+  }
+  return buildOutboundUrl(raw)
+}
+
+/**
+ * 4xx responses are terminal (do not retry) except 408 (timeout) and 429
+ * (rate limited), which honor backoff like 5xx / network errors.
+ */
+export const isRetryableStatus = (status: number): boolean => {
+  if (status === 408 || status === 429) return true
+  if (status >= 400 && status < 500) return false
+  return true
+}
+
+/**
+ * Parse a `Retry-After` response header into milliseconds. Accepts
+ * delay-seconds or an HTTP-date; returns null when absent/invalid.
+ * Callers clamp to RETRY_CAP_MS via `computeRetryDelayMs`.
+ */
+export const parseRetryAfterMs = (
+  value: string | null | undefined,
+  nowMs: number = Date.now()
+): number | null => {
+  if (!value) return null
+  const v = value.trim()
+  if (/^\d+$/.test(v)) {
+    const seconds = Number(v)
+    if (!Number.isSafeInteger(seconds)) return null
+    return seconds * 1000
+  }
+  const when = Date.parse(v)
+  if (!Number.isNaN(when)) return Math.max(0, when - nowMs)
+  return null
+}
+
+/**
+ * Exponential backoff with full jitter: `delay = rand * min(cap, base * 2^(attempt-1))`.
+ * An explicit `retryAfterMs` (from the Retry-After header) wins, capped at `capMs`.
+ * `rand` is injectable for deterministic tests.
+ */
+export const computeRetryDelayMs = (
+  attempt: number,
+  opts: { baseMs?: number; capMs?: number; retryAfterMs?: number | null; rand?: () => number } = {}
+): number => {
+  const base = opts.baseMs ?? RETRY_BASE_MS
+  const cap = opts.capMs ?? RETRY_CAP_MS
+  if (opts.retryAfterMs != null) return Math.min(Math.max(0, Math.floor(opts.retryAfterMs)), cap)
+  const ceiling = Math.min(cap, base * 2 ** Math.max(0, attempt - 1))
+  const rand = opts.rand ?? Math.random
+  return Math.floor(rand() * ceiling)
+}
+
+/**
+ * Dual-secret verification for consumers: accepts a signature produced with
+ * either the current or the previous (rotating-out) secret. Timing-safe.
+ */
+export const verifyWebhookSignature = (
+  payload: Record<string, unknown>,
+  timestamp: number,
+  signature: string,
+  secrets: Array<string | null | undefined>
+): boolean => {
+  const message = `${timestamp}.${JSON.stringify(payload)}`
+  let candidate: Buffer
+  try {
+    candidate = Buffer.from(signature, 'utf8')
+  } catch {
+    return false
+  }
+  for (const secret of secrets) {
+    if (!secret) continue
+    const expected = Buffer.from(createHmac('sha256', secret).update(message).digest('hex'), 'utf8')
+    if (candidate.length !== expected.length) continue
+    if (timingSafeEqual(candidate, expected)) return true
+  }
+  return false
+}
+
+/** Extract current + previous plaintext secrets for an endpoint row. */
+export const endpointSecrets = (endpoint: {
+  secret: string
+  secretPrev: string | null
+}): { current: string; prev: string | null } => {
+  const current = decryptJson<{ secret: string }>(endpoint.secret).secret
+  let prev: string | null = null
+  if (endpoint.secretPrev) {
+    try {
+      prev = decryptJson<{ secret: string }>(endpoint.secretPrev).secret
+    } catch {
+      prev = null
+    }
+  }
+  return { current, prev }
+}
+
+/**
+ * Circuit breaker: after CIRCUIT_BREAKER_FAILURES consecutive terminal
+ * failures (status failed/dead) on an endpoint, auto-disable it so a dead
+ * receiver stops consuming worker cycles. A manual save (enabled=true),
+ * secret rotation, or a successful delivery re-enables it.
+ */
+const recordFailureAndMaybeTripBreaker = async (database: DB, endpointId: string): Promise<void> => {
+  const recent = await database
+    .select({ status: webhookDeliveries.status })
+    .from(webhookDeliveries)
+    .where(eq(webhookDeliveries.endpointId, endpointId))
+    .orderBy(desc(webhookDeliveries.createdAt))
+    .limit(CIRCUIT_BREAKER_FAILURES)
+  if (
+    recent.length >= CIRCUIT_BREAKER_FAILURES &&
+    recent.every((r) => r.status === 'failed' || r.status === 'dead')
+  ) {
+    await database
+      .update(webhookEndpoints)
+      .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
+      .where(eq(webhookEndpoints.id, endpointId))
+  }
+}
+
+/**
+ * Process pending webhook deliveries with jittered exponential backoff.
  * Called periodically by the background worker scheduler.
  */
 export const processWebhookDeliveries = async (): Promise<number> => {
@@ -55,13 +206,37 @@ export const processWebhookDeliveries = async (): Promise<number> => {
     const attempts = delivery.attempts + 1
     const timestamp = Date.now()
     const payload = (delivery.payload ?? {}) as Record<string, unknown>
-    const secret = decryptJson<{ secret: string }>(endpoint.secret).secret
+    // New deliveries are always signed with the CURRENT secret; the previous
+    // secret is only accepted when verifying inbound signatures.
+    const { current: secret } = endpointSecrets(endpoint)
     const signature = signWebhookPayload(payload, secret, timestamp)
+
+    /** Terminal failure → dead-letter queue (status failed/dead + deadLetteredAt). */
+    const deadLetter = async (fields: {
+      status: 'failed' | 'dead'
+      responseCode?: number | null
+      responseBody?: string | null
+      lastError: string
+    }) => {
+      await db
+        .update(webhookDeliveries)
+        .set({
+          status: fields.status,
+          attempts,
+          responseCode: fields.responseCode ?? null,
+          responseBody: (fields.responseBody ?? '').slice(0, 2000),
+          lastError: fields.lastError.slice(0, 2000),
+          deadLetteredAt: new Date(),
+          nextRetryAt: null
+        })
+        .where(eq(webhookDeliveries.id, delivery.id))
+      await recordFailureAndMaybeTripBreaker(db, endpoint.id)
+    }
 
     try {
       let url: URL
       try {
-        url = buildOutboundUrl(endpoint.url, { allowHttp: true })
+        url = buildDeliveryUrl(endpoint.url)
       } catch (err) {
         await db
           .update(webhookDeliveries)
@@ -102,33 +277,37 @@ export const processWebhookDeliveries = async (): Promise<number> => {
           })
           .where(eq(webhookDeliveries.id, delivery.id))
 
-        // Touch lastDeliveryAt on the endpoint
+        // Touch lastDeliveryAt on the endpoint; success clears any breaker trip.
         await db
           .update(webhookEndpoints)
-          .set({ lastDeliveryAt: new Date(), updatedAt: new Date() })
+          .set({ lastDeliveryAt: new Date(), status: 'active', updatedAt: new Date() })
           .where(eq(webhookEndpoints.id, endpoint.id))
 
         processed++
         continue
       }
 
-      // Non-2xx — schedule retry (exponential backoff: 30s, 1m, 5m, 15m, 1h)
-      const backoff = [30_000, 60_000, 300_000, 900_000, 3_600_000]
-      const delay = backoff[Math.min(attempts - 1, backoff.length - 1)]
-      const nextRetry = new Date(Date.now() + delay)
-      const maxAttempts = 5
+      // Terminal 4xx (except 408/429): fail immediately into the DLQ, no retry.
+      if (!isRetryableStatus(res.status)) {
+        await deadLetter({
+          status: 'failed',
+          responseCode: res.status,
+          responseBody,
+          lastError: `HTTP ${res.status} (no retry): ${responseBody.slice(0, 300)}`
+        })
+        processed++
+        continue
+      }
 
-      if (attempts >= maxAttempts) {
-        await db
-          .update(webhookDeliveries)
-          .set({
-            status: 'failed',
-            attempts,
-            responseCode: res.status,
-            responseBody: responseBody.slice(0, 2000),
-            lastError: `HTTP ${res.status}: ${responseBody.slice(0, 300)}`
-          })
-          .where(eq(webhookDeliveries.id, delivery.id))
+      // Retryable (5xx / 408 / 429): honor Retry-After, else jittered backoff.
+      const retryAfterMs = parseRetryAfterMs(res.headers.get('retry-after'))
+      if (attempts >= MAX_DELIVERY_ATTEMPTS) {
+        await deadLetter({
+          status: 'dead',
+          responseCode: res.status,
+          responseBody,
+          lastError: `HTTP ${res.status} after ${attempts} attempts: ${responseBody.slice(0, 300)}`
+        })
       } else {
         await db
           .update(webhookDeliveries)
@@ -138,21 +317,15 @@ export const processWebhookDeliveries = async (): Promise<number> => {
             responseCode: res.status,
             responseBody: responseBody.slice(0, 2000),
             lastError: responseBody.slice(0, 300),
-            nextRetryAt: nextRetry
+            nextRetryAt: new Date(Date.now() + computeRetryDelayMs(attempts, { retryAfterMs }))
           })
           .where(eq(webhookDeliveries.id, delivery.id))
       }
     } catch (err) {
+      // Network/timeout errors are retryable with jittered backoff.
       const message = err instanceof Error ? err.message : 'Webhook delivery failed'
-      const backoff = [30_000, 60_000, 300_000, 900_000, 3_600_000]
-      const delay = backoff[Math.min(attempts - 1, backoff.length - 1)]
-      const maxAttempts = 5
-
-      if (attempts >= maxAttempts) {
-        await db
-          .update(webhookDeliveries)
-          .set({ status: 'failed', attempts, lastError: message, nextRetryAt: null })
-          .where(eq(webhookDeliveries.id, delivery.id))
+      if (attempts >= MAX_DELIVERY_ATTEMPTS) {
+        await deadLetter({ status: 'dead', lastError: `${message} (after ${attempts} attempts)` })
       } else {
         await db
           .update(webhookDeliveries)
@@ -160,7 +333,7 @@ export const processWebhookDeliveries = async (): Promise<number> => {
             status: 'pending',
             attempts,
             lastError: message,
-            nextRetryAt: new Date(Date.now() + delay)
+            nextRetryAt: new Date(Date.now() + computeRetryDelayMs(attempts))
           })
           .where(eq(webhookDeliveries.id, delivery.id))
       }

@@ -56,6 +56,23 @@ export const tokenPair = t.Object({
   })
 })
 
+/** Password step passed for an MFA-enrolled user — no tokens yet. */
+export const mfaChallenge = t.Object({
+  success: t.Boolean(),
+  data: t.Object({
+    mfaRequired: t.Literal(true),
+    mfaToken: t.String()
+  })
+})
+
+export const loginResponse = t.Union([tokenPair, mfaChallenge])
+
+export const mfaVerifyBody = t.Object({
+  mfaToken: t.String({ minLength: 10 }),
+  code: t.Optional(t.String({ minLength: 6, maxLength: 12 })),
+  backupCode: t.Optional(t.String({ minLength: 4, maxLength: 24 }))
+})
+
 const outletSchema = t.Object({
   id: t.String(),
   merchantId: t.String(),

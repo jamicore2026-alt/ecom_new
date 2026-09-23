@@ -1,5 +1,6 @@
 import { Type } from '@sinclair/typebox'
-import { and, desc, eq } from 'drizzle-orm'
+import { randomBytes } from 'node:crypto'
+import { and, desc, eq, isNotNull } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import { backgroundJobs, webhookDeliveries, webhookEndpoints } from '../../database/schema'
 import { badRequest, notFound } from '../../shared/errors'
@@ -31,6 +32,30 @@ export class OutboundWebhooksService {
     enabled: Type.Optional(Type.Boolean()),
     events: Type.Array(Type.Union(WEBHOOK_EVENTS.map((e) => Type.Literal(e)) as any))
   })
+
+  static rotateSecretBodySchema = Type.Object({
+    secret: Type.Optional(Type.String({ minLength: 1 }))
+  })
+
+  /**
+   * HTTPS-only enforcement for endpoint URLs. `http://` is accepted solely
+   * for loopback hosts (localhost / 127.0.0.1 / ::1, e.g. local dev tunnels);
+   * anything else non-https (or unparseable) throws a 400 badRequest.
+   */
+  static assertHttpsExceptLocalhost = (raw: string): void => {
+    let url: URL
+    try {
+      url = new URL(raw)
+    } catch {
+      throw badRequest('INVALID_URL', 'Invalid webhook endpoint URL')
+    }
+    if (url.protocol === 'https:') return
+    const host = url.hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase()
+    if (url.protocol === 'http:' && (host === 'localhost' || host === '127.0.0.1' || host === '::1')) {
+      return
+    }
+    throw badRequest('INSECURE_URL', 'Webhook endpoint URL must use https (http is only allowed for localhost)')
+  }
 
   private static maskEndpoint = (row: typeof webhookEndpoints.$inferSelect) => ({
     ...row,
@@ -76,6 +101,7 @@ export class OutboundWebhooksService {
       events: (typeof WEBHOOK_EVENTS)[number][]
     }
   ) => {
+    this.assertHttpsExceptLocalhost(input.url)
     const encryptedSecret = encryptJson({ secret: input.secret })
     const [row] = await db
       .insert(webhookEndpoints)
@@ -107,6 +133,7 @@ export class OutboundWebhooksService {
     }
   ) => {
     await this.getEndpoint(db, merchantId, id)
+    if (input.url !== undefined) this.assertHttpsExceptLocalhost(input.url)
     const [row] = await db
       .update(webhookEndpoints)
       .set({
@@ -114,6 +141,8 @@ export class OutboundWebhooksService {
         ...(input.url !== undefined && { url: input.url }),
         ...(typeof input.secret === 'string' && { secret: encryptJson({ secret: input.secret }) }),
         ...(input.enabled !== undefined && { enabled: input.enabled }),
+        // A manual save that (re-)enables the endpoint clears a circuit-breaker trip.
+        ...(input.enabled === true && { status: 'active' }),
         ...(input.events !== undefined && { events: input.events }),
         updatedAt: new Date()
       })
@@ -151,17 +180,92 @@ export class OutboundWebhooksService {
     return row
   }
 
-  static retryDelivery = async (db: DB, merchantId: string, id: string) => {
+  /**
+   * Dual-secret rotation: the current secret moves to `secret_prev` (kept so
+   * in-flight/queued consumers can still verify), the new secret becomes
+   * current, and `secret_version` is bumped. Verification accepts both;
+   * new deliveries are signed with the current secret only.
+   * Returns the masked endpoint plus the new plaintext secret (show once).
+   */
+  static rotateSecret = async (
+    db: DB,
+    merchantId: string,
+    id: string,
+    input?: { secret?: string }
+  ) => {
+    const [row] = await db
+      .select()
+      .from(webhookEndpoints)
+      .where(and(eq(webhookEndpoints.id, id), eq(webhookEndpoints.merchantId, merchantId)))
+    if (!row) throw notFound('ENDPOINT_NOT_FOUND', 'Webhook endpoint not found')
+    const current = decryptJson<{ secret: string }>(row.secret).secret
+    const next = input?.secret?.trim() ? input.secret.trim() : randomBytes(32).toString('hex')
+    if (next.length < 16) throw badRequest('WEAK_SECRET', 'Replacement webhook secret must be at least 16 characters')
+    const [updated] = await db
+      .update(webhookEndpoints)
+      .set({
+        secret: encryptJson({ secret: next }),
+        secretPrev: encryptJson({ secret: current }),
+        secretVersion: (row.secretVersion ?? 1) + 1,
+        // Rotation is a manual operator action — clear any circuit-breaker trip.
+        enabled: true,
+        status: 'active',
+        updatedAt: new Date()
+      })
+      .where(and(eq(webhookEndpoints.id, id), eq(webhookEndpoints.merchantId, merchantId)))
+      .returning()
+    return { endpoint: this.maskEndpoint(updated), secret: next }
+  }
+
+  static retryDelivery = async (db: DB, merchantId: string, id: string) =>
+    OutboundWebhooksService.replayDelivery(db, merchantId, id)
+
+  /**
+   * Replay a single dead-lettered/failed delivery: clears `deadLetteredAt`,
+   * resets attempts and re-queues as pending. Also covers legacy `retry`
+   * callers (pending/processing/failed/skipped); completed deliveries cannot
+   * be replayed.
+   */
+  static replayDelivery = async (db: DB, merchantId: string, id: string) => {
     const delivery = await this.getDelivery(db, merchantId, id)
+    if (delivery.status === 'completed') {
+      throw badRequest('DELIVERY_COMPLETED', 'Completed deliveries cannot be replayed')
+    }
     const endpoint = await this.getEndpoint(db, merchantId, delivery.endpointId)
     if (!endpoint.enabled) throw badRequest('ENDPOINT_DISABLED', 'Webhook endpoint is disabled')
 
     const [updated] = await db
       .update(webhookDeliveries)
-      .set({ status: 'pending', attempts: 0, nextRetryAt: new Date(), lastError: null })
+      .set({
+        status: 'pending',
+        attempts: 0,
+        nextRetryAt: new Date(),
+        lastError: null,
+        deadLetteredAt: null,
+        responseCode: null,
+        responseBody: null
+      })
       .where(and(eq(webhookDeliveries.id, id), eq(webhookDeliveries.merchantId, merchantId)))
       .returning()
     return updated
+  }
+
+  /** Replay every dead-lettered delivery (deadLetteredAt set) for the merchant. */
+  static replayAllDead = async (db: DB, merchantId: string) => {
+    const rows = await db
+      .update(webhookDeliveries)
+      .set({
+        status: 'pending',
+        attempts: 0,
+        nextRetryAt: new Date(),
+        lastError: null,
+        deadLetteredAt: null,
+        responseCode: null,
+        responseBody: null
+      })
+      .where(and(eq(webhookDeliveries.merchantId, merchantId), isNotNull(webhookDeliveries.deadLetteredAt)))
+      .returning({ id: webhookDeliveries.id })
+    return { replayed: rows.length }
   }
 
   static listJobs = async (db: DB, merchantId: string) => {
