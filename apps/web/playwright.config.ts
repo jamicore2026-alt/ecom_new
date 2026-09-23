@@ -4,8 +4,8 @@ import path from 'node:path'
 
 // Minimal dotenv loader (stdlib only): root .env → process env (no overwrite).
 // Guarantees the API webServer below always gets DATABASE_URL etc.,
-/// whether tests run locally or in CI.
-const rootEnv = path.resolve(__dirname, '../../.env')
+// whether tests run locally or in CI.
+const rootEnv = path.resolve(import.meta.dirname, '../../.env')
 if (existsSync(rootEnv)) {
 	for (const line of readFileSync(rootEnv, 'utf-8').split('\n')) {
 		const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
@@ -45,7 +45,7 @@ export default defineConfig({
 	webServer: [
 		{
 			command: 'bun src/index.ts',
-			cwd: path.resolve(__dirname, '../../apps/api'),
+			cwd: path.resolve(import.meta.dirname, '../../apps/api'),
 			port: API_PORT,
 			timeout: 120_000,
 			reuseExistingServer: !process.env.CI,
@@ -53,7 +53,7 @@ export default defineConfig({
 		},
 		{
 			command: `bun run dev --port ${WEB_PORT}`,
-			cwd: path.resolve(__dirname, '..'),
+			cwd: path.resolve(import.meta.dirname, '..'),
 			port: WEB_PORT,
 			timeout: 120_000,
 			reuseExistingServer: !process.env.CI
