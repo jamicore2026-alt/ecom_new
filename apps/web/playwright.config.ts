@@ -53,7 +53,7 @@ export default defineConfig({
 		},
 		{
 			command: `bun run dev --port ${WEB_PORT}`,
-			cwd: path.resolve(import.meta.dirname, '..'),
+			cwd: import.meta.dirname,
 			port: WEB_PORT,
 			timeout: 120_000,
 			reuseExistingServer: !process.env.CI
