@@ -296,6 +296,7 @@ export const categories = pgTable(
     nameAr: varchar('name_ar', { length: 255 }),
     slug: varchar('slug', { length: 255 }).notNull(),
     image: varchar('image', { length: 1024 }),
+    description: text('description'),
     sortOrder: integer('sort_order').notNull().default(0),
     status: varchar('status', { length: 20 }).notNull().default('active'),
     createdAt: tstz('created_at').defaultNow().notNull()
@@ -333,6 +334,18 @@ export const products = pgTable(
       .$type<ProductVisibility>()
       .notNull()
       .default('both'),
+    /** Sale window: compare-at/sale pricing applies only inside it
+     *  (NULL bounds = open-ended, preserving current always-on-sale rows). */
+    saleStartsAt: tstz('sale_starts_at'),
+    saleEndsAt: tstz('sale_ends_at'),
+    /** Scheduled publishing: hidden from storefront until this time (NULL = visible). */
+    publishAt: tstz('publish_at'),
+    /** Merchandising attributes (Shopify parity). */
+    tags: jsonb('tags').$type<string[]>().notNull().default([]),
+    weight: money('weight'),
+    gtin: varchar('gtin', { length: 32 }),
+    metaTitle: varchar('meta_title', { length: 255 }),
+    metaDescription: text('meta_description'),
     searchVector: tsvector('search_vector').generatedAlwaysAs(
       sql`to_tsvector('english', coalesce(name, '') || ' ' || coalesce(sku, '') || ' ' || coalesce(description, '')) || to_tsvector('arabic', coalesce(name_ar, '') || ' ' || coalesce(description_ar, ''))`
     ),
@@ -1637,6 +1650,51 @@ export const warehouseInventory = pgTable(
   (t) => [
     uniqueIndex('warehouse_inventory_warehouse_variant_idx').on(t.warehouseId, t.variantId),
     index('warehouse_inventory_merchant_idx').on(t.merchantId)
+  ]
+)
+
+/** Stocktake (cycle-count) sessions: draft counts → submit → approve applies
+ *  variances with inventory-log rows. */
+export const stocktakeSessions = pgTable(
+  'stocktake_sessions',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    warehouseId: varchar('warehouse_id', { length: 30 }).references(() => warehouses.id, {
+      onDelete: 'set null'
+    }),
+    status: varchar('status', { length: 20 }).notNull().default('draft'),
+    notes: text('notes'),
+    createdBy: varchar('created_by', { length: 30 }).references(() => users.id, {
+      onDelete: 'set null'
+    }),
+    approvedBy: varchar('approved_by', { length: 30 }).references(() => users.id, {
+      onDelete: 'set null'
+    }),
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    approvedAt: tstz('approved_at')
+  },
+  (t) => [index('stocktake_merchant_idx').on(t.merchantId)]
+)
+
+export const stocktakeItems = pgTable(
+  'stocktake_items',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    sessionId: varchar('session_id', { length: 30 })
+      .notNull()
+      .references(() => stocktakeSessions.id, { onDelete: 'cascade' }),
+    variantId: varchar('variant_id', { length: 30 })
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    systemQuantity: integer('system_quantity').notNull().default(0),
+    countedQuantity: integer('counted_quantity'),
+    createdAt: tstz('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('stocktake_session_variant_idx').on(t.sessionId, t.variantId),
+    index('stocktake_items_session_idx').on(t.sessionId)
   ]
 )
 

@@ -16,9 +16,10 @@
 		pending: 'bg-warning/10 text-warning ring-warning',
 		in_transit: 'bg-info/10 text-info ring-info',
 		completed: 'bg-success/10 text-success ring-success',
-		cancelled: 'bg-error/10 text-error ring-error'
+		cancelled: 'bg-error/10 text-error ring-error',
+		reversed: 'bg-secondary/10 text-secondary ring-secondary'
 	}
-	const STATUS_ORDER = ['pending', 'in_transit', 'completed', 'cancelled']
+	const STATUS_ORDER = ['pending', 'in_transit', 'completed', 'cancelled', 'reversed']
 
 	let items = $state<StockTransfer[]>([])
 	let loading = $state(true)
@@ -36,6 +37,9 @@
 	let lines = $state<Array<{ key: number; variantId: string; quantity: string }>>([])
 	// Extra option (PDF): move every product with its full quantity.
 	let fAll = $state(false)
+	// Deferred: create as in_transit without moving stock; receive later.
+	let fDeferred = $state(false)
+	let busyId = $state('')
 	let sequence = 0
 	let saving = $state(false)
 
@@ -92,6 +96,7 @@
 		fTo = ''
 		lines = [{ key: sequence++, variantId: '', quantity: '1' }]
 		fAll = false
+		fDeferred = false
 		sourceStock = {}
 		try {
 			const [w, v] = await Promise.all([
@@ -122,17 +127,71 @@
 		if (!fAll && items.length === 0) return toast.error('Select at least one item or enable "Move all stock"')
 		saving = true
 		try {
-			const payload = fAll
-				? { fromWarehouseId: fFrom, toWarehouseId: fTo, allStock: true }
-				: { fromWarehouseId: fFrom, toWarehouseId: fTo, items }
-			await api.post<{ success: boolean }>('/api/transfers/bulk', payload)
-			toast.success(fAll ? 'All stock transferred' : `Transfer created (${items.length} item${items.length === 1 ? '' : 's'})`)
+			// Single-line fast path: one row → POST /api/transfers (instant or
+			// deferred) instead of the bulk endpoint.
+			if (!fAll && items.length === 1) {
+				await api.post<{ success: boolean }>('/api/transfers', {
+					fromWarehouseId: fFrom,
+					toWarehouseId: fTo,
+					variantId: items[0].variantId,
+					quantity: items[0].quantity,
+					...(fDeferred ? { deferred: true } : {})
+				})
+				toast.success(fDeferred ? 'Deferred transfer created (in transit)' : 'Transfer created')
+			} else {
+				const payload = fAll
+					? { fromWarehouseId: fFrom, toWarehouseId: fTo, allStock: true }
+					: { fromWarehouseId: fFrom, toWarehouseId: fTo, items }
+				await api.post<{ success: boolean }>('/api/transfers/bulk', payload)
+				toast.success(fAll ? 'All stock transferred' : `Transfer created (${items.length} item${items.length === 1 ? '' : 's'})`)
+			}
 			showCreate = false
 			load()
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
 			saving = false
+		}
+	}
+
+	async function receiveTransfer(t: StockTransfer) {
+		busyId = `${t.id}:receive`
+		try {
+			await api.post<{ success: boolean }>(`/api/transfers/${t.id}/receive`, {})
+			toast.success('Transfer received')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			busyId = ''
+		}
+	}
+
+	async function cancelTransfer(t: StockTransfer) {
+		if (!confirm(`Cancel transfer #${t.id.slice(0, 8).toUpperCase()}? No stock will move.`)) return
+		busyId = `${t.id}:cancel`
+		try {
+			await api.post<{ success: boolean }>(`/api/transfers/${t.id}/cancel`, {})
+			toast.success('Transfer cancelled')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			busyId = ''
+		}
+	}
+
+	async function reverseTransfer(t: StockTransfer) {
+		if (!confirm(`Reverse transfer #${t.id.slice(0, 8).toUpperCase()}? Stock moves back.`)) return
+		busyId = `${t.id}:reverse`
+		try {
+			await api.post<{ success: boolean }>(`/api/transfers/${t.id}/reverse`, {})
+			toast.success('Transfer reversed')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			busyId = ''
 		}
 	}
 
@@ -244,6 +303,12 @@
 									<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ring-1 ring-inset {STATUS_TONE[(t.status ?? '').toLowerCase()] ?? 'bg-secondary/10 text-secondary ring-secondary'}">{(t.status ?? '').replace('_', ' ')}</span>
 								</td>
 								<td class="px-table-cell-x py-table-cell-y text-right">
+									{#if canWrite() && (t.status ?? '').toLowerCase() === 'in_transit'}
+										<button class="rounded p-1.5 text-xs font-medium text-success hover:bg-success/10 disabled:opacity-50" disabled={busyId !== ''} onclick={() => receiveTransfer(t)}>Receive</button>
+										<button class="rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40 disabled:opacity-50" disabled={busyId !== ''} onclick={() => cancelTransfer(t)}>Cancel</button>
+									{:else if canWrite() && (t.status ?? '').toLowerCase() === 'completed' && t.kind !== 'bulk'}
+										<button class="rounded p-1.5 text-xs font-medium text-secondary hover:bg-surface-container disabled:opacity-50" disabled={busyId !== ''} onclick={() => reverseTransfer(t)}>Reverse</button>
+									{/if}
 									<a href="/transfers/{t.id}" class="inline-flex rounded p-1.5 text-primary hover:bg-primary-fixed-dim/40" aria-label="View transfer"><Icon name="chevron_right" size="text-[18px]" /></a>
 								</td>
 							</tr>
@@ -282,6 +347,13 @@
 				<input type="checkbox" class="field-check" bind:checked={fAll} />
 				<span><span class="font-medium text-on-surface">Move all stock</span> — every product this warehouse holds, each with its full quantity</span>
 			</label>
+
+			{#if !fAll}
+				<label class="flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm text-on-surface-variant max-sm:min-h-11">
+					<input type="checkbox" class="field-check" bind:checked={fDeferred} />
+					<span><span class="font-medium text-on-surface">Deferred</span> — create as in transit, receive later (single-line only)</span>
+				</label>
+			{/if}
 
 			{#if !fAll}
 				<div>

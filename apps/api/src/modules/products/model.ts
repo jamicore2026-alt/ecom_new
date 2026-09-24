@@ -58,13 +58,21 @@ export const createProductBody = t.Object({
   description: t.Optional(t.String()),
   descriptionAr: t.Optional(t.String()),
   price: t.Number({ minimum: 0 }),
-  compareAtPrice: t.Optional(t.Number({ minimum: 0 })),
+  compareAtPrice: t.Optional(t.Union([t.Number({ minimum: 0 }), t.Null()])),
   cost: t.Optional(t.Number({ minimum: 0 })),
-  categoryId: t.Optional(t.String()),
+  categoryId: t.Optional(t.Union([t.String(), t.Null()])),
   trackInventory: t.Optional(t.Boolean()),
   lowStockThreshold: t.Optional(t.Integer({ minimum: 0 })),
   status: t.Optional(productStatusSchema),
   visibility: t.Optional(productVisibilitySchema),
+  tags: t.Optional(t.Array(t.String())),
+  weight: t.Optional(t.Union([t.Number(), t.Null()])),
+  gtin: t.Optional(t.Union([t.String({ maxLength: 32 }), t.Null()])),
+  metaTitle: t.Optional(t.Union([t.String({ maxLength: 255 }), t.Null()])),
+  metaDescription: t.Optional(t.Union([t.String(), t.Null()])),
+  saleStartsAt: t.Optional(t.Union([t.String(), t.Null()])),
+  saleEndsAt: t.Optional(t.Union([t.String(), t.Null()])),
+  publishAt: t.Optional(t.Union([t.String(), t.Null()])),
   variants: t.Optional(t.Array(variantInput)),
   images: t.Optional(t.Array(productImageInput))
 })
@@ -77,7 +85,10 @@ export const bulkEditBody = t.Object({
     set_status: 'set_status',
     set_category: 'set_category',
     multiply_price: 'multiply_price',
-    set_inventory: 'set_inventory'
+    set_inventory: 'set_inventory',
+    set_visibility: 'set_visibility',
+    set_compare_at: 'set_compare_at',
+    clear_sale: 'clear_sale'
   }),
   value: t.Union([t.String(), t.Number(), t.Null()])
 })
@@ -87,7 +98,8 @@ export const categoryBody = t.Object({
   nameAr: t.Optional(t.String({ minLength: 1, maxLength: 255 })),
   slug: t.Optional(t.String()),
   parentId: t.Optional(t.Union([t.String(), t.Null()])),
-  image: t.Optional(t.String()),
+  image: t.Optional(t.Union([t.String(), t.Null()])),
+  description: t.Optional(t.Union([t.String(), t.Null()])),
   sortOrder: t.Optional(t.Integer()),
   status: t.Optional(categoryStatusSchema)
 })

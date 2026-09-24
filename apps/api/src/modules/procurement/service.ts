@@ -241,7 +241,7 @@ export class ProcurementService {
   ) {
     await this.getSupplier(db, merchantId, input.supplierId)
     if (!input.items.length) throw badRequest('NO_ITEMS', 'A purchase order needs at least one item')
-    this.validateItems(db, merchantId, input.items)
+    await this.validateItems(db, merchantId, input.items)
 
     const subtotal = this.subtotal(db, input.items)
     const [po] = await db
@@ -294,7 +294,7 @@ export class ProcurementService {
 
     if (input.items) {
       if (!input.items.length) throw badRequest('NO_ITEMS', 'A purchase order needs at least one item')
-      this.validateItems(db, merchantId, input.items)
+      await this.validateItems(db, merchantId, input.items)
       const subtotal = this.subtotal(db, input.items)
       patch.subtotal = subtotal
     }
@@ -352,6 +352,19 @@ export class ProcurementService {
     const allowed = PO_STATUS_TRANSITIONS[po.status as string] ?? []
     if (!allowed.includes(to)) {
       throw conflict('BAD_TRANSITION', `Cannot move a ${po.status} purchase order to ${to}`)
+    }
+
+    // Cancel is blocked once any quantity has been received. A matching
+    // return (see returnGoods, which decrements receivedQuantity) restores
+    // cancellability by bringing the net received quantity back to zero.
+    if (to === 'cancelled') {
+      const lines = await db
+        .select({ receivedQuantity: purchaseOrderItems.receivedQuantity })
+        .from(purchaseOrderItems)
+        .where(eq(purchaseOrderItems.purchaseOrderId, id))
+      if (lines.some((l) => (l.receivedQuantity ?? 0) > 0)) {
+        throw conflict('PO_HAS_RECEIPTS', 'Cannot cancel a purchase order with received goods — return them first')
+      }
     }
 
     const patch: Record<string, unknown> = { status: to }
@@ -438,13 +451,22 @@ export class ProcurementService {
     return ok({ ...row, purchaseOrder: po, warehouse, items })
   }
 
-  /** Records a goods receipt for an approved PO and moves stock into the warehouse. */
+  /**
+   * Records a goods receipt for an approved PO and moves stock into warehouses.
+   * Multi-warehouse putaway: each line may carry its own `warehouseId` which
+   * overrides the header `warehouseId` (the header remains the default and is
+   * stored on the receipt row for backward compatibility).
+   */
   static async receiveGoods(
     db: DB,
     merchantId: string,
     poId: string,
     userId: string,
-    input: { warehouseId: string; notes?: string; items: Array<{ purchaseOrderItemId: string; quantity: number }> }
+    input: {
+      warehouseId?: string
+      notes?: string
+      items: Array<{ purchaseOrderItemId: string; quantity: number; warehouseId?: string }>
+    }
   ) {
     if (!input.items.length) throw badRequest('NO_ITEMS', 'A goods receipt needs at least one item')
 
@@ -453,21 +475,42 @@ export class ProcurementService {
       throw conflict('PO_NOT_APPROVED', 'Only approved purchase orders can be received')
     }
 
-    const [wh] = await db
-      .select()
-      .from(warehouses)
-      .where(and(eq(warehouses.id, input.warehouseId), eq(warehouses.merchantId, merchantId)))
-    if (!wh) throw notFound('WAREHOUSE_NOT_FOUND', 'Warehouse not found')
-
     const poItems = await db
       .select()
       .from(purchaseOrderItems)
       .where(eq(purchaseOrderItems.purchaseOrderId, poId))
 
+    // Resolve + validate the warehouse for every line up front so no partial
+    // validation error can occur after stock has moved.
+    const warehouseCache = new Map<string, { id: string }>()
+    const resolveWarehouse = async (id: string | undefined, fallback: string | undefined) => {
+      const wid = id ?? fallback
+      if (!wid) throw badRequest('WAREHOUSE_REQUIRED', 'Each receipt line needs a warehouseId')
+      const cached = warehouseCache.get(wid)
+      if (cached) return cached
+      const [wh] = await db
+        .select()
+        .from(warehouses)
+        .where(and(eq(warehouses.id, wid), eq(warehouses.merchantId, merchantId)))
+      if (!wh) throw notFound('WAREHOUSE_NOT_FOUND', `Warehouse ${wid} not found`)
+      warehouseCache.set(wid, wh)
+      return wh
+    }
+
+    const headerWarehouse = input.warehouseId
+      ? await resolveWarehouse(input.warehouseId, undefined)
+      : null
+    if (!headerWarehouse) {
+      // No header default: every line must name its own warehouse.
+      for (const line of input.items) {
+        if (!line.warehouseId) throw badRequest('WAREHOUSE_REQUIRED', 'Provide a header warehouseId or a warehouseId per line')
+      }
+    }
+
     // Validate each receipt line: belongs to this PO, quantity positive and not
     // exceeding the outstanding balance.
     const byId = new Map(poItems.map((i) => [i.id, i]))
-    const incoming: Array<{ poItem: (typeof poItems)[number]; quantity: number }> = []
+    const incoming: Array<{ poItem: (typeof poItems)[number]; quantity: number; warehouseId: string }> = []
     for (const line of input.items) {
       if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
         throw badRequest('INVALID_QUANTITY', 'Receipt quantity must be a positive integer')
@@ -481,7 +524,8 @@ export class ProcurementService {
           `Item ${poItem.variantId} has ${outstanding} outstanding but ${line.quantity} was received`
         )
       }
-      incoming.push({ poItem, quantity: line.quantity })
+      const wh = await resolveWarehouse(line.warehouseId, input.warehouseId)
+      incoming.push({ poItem, quantity: line.quantity, warehouseId: wh.id })
     }
 
 // Safe line-level receivedQuantity update requires the NEW received totals per item.
@@ -492,6 +536,7 @@ export class ProcurementService {
     )
     const allItemsFilled = poItems.every((i) => (newItemTotals.get(i.id) ?? 0) >= i.quantity)
     const status: string = allItemsFilled ? 'received' : 'partial'
+    const receiptWarehouseId = headerWarehouse?.id ?? incoming[0].warehouseId
 
     await db.transaction(async (tx: Tx) => {
       const [receipt] = await tx
@@ -500,7 +545,7 @@ export class ProcurementService {
           merchantId,
           receiptNumber,
           purchaseOrderId: poId,
-          warehouseId: input.warehouseId,
+          warehouseId: receiptWarehouseId,
           notes: input.notes,
           createdBy: userId
         })
@@ -519,11 +564,11 @@ export class ProcurementService {
         }))
       )
 
-      for (const { poItem, quantity } of incoming) {
-        // Move stock into the target warehouse.
+      for (const { poItem, quantity, warehouseId } of incoming) {
+        // Split putaway: move stock into the line's warehouse.
         await tx
           .insert(warehouseInventory)
-          .values({ merchantId, warehouseId: input.warehouseId, variantId: poItem.variantId, quantity })
+          .values({ merchantId, warehouseId, variantId: poItem.variantId, quantity })
           .onConflictDoUpdate({
             target: [warehouseInventory.warehouseId, warehouseInventory.variantId],
             set: { quantity: sql`${warehouseInventory.quantity} + ${quantity}`, updatedAt: new Date() }
@@ -571,5 +616,169 @@ export class ProcurementService {
     emit(merchantId, 'purchase-order.updated', { id: poId, status })
 
     return ok({ receiptId: txReceiptId, receiptNumber, status })
+  }
+
+  /**
+   * Return (reverse) previously received goods: decrements the warehouse and
+   * the global variant ledger (inventoryLogs reason 'return') and decrements
+   * the PO line receivedQuantity. Recorded as a `#RTN` goods receipt so the
+   * paper trail stays queryable via the existing receipts endpoints. A PO
+   * whose net received quantity returns to zero becomes cancellable again.
+   */
+  static async returnGoods(
+    db: DB,
+    merchantId: string,
+    poId: string,
+    userId: string,
+    input: {
+      warehouseId?: string
+      notes?: string
+      items: Array<{ purchaseOrderItemId: string; quantity: number; warehouseId?: string }>
+    }
+  ) {
+    if (!input.items.length) throw badRequest('NO_ITEMS', 'A return needs at least one item')
+    const po = await assertPoInMerchant(db, merchantId, poId)
+    if (!['approved', 'partial', 'received'].includes(po.status as string)) {
+      throw conflict('PO_NOT_RECEIVABLE', 'Only approved/received purchase orders can be returned')
+    }
+    const poItems = await db
+      .select()
+      .from(purchaseOrderItems)
+      .where(eq(purchaseOrderItems.purchaseOrderId, poId))
+    const byId = new Map(poItems.map((i) => [i.id, i]))
+
+    const warehouseCache = new Map<string, { id: string }>()
+    const resolveWarehouse = async (id: string | undefined, fallback: string | undefined) => {
+      const wid = id ?? fallback
+      if (!wid) throw badRequest('WAREHOUSE_REQUIRED', 'Each return line needs a warehouseId')
+      const cached = warehouseCache.get(wid)
+      if (cached) return cached
+      const [wh] = await db
+        .select()
+        .from(warehouses)
+        .where(and(eq(warehouses.id, wid), eq(warehouses.merchantId, merchantId)))
+      if (!wh) throw notFound('WAREHOUSE_NOT_FOUND', `Warehouse ${wid} not found`)
+      warehouseCache.set(wid, wh)
+      return wh
+    }
+
+    const outgoing: Array<{ poItem: (typeof poItems)[number]; quantity: number; warehouseId: string }> = []
+    for (const line of input.items) {
+      if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
+        throw badRequest('INVALID_QUANTITY', 'Return quantity must be a positive integer')
+      }
+      const poItem = byId.get(line.purchaseOrderItemId)
+      if (!poItem) throw badRequest('INVALID_ITEM', `Item ${line.purchaseOrderItemId} is not on this purchase order`)
+      if (line.quantity > poItem.receivedQuantity) {
+        throw badRequest('OVER_RETURN', `Item ${poItem.variantId} has only ${poItem.receivedQuantity} received but ${line.quantity} was returned`)
+      }
+      const wh = await resolveWarehouse(line.warehouseId, input.warehouseId)
+      // The warehouse must actually hold the stock being returned.
+      const [held] = await db
+        .select({ quantity: warehouseInventory.quantity })
+        .from(warehouseInventory)
+        .where(and(eq(warehouseInventory.warehouseId, wh.id), eq(warehouseInventory.variantId, poItem.variantId)))
+      if (!held || held.quantity < line.quantity) {
+        throw badRequest('INSUFFICIENT_WAREHOUSE_STOCK', `Warehouse holds ${held?.quantity ?? 0} of variant ${poItem.variantId}, cannot return ${line.quantity}`)
+      }
+      outgoing.push({ poItem, quantity: line.quantity, warehouseId: wh.id })
+    }
+
+    const receiptNumber = nextNumber('#RTN')
+    let txReceiptId: string | null = null
+    const newItemTotals = new Map(
+      poItems.map((i) => [i.id, i.receivedQuantity - outgoing.filter((x) => x.poItem.id === i.id).reduce((s, x) => s + x.quantity, 0)])
+    )
+    const allZero = poItems.every((i) => (newItemTotals.get(i.id) ?? 0) <= 0)
+    const allFilled = poItems.every((i) => (newItemTotals.get(i.id) ?? 0) >= i.quantity)
+    const status: string = allZero ? 'approved' : allFilled ? 'received' : 'partial'
+    const receiptWarehouseId = (input.warehouseId ?? outgoing[0].warehouseId) as string
+
+    await db.transaction(async (tx: Tx) => {
+      const [receipt] = await tx
+        .insert(goodsReceipts)
+        .values({
+          merchantId,
+          receiptNumber,
+          purchaseOrderId: poId,
+          warehouseId: receiptWarehouseId,
+          notes: input.notes ?? `Return against ${po.poNumber}`,
+          createdBy: userId
+        })
+        .returning()
+      txReceiptId = receipt.id
+      await tx.insert(goodsReceiptItems).values(
+        outgoing.map(({ poItem, quantity }) => ({
+          goodsReceiptId: receipt.id,
+          purchaseOrderItemId: poItem.id,
+          variantId: poItem.variantId,
+          // Stored positive; the `#RTN` number + 'return' log rows mark direction.
+          quantity,
+          unitCost: poItem.unitCost
+        }))
+      )
+      for (const { poItem, quantity, warehouseId } of outgoing) {
+        await tx
+          .update(warehouseInventory)
+          .set({ quantity: sql`${warehouseInventory.quantity} - ${quantity}`, updatedAt: new Date() })
+          .where(and(eq(warehouseInventory.warehouseId, warehouseId), eq(warehouseInventory.variantId, poItem.variantId)))
+        await tx
+          .update(purchaseOrderItems)
+          .set({ receivedQuantity: sql`${purchaseOrderItems.receivedQuantity} - ${quantity}` })
+          .where(eq(purchaseOrderItems.id, poItem.id))
+      }
+      const variantTotals = new Map<string, number>()
+      for (const { poItem, quantity } of outgoing) {
+        variantTotals.set(poItem.variantId, (variantTotals.get(poItem.variantId) ?? 0) + quantity)
+      }
+      for (const [variantId, quantity] of variantTotals) {
+        const [variant] = await tx
+          .select({ inventory: productVariants.inventory })
+          .from(productVariants)
+          .where(eq(productVariants.id, variantId))
+          .for('update')
+        if (variant) {
+          if (variant.inventory < quantity) {
+            throw badRequest('INSUFFICIENT_STOCK', `Global stock of variant ${variantId} is ${variant.inventory}, cannot return ${quantity}`)
+          }
+          await setVariantInventoryTx(tx, merchantId, variantId, variant.inventory - quantity, {
+            reason: 'return',
+            reference: receiptNumber
+          })
+        }
+      }
+      await tx.update(purchaseOrders).set({ status }).where(eq(purchaseOrders.id, poId))
+    })
+
+    for (const [variantId, quantity] of outgoing.reduce((m, { poItem, quantity }) => {
+      m.set(poItem.variantId, (m.get(poItem.variantId) ?? 0) + quantity)
+      return m
+    }, new Map<string, number>())) {
+      emit(merchantId, 'inventory.updated', { variantId, change: -quantity })
+    }
+    emit(merchantId, 'purchase-order.updated', { id: poId, status })
+    return ok({ receiptId: txReceiptId, receiptNumber, status })
+  }
+
+  /** Deletes a supplier only when no purchase orders reference it. */
+  static async deleteSupplier(db: DB, merchantId: string, id: string) {
+    await this.getSupplier(db, merchantId, id)
+    const existing = await db
+      .select({ id: purchaseOrders.id })
+      .from(purchaseOrders)
+      .where(and(eq(purchaseOrders.supplierId, id), eq(purchaseOrders.merchantId, merchantId)))
+      .limit(1)
+    if (existing.length) throw conflict('SUPPLIER_HAS_POS', 'Cannot delete a supplier with purchase orders')
+    await db.delete(suppliers).where(and(eq(suppliers.id, id), eq(suppliers.merchantId, merchantId)))
+    return ok({ deleted: true, id })
+  }
+
+  /** Deletes a draft purchase order (with its lines). Nothing else is deletable. */
+  static async deletePurchaseOrder(db: DB, merchantId: string, id: string) {
+    const po = await assertPoInMerchant(db, merchantId, id)
+    if (po.status !== 'draft') throw conflict('PO_NOT_DRAFT', 'Only draft purchase orders can be deleted')
+    await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, id))
+    await db.delete(purchaseOrders).where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.merchantId, merchantId)))
+    return ok({ deleted: true, id })
   }
 }

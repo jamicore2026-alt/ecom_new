@@ -26,7 +26,7 @@
 
 	let adjustTarget = $state<InventoryRow | null>(null)
 	let adjustChange = $state('1')
-	let adjustReason = $state<'adjustment' | 'purchase' | 'return' | 'sale'>('adjustment')
+	let adjustReason = $state<'adjustment' | 'purchase' | 'return' | 'sale' | 'stocktake'>('adjustment')
 	let adjusting = $state(false)
 
 	const canWrite = () => session.can('inventory:write')
@@ -106,9 +106,12 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<div class="mb-8">
-		<h1 class="font-display text-display text-on-surface">Inventory</h1>
-		<p class="mt-1 text-body-sm text-secondary">{meta.total} variants</p>
+	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+		<div>
+			<h1 class="font-display text-display text-on-surface">Inventory</h1>
+			<p class="mt-1 text-body-sm text-secondary">{meta.total} variants</p>
+		</div>
+		<a href="/inventory/stocktake" class="inline-flex min-h-11 w-fit items-center gap-1.5 rounded border border-outline-variant px-3 text-sm font-medium text-primary hover:bg-primary-fixed-dim/40">Stocktake sessions</a>
 	</div>
 
 	<div class="flex flex-wrap items-center justify-between gap-3">
@@ -312,6 +315,7 @@
 					<option value="purchase">Purchase</option>
 					<option value="return">Return</option>
 					<option value="sale">Sale</option>
+					<option value="stocktake">Stocktake</option>
 				</select>
 			</div>
 			<div class="flex justify-end gap-2 pt-2">

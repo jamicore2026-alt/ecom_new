@@ -3,22 +3,27 @@
 	import { onMount } from 'svelte'
 	import { api } from '$lib/api'
 	import { toast } from '$lib/toast.svelte'
+	import { session } from '$lib/session.svelte'
 	import Button from '$lib/components/Button.svelte'
 	import Card from '$lib/components/Card.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import { dateTime, dateTimeFull, number } from '$lib/format'
 	import type { StockTransfer } from '$lib/types'
 
+	const canWrite = () => session.can('inventory:write')
+
 	const STATUS_TONE: Record<string, string> = {
 		pending: 'bg-warning/10 text-warning ring-warning',
 		in_transit: 'bg-info/10 text-info ring-info',
 		completed: 'bg-success/10 text-success ring-success',
-		cancelled: 'bg-error/10 text-error ring-error'
+		cancelled: 'bg-error/10 text-error ring-error',
+		reversed: 'bg-secondary/10 text-secondary ring-secondary'
 	}
 
 	let transfer = $state<StockTransfer | null>(null)
 	let loading = $state(true)
 	let missing = $state(false)
+	let busy = $state('')
 
 	const id = $derived(page.params.id as string)
 
@@ -34,6 +39,47 @@
 			else toast.error((e as Error).message)
 		} finally {
 			loading = false
+		}
+	}
+
+	async function receive() {
+		busy = 'receive'
+		try {
+			await api.post(`/api/transfers/${id}/receive`, {})
+			toast.success('Transfer received')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			busy = ''
+		}
+	}
+
+	async function cancel() {
+		if (!confirm('Cancel this transfer? No stock will move.')) return
+		busy = 'cancel'
+		try {
+			await api.post(`/api/transfers/${id}/cancel`, {})
+			toast.success('Transfer cancelled')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			busy = ''
+		}
+	}
+
+	async function reverse() {
+		if (!confirm('Reverse this transfer? Stock moves back.')) return
+		busy = 'reverse'
+		try {
+			await api.post(`/api/transfers/${id}/reverse`, {})
+			toast.success('Transfer reversed')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			busy = ''
 		}
 	}
 
@@ -78,6 +124,16 @@
 				{(transfer.status ?? '').replace('_', ' ')}
 			</span>
 		</div>
+		{#if canWrite()}
+			<div class="flex flex-wrap gap-2">
+				{#if (transfer.status ?? '').toLowerCase() === 'in_transit'}
+					<Button size="sm" loading={busy === 'receive'} onclick={receive}>Receive</Button>
+					<Button size="sm" variant="secondary" loading={busy === 'cancel'} onclick={cancel}>Cancel transfer</Button>
+				{:else if (transfer.status ?? '').toLowerCase() === 'completed' && transfer.kind !== 'bulk'}
+					<Button size="sm" variant="secondary" loading={busy === 'reverse'} onclick={reverse}>Reverse</Button>
+				{/if}
+			</div>
+		{/if}
 
 		<div class="grid gap-4 lg:grid-cols-3">
 			<Card>

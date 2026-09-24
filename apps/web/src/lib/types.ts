@@ -89,7 +89,7 @@ export type ProductStatus = 'active' | 'draft' | 'archived'
 export type ProductVisibility = 'both' | 'pos' | 'website'
 export type CouponType = 'percentage' | 'fixed' | 'free_shipping'
 export type PromotionType = 'discount_on_products' | 'buy_x_get_y'
-export type InventoryReason = 'sale' | 'adjustment' | 'purchase' | 'return' | 'cancel'
+export type InventoryReason = 'sale' | 'adjustment' | 'purchase' | 'return' | 'cancel' | 'stocktake'
 export type UserRole = 'owner' | 'admin' | 'staff'
 export type ModuleId = 'commerce' | 'restaurant' | 'pos' | 'kitchen' | 'tables' | 'delivery' | 'inventory' | 'marketing' | 'analytics'
 export type OutletStatus = 'active' | 'inactive' | 'archived'
@@ -165,6 +165,14 @@ export interface Product {
 	lowStockThreshold: number
 	status: ProductStatus
 	visibility: ProductVisibility
+	tags: string[]
+	weight: number | null
+	gtin: string | null
+	metaTitle: string | null
+	metaDescription: string | null
+	saleStartsAt: string | null
+	saleEndsAt: string | null
+	publishAt: string | null
 	createdAt: string
 	updatedAt: string
 }
@@ -227,6 +235,7 @@ export interface Category {
 	nameAr: string | null
 	slug: string
 	image: string | null
+	description: string | null
 	sortOrder: number
 	status: string
 	createdAt: string
@@ -680,6 +689,7 @@ export interface MenuModifier {
 	nameAr?: string | null
 	priceAdjustment: number
 	available: boolean
+	sortOrder: number
 	status: string
 }
 
@@ -1270,7 +1280,7 @@ export interface Invoice {
 	updatedAt: string
 }
 
-export type TransferStatus = 'pending' | 'in_transit' | 'completed' | 'cancelled'
+export type TransferStatus = 'pending' | 'in_transit' | 'completed' | 'cancelled' | 'reversed'
 
 export interface StockTransfer {
 	id: string

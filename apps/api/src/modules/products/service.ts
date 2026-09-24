@@ -37,6 +37,63 @@ interface ProductQuery {
   lowStock?: string
 }
 
+const toDate = (v?: string | Date | null) => {
+  if (v === undefined || v === null || v === '') return null
+  const d = v instanceof Date ? v : new Date(v)
+  if (Number.isNaN(d.getTime())) throw badRequest('BAD_REQUEST', `Invalid date: ${v}`)
+  return d
+}
+
+type SalePriced = {
+  price: number | string | null | undefined
+  compareAtPrice?: number | string | null | undefined
+  saleStartsAt?: Date | string | null | undefined
+  saleEndsAt?: Date | string | null | undefined
+}
+
+/**
+ * Effective sale logic (documented for the storefront caller — admin
+ * list/detail intentionally return STORED values, never the computed price):
+ * the sale price (`price`) applies only inside [saleStartsAt, saleEndsAt]
+ * (null bounds = open-ended). Outside the window the price reverts to
+ * `compareAtPrice ?? price`. Rows without a compareAtPrice have no sale, so
+ * the stored price always applies.
+ *
+ * NOTE: storefront/service.ts pricing internals are out of scope — the
+ * storefront must call this helper (imported from the products module) when
+ * resolving display prices instead of reimplementing the window check.
+ */
+export function effectivePrice<T extends SalePriced>(item: T, now: Date = new Date()): number {
+  const price = Number(item.price ?? 0)
+  const compareAt =
+    item.compareAtPrice === null || item.compareAtPrice === undefined || item.compareAtPrice === ''
+      ? null
+      : Number(item.compareAtPrice)
+  if (compareAt === null || Number.isNaN(compareAt)) return price
+  const start = item.saleStartsAt ? new Date(item.saleStartsAt as string) : null
+  const end = item.saleEndsAt ? new Date(item.saleEndsAt as string) : null
+  if (start && !Number.isNaN(start.getTime()) && now < start) return compareAt
+  if (end && !Number.isNaN(end.getTime()) && now > end) return compareAt
+  return price
+}
+
+/**
+ * Scheduled-publishing gate for a FUTURE storefront caller (not enforced
+ * here — admin CRUD only stores the value). Returns true when the product
+ * may be shown on the storefront at `now`: status must be 'active' and
+ * publishAt must be null or in the past.
+ */
+export function isPublished(
+  product: { status?: string | null; publishAt?: Date | string | null },
+  now: Date = new Date()
+): boolean {
+  if (product.status && product.status !== 'active') return false
+  if (!product.publishAt) return true
+  const at = new Date(product.publishAt as string)
+  if (Number.isNaN(at.getTime())) return true
+  return now >= at
+}
+
 /**
  * Promo-integrity guard: a compare-at ("was") price is only meaningful above
  * the sale price. Rejects fake sales instead of silently storing them.
@@ -226,13 +283,21 @@ export class ProductsService {
       description?: string
       descriptionAr?: string
       price: number
-      compareAtPrice?: number
+      compareAtPrice?: number | null
       cost?: number
-      categoryId?: string
+      categoryId?: string | null
       trackInventory?: boolean
       lowStockThreshold?: number
       status?: string
       visibility?: string
+      tags?: string[]
+      weight?: number | null
+      gtin?: string | null
+      metaTitle?: string | null
+      metaDescription?: string | null
+      saleStartsAt?: string | Date | null
+      saleEndsAt?: string | Date | null
+      publishAt?: string | Date | null
       variants?: Array<{
         sku?: string
         optionValues?: Record<string, string>
@@ -281,7 +346,15 @@ export class ProductsService {
           trackInventory: input.trackInventory ?? false,
           lowStockThreshold: input.lowStockThreshold ?? 5,
           status: input.status ?? 'active',
-          visibility: (input.visibility ?? 'both') as 'both' | 'pos' | 'website'
+          visibility: (input.visibility ?? 'both') as 'both' | 'pos' | 'website',
+          tags: input.tags ?? [],
+          weight: input.weight ?? null,
+          gtin: input.gtin || null,
+          metaTitle: input.metaTitle || null,
+          metaDescription: input.metaDescription || null,
+          saleStartsAt: toDate(input.saleStartsAt),
+          saleEndsAt: toDate(input.saleEndsAt),
+          publishAt: toDate(input.publishAt)
         })
         .returning()
 
@@ -380,9 +453,17 @@ export class ProductsService {
       'trackInventory',
       'lowStockThreshold',
       'status',
-      'visibility'
+      'visibility',
+      'tags',
+      'weight',
+      'gtin',
+      'metaTitle',
+      'metaDescription'
     ] as const) {
       if (input[key] !== undefined) values[key] = input[key] as never
+    }
+    for (const key of ['saleStartsAt', 'saleEndsAt', 'publishAt'] as const) {
+      if (input[key] !== undefined) values[key] = toDate(input[key] as string | null) as never
     }
     if (slug) values.slug = slug
 
@@ -522,6 +603,30 @@ export class ProductsService {
         })
         break
       }
+      case 'set_visibility': {
+        const vis = input.value as string
+        if (!['both', 'pos', 'website'].includes(vis)) {
+          throw badRequest('BAD_REQUEST', 'Invalid visibility (both | pos | website)')
+        }
+        await db.update(products).set({ visibility: vis as 'both' | 'pos' | 'website' }).where(where)
+        break
+      }
+      case 'set_compare_at': {
+        const raw = input.value
+        const num = raw === null || raw === '' ? null : Number(raw)
+        if (num !== null && (!Number.isFinite(num) || num < 0)) {
+          throw badRequest('BAD_REQUEST', 'Compare-at price must be a non-negative number or null')
+        }
+        await db.update(products).set({ compareAtPrice: num }).where(where)
+        break
+      }
+      case 'clear_sale': {
+        await db
+          .update(products)
+          .set({ compareAtPrice: null, saleStartsAt: null, saleEndsAt: null })
+          .where(where)
+        break
+      }
       default:
         throw badRequest('BAD_REQUEST', 'Unknown bulk action')
     }
@@ -562,7 +667,7 @@ export class ProductsService {
   static async createCategory(
     db: DB,
     merchantId: string,
-    input: { name: string; nameAr?: string; slug?: string; parentId?: string | null; image?: string; sortOrder?: number; status?: string }
+    input: { name: string; nameAr?: string; slug?: string; parentId?: string | null; image?: string | null; description?: string | null; sortOrder?: number; status?: string }
   ) {
     if (input.parentId) {
       await this.assertCategoryParent(db, merchantId, input.parentId)
@@ -577,6 +682,7 @@ export class ProductsService {
         slug,
         parentId: input.parentId ?? null,
         image: input.image ?? null,
+        description: input.description ?? null,
         sortOrder: input.sortOrder ?? 0,
         status: input.status ?? 'active'
       })
@@ -600,7 +706,7 @@ export class ProductsService {
     db: DB,
     merchantId: string,
     id: string,
-    input: { name?: string; nameAr?: string | null; slug?: string; parentId?: string | null; image?: string; sortOrder?: number; status?: string }
+    input: { name?: string; nameAr?: string | null; slug?: string; parentId?: string | null; image?: string | null; description?: string | null; sortOrder?: number; status?: string }
   ) {
     const [cat] = await db
       .select()
@@ -621,6 +727,7 @@ export class ProductsService {
     if (input.name !== undefined) values.name = input.name
     if (input.nameAr !== undefined) values.nameAr = input.nameAr ?? null
     if (input.image !== undefined) values.image = input.image ?? null
+    if (input.description !== undefined) values.description = input.description ?? null
     if (input.sortOrder !== undefined) values.sortOrder = input.sortOrder
     if (input.status !== undefined) values.status = input.status
     if (input.parentId !== undefined) values.parentId = input.parentId ?? null
@@ -668,18 +775,29 @@ export class ProductsService {
     }
   }
 
-  static async deleteCategory(db: DB, merchantId: string, id: string) {
+  static async deleteCategory(db: DB, merchantId: string, id: string, reassignTo?: string | null) {
     const [cat] = await db
       .select()
       .from(categories)
       .where(and(eq(categories.id, id), eq(categories.merchantId, merchantId)))
     if (!cat) throw notFound('NOT_FOUND', 'Category not found')
 
+    let targetId: string | null = null
+    if (reassignTo) {
+      if (reassignTo === id) throw badRequest('BAD_REQUEST', 'Cannot reassign products to the deleted category')
+      const [target] = await db
+        .select({ id: categories.id })
+        .from(categories)
+        .where(and(eq(categories.id, reassignTo), eq(categories.merchantId, merchantId)))
+      if (!target) throw badRequest('BAD_REQUEST', 'Reassign target category does not exist')
+      targetId = target.id
+    }
+
     await db.transaction(async (tx) => {
-      await tx.update(products).set({ categoryId: null }).where(eq(products.categoryId, id))
+      await tx.update(products).set({ categoryId: targetId }).where(eq(products.categoryId, id))
       await tx.delete(categories).where(eq(categories.id, id))
     })
-    return ok({ deleted: true })
+    return ok({ deleted: true, reassignedTo: targetId })
   }
 
   /* -------------------------------- variants ------------------------------ */
@@ -1035,6 +1153,72 @@ export class ProductsService {
 
   /* ----------------------------- csv export ------------------------------ */
 
+  static csvHeaders(): string[] {
+    return [
+      'sku',
+      'name',
+      'name_ar',
+      'slug',
+      'description',
+      'description_ar',
+      'price',
+      'compare_at_price',
+      'cost',
+      'status',
+      'category_slug',
+      'track_inventory',
+      'low_stock_threshold',
+      'variant_sku',
+      'option_values',
+      'option_values_ar',
+      'inventory',
+      'visibility',
+      'barcode',
+      'tags',
+      'gtin',
+      'weight',
+      'meta_title',
+      'meta_description',
+      'sale_starts_at',
+      'sale_ends_at',
+      'publish_at'
+    ]
+  }
+
+  /** Header row + one sample data row for merchants building an import file. */
+  static csvTemplate(): string {
+    const sample = [
+      'SAMPLE-SKU',
+      'Sample T-Shirt',
+      'تيشيرت عينة',
+      'sample-t-shirt',
+      'A soft cotton t-shirt.',
+      'تيشيرت قطني ناعم.',
+      '29.99',
+      '39.99',
+      '12',
+      'active',
+      'apparel',
+      'true',
+      '5',
+      'SAMPLE-SKU-M',
+      '{"Size":"M"}',
+      '{}',
+      '10',
+      'both',
+      '6281234567890',
+      'summer|cotton',
+      '6281234567890',
+      '0.25',
+      'Sample T-Shirt — Store',
+      'Buy the soft Sample T-Shirt online.',
+      '2026-01-01T00:00:00.000Z',
+      '2026-02-01T00:00:00.000Z',
+      ''
+    ]
+    return toCsv(this.csvHeaders(), [sample])
+  }
+
   static async exportCsv(db: DB, merchantId: string): Promise<string> {
     const productRows = await db
       .select()
@@ -1057,25 +1241,10 @@ export class ProductsService {
       variantsByProduct.set(v.productId, [...(variantsByProduct.get(v.productId) ?? []), v])
     }
 
-    const headers = [
-      'sku',
-      'name',
-      'name_ar',
-      'slug',
-      'description',
-      'description_ar',
-      'price',
-      'compare_at_price',
-      'cost',
-      'status',
-      'category_slug',
-      'track_inventory',
-      'low_stock_threshold',
-      'variant_sku',
-      'option_values',
-      'option_values_ar',
-      'inventory'
-    ]
+    const headers = this.csvHeaders()
+
+    const iso = (d: Date | string | null | undefined) =>
+      d ? (d instanceof Date ? d.toISOString() : new Date(d).toISOString()) : ''
 
     const rows: unknown[][] = []
     for (const p of productRows) {
@@ -1094,9 +1263,21 @@ export class ProductsService {
         p.trackInventory,
         p.lowStockThreshold
       ]
+      const tail = [
+        (p as { visibility?: string }).visibility ?? 'both',
+        (p as { barcode?: string | null }).barcode ?? '',
+        ((p as { tags?: string[] }).tags ?? []).join('|'),
+        (p as { gtin?: string | null }).gtin ?? '',
+        (p as { weight?: number | string | null }).weight ?? '',
+        (p as { metaTitle?: string | null }).metaTitle ?? '',
+        (p as { metaDescription?: string | null }).metaDescription ?? '',
+        iso((p as { saleStartsAt?: Date | null }).saleStartsAt),
+        iso((p as { saleEndsAt?: Date | null }).saleEndsAt),
+        iso((p as { publishAt?: Date | null }).publishAt)
+      ]
       const vs = variantsByProduct.get(p.id) ?? []
       if (vs.length === 0) {
-        rows.push([...base, '', '', '', ''])
+        rows.push([...base, '', '', '', '', ...tail])
       } else {
         for (const v of vs) {
           rows.push([
@@ -1104,7 +1285,8 @@ export class ProductsService {
             v.sku ?? '',
             JSON.stringify(v.optionValues ?? {}),
             JSON.stringify(v.optionValuesAr ?? {}),
-            v.inventory
+            v.inventory,
+            ...tail
           ])
         }
       }
@@ -1114,7 +1296,8 @@ export class ProductsService {
 
   /* ----------------------------- csv import ------------------------------ */
 
-  static async importCsv(db: DB, merchantId: string, text: string) {
+  static async importCsv(db: DB, merchantId: string, text: string, opts?: { dryRun?: boolean }) {
+    const dryRun = opts?.dryRun ?? false
     const parsed = parseCsv(text)
     if (parsed.length < 2) {
       throw badRequest('BAD_REQUEST', 'CSV needs a header row and at least one data row')
@@ -1186,6 +1369,42 @@ export class ProductsService {
         if (categorySlug !== undefined) {
           categoryId = categorySlug ? (catBySlug.get(categorySlug) ?? null) : null
         }
+        const visibilityRaw = str(first.cells, 'visibility')?.toLowerCase()
+        const visibility =
+          visibilityRaw && ['both', 'pos', 'website'].includes(visibilityRaw) ? visibilityRaw : undefined
+        if (header.includes('visibility') && str(first.cells, 'visibility') && !visibility) {
+          throw new RowError('"visibility" must be one of both | pos | website')
+        }
+        const barcode = str(first.cells, 'barcode')
+        const tagsRaw = str(first.cells, 'tags')
+        const tags =
+          tagsRaw === undefined
+            ? undefined
+            : tagsRaw
+                .split('|')
+                .map((t) => t.trim())
+                .filter(Boolean)
+        const gtin = str(first.cells, 'gtin')
+        if (gtin && gtin.length > 32) throw new RowError('"gtin" must be at most 32 characters')
+        const weight = num(first.cells, 'weight')
+        if (weight !== null && weight < 0) throw new RowError('"weight" must be a non-negative number')
+        const metaTitle = str(first.cells, 'meta_title')
+        const metaDescription = str(first.cells, 'meta_description')
+        const date = (cells: string[], name: string): Date | null | undefined => {
+          const idx = col(name)
+          if (idx === -1) return undefined
+          const raw = (cells[idx] ?? '').trim()
+          if (raw === '') return null
+          const d = new Date(raw)
+          if (Number.isNaN(d.getTime())) throw new RowError(`Invalid date in "${name}": ${raw}`)
+          return d
+        }
+        const saleStartsAt = date(first.cells, 'sale_starts_at')
+        const saleEndsAt = date(first.cells, 'sale_ends_at')
+        const publishAt = date(first.cells, 'publish_at')
+        if (saleStartsAt && saleEndsAt && saleEndsAt < saleStartsAt) {
+          throw new RowError('"sale_ends_at" must be after "sale_starts_at"')
+        }
 
         const sku = str(first.cells, 'sku') || null
         let existing: typeof products.$inferSelect | undefined
@@ -1199,6 +1418,35 @@ export class ProductsService {
         // One transaction per product block: the product upsert AND all its
         // variant writes commit or roll back together — a mid-block failure can
         // no longer leave a half-imported product (P1-04).
+        // With ?dryRun=1 nothing is written: rows are validated only and the
+        // would-be created/updated tallies are returned.
+        const validateVariantRows = () => {
+          for (const { cells } of lines) {
+            for (const key of ['option_values', 'option_values_ar'] as const) {
+              const raw = str(cells, key)
+              if (raw) {
+                try {
+                  const p = JSON.parse(raw)
+                  if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error()
+                } catch {
+                  throw new RowError(`Invalid ${key} JSON on a "${name}" row`)
+                }
+              }
+            }
+            const inv = num(cells, 'inventory')
+            if (inv !== null && inv < 0) {
+              throw new RowError(`"inventory" cannot be negative on a "${name}" row`)
+            }
+          }
+        }
+
+        if (dryRun) {
+          validateVariantRows()
+          if (existing) updated++
+          else created++
+          continue
+        }
+
         const productId = await db.transaction(async (tx) => {
           if (existing) {
             const patch: Partial<typeof products.$inferInsert> = {}
@@ -1214,6 +1462,16 @@ export class ProductsService {
             if (categoryId !== undefined) patch.categoryId = categoryId
             if (trackInventory !== undefined) patch.trackInventory = trackInventory
             if (lowStockThreshold !== null) patch.lowStockThreshold = lowStockThreshold ?? 5
+            if (visibility !== undefined) patch.visibility = visibility as 'both' | 'pos' | 'website'
+            if (header.includes('barcode') && barcode !== undefined) patch.barcode = barcode || null
+            if (tags !== undefined) patch.tags = tags
+            if (header.includes('gtin') && gtin !== undefined) patch.gtin = gtin || null
+            if (weight !== null) patch.weight = weight
+            if (header.includes('meta_title') && metaTitle !== undefined) patch.metaTitle = metaTitle || null
+            if (header.includes('meta_description') && metaDescription !== undefined) patch.metaDescription = metaDescription || null
+            if (saleStartsAt !== undefined) patch.saleStartsAt = saleStartsAt
+            if (saleEndsAt !== undefined) patch.saleEndsAt = saleEndsAt
+            if (publishAt !== undefined) patch.publishAt = publishAt
             if (Object.keys(patch).length > 0) {
               await tx.update(products).set(patch).where(eq(products.id, existing!.id))
             }
@@ -1237,7 +1495,17 @@ export class ProductsService {
               categoryId: categoryId ?? null,
               trackInventory: trackInventory ?? false,
               lowStockThreshold: lowStockThreshold ?? 5,
-              status
+              status,
+              visibility: (visibility ?? 'both') as 'both' | 'pos' | 'website',
+              barcode: barcode || null,
+              tags: tags ?? [],
+              gtin: gtin || null,
+              weight: weight ?? null,
+              metaTitle: metaTitle || null,
+              metaDescription: metaDescription || null,
+              saleStartsAt: saleStartsAt ?? null,
+              saleEndsAt: saleEndsAt ?? null,
+              publishAt: publishAt ?? null
             })
             .returning()
           created++
@@ -1334,6 +1602,6 @@ export class ProductsService {
       }
     }
 
-    return ok({ created, updated, failed: errors.length, errors })
+    return ok({ created, updated, failed: errors.length, errors, dryRun })
   }
 }

@@ -169,6 +169,17 @@
 		}
 	}
 
+	async function removeWarehouse(w: Warehouse) {
+		if (!confirm(`Delete warehouse "${w.name}"? Only empty warehouses can be deleted.`)) return
+		try {
+			await api.delete<{ success: boolean }>(`/api/warehouses/${w.id}`)
+			toast.success('Warehouse deleted')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
 	const addressLine = (a: Address | null | undefined) => {
 		if (!a) return 'No address'
 		const parts = [a.city, a.state, a.country].filter(Boolean)
@@ -262,6 +273,7 @@
 						<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openStock(w)}>View stock</button>
 						{#if canWrite()}
 							<button class="rounded p-1.5 text-xs font-medium text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => openEdit(w)}>Edit</button>
+							<button class="rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => removeWarehouse(w)}>Delete</button>
 						{/if}
 					</div>
 				</Card>

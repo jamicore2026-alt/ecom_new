@@ -29,11 +29,12 @@
 	let prepTime = $state('15')
 	let station = $state('Grill')
 	let visible = $state(true)
+	let menuSortOrder = $state('0')
 
 	let groupModal = $state<null | { mode: 'create' } | { mode: 'edit'; group: MenuModifierGroup }>(null)
-	let groupForm = $state({ name: '', nameAr: '', minSelections: '1', maxSelections: '1', required: false })
+	let groupForm = $state({ name: '', nameAr: '', minSelections: '1', maxSelections: '1', required: false, sortOrder: '0' })
 	let modifierModal = $state<null | { mode: 'add'; groupId: string } | { mode: 'edit'; groupId: string; modifier: MenuModifier }>(null)
-	let modifierForm = $state({ name: '', nameAr: '', priceAdjustment: '0', available: true })
+	let modifierForm = $state({ name: '', nameAr: '', priceAdjustment: '0', available: true, sortOrder: '0' })
 
 	const catById = $derived(new Map(categories.map((c) => [c.id, c])))
 
@@ -126,6 +127,7 @@
 				preparationTimeMin: Number(prepTime) || 0,
 				kitchenStation: station,
 				available: visible,
+				sortOrder: Number(menuSortOrder) || 0,
 				status: 'active'
 			})
 			toast.success('Menu item added')
@@ -198,7 +200,7 @@
 
 	function openCreateGroup() {
 		groupModal = { mode: 'create' }
-		groupForm = { name: '', nameAr: '', minSelections: '1', maxSelections: '1', required: false }
+		groupForm = { name: '', nameAr: '', minSelections: '1', maxSelections: '1', required: false, sortOrder: '0' }
 	}
 
 	function openEditGroup(group: MenuModifierGroup) {
@@ -208,7 +210,8 @@
 			nameAr: group.nameAr ?? '',
 			minSelections: String(group.minSelections),
 			maxSelections: String(group.maxSelections),
-			required: group.required
+			required: group.required,
+			sortOrder: String(group.sortOrder ?? 0)
 		}
 	}
 
@@ -219,7 +222,8 @@
 			nameAr: groupForm.nameAr.trim() || null,
 			minSelections: Number(groupForm.minSelections) || 0,
 			maxSelections: Number(groupForm.maxSelections) || 1,
-			required: groupForm.required
+			required: groupForm.required,
+			sortOrder: Number(groupForm.sortOrder) || 0
 		}
 		try {
 			if (groupModal?.mode === 'edit') {
@@ -249,7 +253,7 @@
 
 	function openAddModifier(group: MenuModifierGroup) {
 		modifierModal = { mode: 'add', groupId: group.id }
-		modifierForm = { name: '', nameAr: '', priceAdjustment: '0', available: true }
+		modifierForm = { name: '', nameAr: '', priceAdjustment: '0', available: true, sortOrder: '0' }
 	}
 
 	function openEditModifier(group: MenuModifierGroup, modifier: MenuModifier) {
@@ -258,7 +262,8 @@
 			name: modifier.name,
 			nameAr: modifier.nameAr ?? '',
 			priceAdjustment: String(modifier.priceAdjustment),
-			available: modifier.available ?? true
+			available: modifier.available ?? true,
+			sortOrder: String(modifier.sortOrder ?? 0)
 		}
 	}
 
@@ -268,7 +273,8 @@
 			name: modifierForm.name.trim(),
 			nameAr: modifierForm.nameAr.trim() || null,
 			priceAdjustment: Number(modifierForm.priceAdjustment) || 0,
-			available: modifierForm.available
+			available: modifierForm.available,
+			sortOrder: Number(modifierForm.sortOrder) || 0
 		}
 		try {
 			if (modifierModal?.mode === 'edit') {
@@ -690,6 +696,10 @@
 					<label for="menu-prep" class="field-label">Prep (min)</label>
 					<input id="menu-prep" class="field" bind:value={prepTime} type="number" min="0" />
 				</div>
+				<div class="w-28">
+					<label for="menu-sort" class="field-label">Sort order</label>
+					<input id="menu-sort" class="field" bind:value={menuSortOrder} type="number" step="1" />
+				</div>
 			</div>
 			<label class="flex items-center gap-2 text-sm text-on-surface-variant">
 				<input type="checkbox" bind:checked={visible} class="field-check" />
@@ -729,6 +739,10 @@
 				<input type="checkbox" bind:checked={groupForm.required} class="field-check" />
 				Required — customer must choose from this group
 			</label>
+			<div>
+				<label for="group-sort" class="field-label">Sort order</label>
+				<input id="group-sort" class="field" type="number" step="1" bind:value={groupForm.sortOrder} />
+			</div>
 			<div class="flex justify-end gap-2 pt-2">
 				<Button variant="ghost" onclick={() => (groupModal = null)}>Cancel</Button>
 				<Button onclick={saveGroup}>Save</Button>
@@ -752,6 +766,10 @@
 			<div>
 				<label for="modifier-price" class="field-label">Price adjustment</label>
 				<input id="modifier-price" class="field" type="number" step="0.01" bind:value={modifierForm.priceAdjustment} />
+			</div>
+			<div>
+				<label for="modifier-sort" class="field-label">Sort order</label>
+				<input id="modifier-sort" class="field" type="number" step="1" bind:value={modifierForm.sortOrder} />
 			</div>
 			<label class="flex items-center gap-2 text-sm text-on-surface-variant">
 				<input type="checkbox" bind:checked={modifierForm.available} class="field-check" />

@@ -37,6 +37,7 @@ export const NAV_ITEMS: NavItem[] = [
 	{ label: 'Inventory', key: 'nav.inventory', route: '/inventory', icon: 'warehouse', group: 'Catalog', module: 'inventory', permission: ['inventory.read', 'inventory:write'] },
 	{ label: 'Warehouses', key: 'nav.warehouses', route: '/warehouses', icon: 'warehouse', group: 'Catalog', module: 'inventory', permission: ['inventory.read', 'inventory:write'] },
 	{ label: 'Transfers', key: 'nav.transfers', route: '/transfers', icon: 'swap_horiz', group: 'Catalog', module: 'inventory', permission: ['inventory.read', 'inventory:write'] },
+	{ label: 'Stocktake', route: '/inventory/stocktake', icon: 'fact_check', group: 'Catalog', module: 'inventory', permission: ['inventory.read', 'inventory:write'] },
 	{ label: 'Procurement', route: '/procurement', icon: 'local_shipping', group: 'Catalog', module: 'inventory', permission: ['inventory.read', 'inventory.manage'] },
 	{ label: 'Production', route: '/production', icon: 'factory', group: 'Catalog', module: 'inventory', permission: ['inventory.read', 'inventory.manage'] },
 	// Marketing — demand, loyalty and content

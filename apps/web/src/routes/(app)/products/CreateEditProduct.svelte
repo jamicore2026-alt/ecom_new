@@ -30,7 +30,31 @@
 	let lowStockThreshold = $state('5')
 	let status = $state('active')
 	let visibility = $state('both')
+	let tags = $state('')
+	let weight = $state('')
+	let gtin = $state('')
+	let metaTitle = $state('')
+	let metaDescription = $state('')
+	let saleStartsAt = $state('')
+	let saleEndsAt = $state('')
+	let publishAt = $state('')
 	let images = $state<ProductImage[]>([])
+
+	/** ISO instant → datetime-local value (local time, no seconds). */
+	function toLocalInput(iso: string | null | undefined): string {
+		if (!iso) return ''
+		const d = new Date(iso)
+		if (Number.isNaN(d.getTime())) return ''
+		const pad = (n: number) => String(n).padStart(2, '0')
+		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+	}
+
+	/** datetime-local value → ISO instant (or null when empty). */
+	function toIsoOrNull(v: string): string | null {
+		if (!v.trim()) return null
+		const d = new Date(v)
+		return Number.isNaN(d.getTime()) ? null : d.toISOString()
+	}
 
 	// Sync the form from the product prop before first paint and whenever a
 	// different product is passed while mounted (fresh mount per modal open
@@ -53,6 +77,14 @@
 			lowStockThreshold = String(product?.lowStockThreshold ?? 5)
 			status = product?.status ?? 'active'
 			visibility = product?.visibility ?? 'both'
+			tags = (product?.tags ?? []).join(', ')
+			weight = product?.weight != null ? String(product.weight) : ''
+			gtin = product?.gtin ?? ''
+			metaTitle = product?.metaTitle ?? ''
+			metaDescription = product?.metaDescription ?? ''
+			saleStartsAt = toLocalInput(product?.saleStartsAt)
+			saleEndsAt = toLocalInput(product?.saleEndsAt)
+			publishAt = toLocalInput(product?.publishAt)
 			images = [...(product?.images ?? [])]
 			fieldErrors = {}
 		}
@@ -70,13 +102,24 @@
 				description: description || undefined,
 				descriptionAr: descriptionAr || undefined,
 				price: Number(price),
-				compareAtPrice: compareAtPrice ? Number(compareAtPrice) : undefined,
+				compareAtPrice: compareAtPrice ? Number(compareAtPrice) : null,
 				cost: Number(cost || 0),
-				categoryId: category || undefined,
+				categoryId: category || null,
 				trackInventory,
 				lowStockThreshold: Number(lowStockThreshold || 0),
 				status,
 				visibility,
+				tags: tags
+					.split(',')
+					.map((t) => t.trim())
+					.filter(Boolean),
+				weight: weight ? Number(weight) : null,
+				gtin: gtin || null,
+				metaTitle: metaTitle || null,
+				metaDescription: metaDescription || null,
+				saleStartsAt: toIsoOrNull(saleStartsAt),
+				saleEndsAt: toIsoOrNull(saleEndsAt),
+				publishAt: toIsoOrNull(publishAt),
 				images: images.map((img, i) => ({
 					url: img.url,
 					altText: img.altText || undefined,
@@ -138,6 +181,7 @@
 			<div>
 				<label for="compare-at-price" class="field-label">Compare-at price</label>
 				<input id="compare-at-price" type="number" step="0.01" min="0" class="field" bind:value={compareAtPrice} />
+				<p class="mt-1 text-xs text-secondary">Sale price applies only inside the sale window below.</p>
 			</div>
 			<div>
 				<label for="cost" class="field-label">Cost</label>
@@ -187,6 +231,43 @@
 					<input id="low-stock-threshold" type="number" min="0" class="field max-w-40" bind:value={lowStockThreshold} />
 				</div>
 			{/if}
+
+			<div class="sm:col-span-2 grid gap-4 sm:grid-cols-2">
+				<div>
+					<label for="sale-starts" class="field-label">Sale starts at</label>
+					<input id="sale-starts" type="datetime-local" class="field" bind:value={saleStartsAt} />
+				</div>
+				<div>
+					<label for="sale-ends" class="field-label">Sale ends at</label>
+					<input id="sale-ends" type="datetime-local" class="field" bind:value={saleEndsAt} />
+				</div>
+			</div>
+			<p class="-mt-2 text-xs text-secondary sm:col-span-2">Empty bounds are open-ended. Outside the window the price reverts to the compare-at price.</p>
+			<div>
+				<label for="publish-at" class="field-label">Publish at (scheduled)</label>
+				<input id="publish-at" type="datetime-local" class="field" bind:value={publishAt} />
+				<p class="mt-1 text-xs text-secondary">Empty = visible now.</p>
+			</div>
+			<div>
+				<label for="weight" class="field-label">Weight (kg)</label>
+				<input id="weight" type="number" step="0.001" min="0" class="field" bind:value={weight} />
+			</div>
+			<div>
+				<label for="gtin" class="field-label">GTIN</label>
+				<input id="gtin" class="field" maxlength="32" bind:value={gtin} placeholder="EAN / UPC / ISBN" />
+			</div>
+			<div>
+				<label for="tags" class="field-label">Tags (comma separated)</label>
+				<input id="tags" class="field" bind:value={tags} placeholder="summer, cotton, new" />
+			</div>
+			<div>
+				<label for="meta-title" class="field-label">SEO title</label>
+				<input id="meta-title" class="field" maxlength="255" bind:value={metaTitle} placeholder="Defaults to product name" />
+			</div>
+			<div class="sm:col-span-2">
+				<label for="meta-description" class="field-label">SEO description</label>
+				<textarea id="meta-description" rows="2" class="field" bind:value={metaDescription} placeholder="Defaults to product description"></textarea>
+			</div>
 
 			<div>
 				<label for="status" class="field-label">Status</label>

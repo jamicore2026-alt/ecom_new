@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import {
+  goodsReceipts,
+  inventoryLogs,
   stockTransfers,
   warehouseInventory,
   warehouses,
@@ -9,7 +11,7 @@ import {
   products
 } from '../../database/schema'
 import { ok } from '../../shared/response'
-import { badRequest, notFound } from '../../shared/errors'
+import { badRequest, conflict, forbidden, notFound } from '../../shared/errors'
 
 /** Drizzle transaction type matching `DB['transaction'](...)` callbacks. */
 type Tx = Parameters<Parameters<DB['transaction']>[0]>[0]
@@ -93,7 +95,7 @@ export class WarehousesService {
     }
   ) {
     await this.get(db, merchantId, id)
-    if (input.isDefault) {
+    if (input.isDefault === true) {
       await db
         .update(warehouses)
         .set({ isDefault: false })
@@ -105,12 +107,35 @@ export class WarehousesService {
         ...(input.name !== undefined && { name: input.name }),
         ...(input.code !== undefined && { code: input.code }),
         ...(input.address !== undefined && { address: input.address }),
-        ...(input.isDefault !== undefined && { isDefault: true }),
+        ...(input.isDefault !== undefined && { isDefault: input.isDefault }),
         ...(input.status !== undefined && { status: input.status })
       })
       .where(and(eq(warehouses.id, id), eq(warehouses.merchantId, merchantId)))
       .returning()
     return ok(row)
+  }
+
+  static async remove(db: DB, merchantId: string, id: string) {
+    const [row] = await db
+      .select()
+      .from(warehouses)
+      .where(and(eq(warehouses.id, id), eq(warehouses.merchantId, merchantId)))
+    if (!row) throw notFound('WAREHOUSE_NOT_FOUND', 'Warehouse not found')
+    const held = await db
+      .select({ total: sql<number>`coalesce(sum(${warehouseInventory.quantity}), 0)` })
+      .from(warehouseInventory)
+      .where(eq(warehouseInventory.warehouseId, id))
+    if (Number(held[0]?.total ?? 0) > 0) {
+      throw badRequest('WAREHOUSE_NOT_EMPTY', 'Cannot delete a warehouse that still holds stock')
+    }
+    const [receipt] = await db
+      .select({ id: goodsReceipts.id })
+      .from(goodsReceipts)
+      .where(eq(goodsReceipts.warehouseId, id))
+      .limit(1)
+    if (receipt) throw badRequest('WAREHOUSE_HAS_RECEIPTS', 'Cannot delete a warehouse referenced by goods receipts')
+    await db.delete(warehouses).where(and(eq(warehouses.id, id), eq(warehouses.merchantId, merchantId)))
+    return ok({ deleted: true, id })
   }
 
   static async listInventory(db: DB, merchantId: string, warehouseId: string) {
@@ -145,7 +170,20 @@ export class WarehousesService {
     return ok({ warehouse, items: rows, skuCount: skus, stockValue })
   }
 
-  /** Set absolute stock for a variant in a warehouse. */
+  /**
+   * Set absolute stock for a variant in a warehouse.
+   *
+   * Ledger link: writes exactly one `inventoryLogs` row (reason
+   * 'adjustment', reference = warehouse id) with the warehouse-level
+   * before/after so every absolute set is auditable via
+   * GET /api/inventory/history. The merchant-global `productVariants`
+   * ledger is intentionally left untouched here: warehouse rows are the
+   * operational detail and the global pool is the unallocated remainder
+   * (see transferLineTx availability math). Changing global semantics to
+   * "sum of warehouses" would silently break checkout, procurement
+   * receipts and every historical test that treats global as
+   * authoritative — hence log-only + this comment.
+   */
   static async setInventory(
     db: DB,
     merchantId: string,
@@ -165,23 +203,53 @@ export class WarehousesService {
       .where(eq(productVariants.id, variantId))
     if (!variant) throw notFound('VARIANT_NOT_FOUND', 'Variant not found')
 
-    await db
-      .insert(warehouseInventory)
-      .values({
-        merchantId,
-        warehouseId,
-        variantId,
-        quantity: Math.max(0, quantity)
-      })
-      .onConflictDoUpdate({
-        target: [warehouseInventory.warehouseId, warehouseInventory.variantId],
-        set: { quantity: Math.max(0, quantity), updatedAt: new Date() }
-      })
+    const target = Math.max(0, quantity)
+    const result = await db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ quantity: warehouseInventory.quantity })
+        .from(warehouseInventory)
+        .where(
+          and(
+            eq(warehouseInventory.warehouseId, warehouseId),
+            eq(warehouseInventory.variantId, variantId)
+          )
+        )
+        .for('update')
+      const before = existing?.quantity ?? 0
 
-    return ok({ warehouseId, variantId, quantity })
+      await tx
+        .insert(warehouseInventory)
+        .values({ merchantId, warehouseId, variantId, quantity: target })
+        .onConflictDoUpdate({
+          target: [warehouseInventory.warehouseId, warehouseInventory.variantId],
+          set: { quantity: target, updatedAt: new Date() }
+        })
+
+      const [log] = await tx
+        .insert(inventoryLogs)
+        .values({
+          merchantId,
+          variantId,
+          change: target - before,
+          beforeValue: before,
+          afterValue: target,
+          reason: 'adjustment',
+          reference: warehouseId
+        })
+        .returning()
+
+      return { before, logId: log.id }
+    })
+
+    return ok({ warehouseId, variantId, quantity: target, beforeValue: result.before, logId: result.logId })
   }
 
-  /** Transfer stock between warehouses. */
+  /**
+   * Transfer stock between warehouses. Instant by default (moves stock
+   * atomically, status 'completed'). With `deferred: true` creates an
+   * 'in_transit' row WITHOUT moving stock; a later `receiveTransfer`
+   * completes the movement, `cancelTransfer` voids it.
+   */
   static async transfer(
     db: DB,
     merchantId: string,
@@ -190,12 +258,30 @@ export class WarehousesService {
       toWarehouseId: string
       variantId: string
       quantity: number
+      deferred?: boolean
     }
   ) {
     if (input.quantity <= 0) throw badRequest('INVALID_QUANTITY', 'Quantity must be positive')
 
     const { from, to } = await this.resolveWarehouses(db, merchantId, input.fromWarehouseId, input.toWarehouseId)
     const variant = await this.resolveTransferVariant(db, merchantId, input.variantId)
+
+    if (input.deferred) {
+      const [row] = await db
+        .insert(stockTransfers)
+        .values({
+          merchantId,
+          kind: 'manual',
+          groupKey: null,
+          fromWarehouseId: from.id,
+          toWarehouseId: to.id,
+          variantId: variant.variantId,
+          quantity: input.quantity,
+          status: 'in_transit'
+        })
+        .returning()
+      return ok({ transferred: false, deferred: true, id: row.id, status: 'in_transit', quantity: input.quantity, kind: 'manual' })
+    }
 
     await db.transaction(async (tx) => {
       await this.transferLineTx(tx, merchantId, {
@@ -209,6 +295,105 @@ export class WarehousesService {
     })
 
     return ok({ transferred: true, quantity: input.quantity, kind: 'manual' })
+  }
+
+  /** Complete a deferred (`in_transit`) transfer: asserts status then moves stock atomically. */
+  static async receiveTransfer(db: DB, merchantId: string, id: string) {
+    const [row] = await db
+      .select()
+      .from(stockTransfers)
+      .where(and(eq(stockTransfers.id, id), eq(stockTransfers.merchantId, merchantId)))
+    if (!row) throw notFound('TRANSFER_NOT_FOUND', 'Transfer not found')
+    if (row.status !== 'in_transit') {
+      throw conflict('BAD_TRANSFER_STATUS', `Only in_transit transfers can be received (current: ${row.status})`)
+    }
+    if (!row.fromWarehouseId || !row.toWarehouseId) {
+      throw badRequest('TRANSFER_NO_WAREHOUSES', 'Transfer is missing its warehouses')
+    }
+    const variant = await this.resolveTransferVariant(db, merchantId, row.variantId)
+
+    await db.transaction(async (tx) => {
+      // Re-lock + re-validate availability at receive time, then move.
+      await this.moveStockTx(tx, merchantId, {
+        variant,
+        fromWarehouseId: row.fromWarehouseId as string,
+        toWarehouseId: row.toWarehouseId as string,
+        quantity: row.quantity
+      })
+      await tx
+        .update(stockTransfers)
+        .set({ status: 'completed', completedAt: new Date() })
+        .where(eq(stockTransfers.id, id))
+    })
+    return ok({ received: true, id, status: 'completed' })
+  }
+
+  /** Void a deferred (`in_transit`) transfer with no stock movement. */
+  static async cancelTransfer(db: DB, merchantId: string, id: string) {
+    const [row] = await db
+      .select()
+      .from(stockTransfers)
+      .where(and(eq(stockTransfers.id, id), eq(stockTransfers.merchantId, merchantId)))
+    if (!row) throw notFound('TRANSFER_NOT_FOUND', 'Transfer not found')
+    if (row.status !== 'in_transit') {
+      throw conflict('BAD_TRANSFER_STATUS', `Only in_transit transfers can be cancelled (current: ${row.status})`)
+    }
+    const [updated] = await db
+      .update(stockTransfers)
+      .set({ status: 'cancelled' })
+      .where(eq(stockTransfers.id, id))
+      .returning()
+    return ok({ cancelled: true, id, status: updated.status })
+  }
+
+  /**
+   * Reverse a completed transfer (admin): moves the quantity back
+   * atomically, marks the original 'reversed' and records the back-move as
+   * a completed `reversal` ledger row.
+   */
+  static async reverseTransfer(db: DB, merchantId: string, id: string, isAdmin: boolean) {
+    if (!isAdmin) throw forbidden('Only admins can reverse completed transfers')
+    const [row] = await db
+      .select()
+      .from(stockTransfers)
+      .where(and(eq(stockTransfers.id, id), eq(stockTransfers.merchantId, merchantId)))
+    if (!row) throw notFound('TRANSFER_NOT_FOUND', 'Transfer not found')
+    if (row.status !== 'completed') {
+      throw conflict('BAD_TRANSFER_STATUS', `Only completed transfers can be reversed (current: ${row.status})`)
+    }
+    if (!row.fromWarehouseId || !row.toWarehouseId) {
+      throw badRequest('TRANSFER_NO_WAREHOUSES', 'Transfer is missing its warehouses')
+    }
+    const variant = await this.resolveTransferVariant(db, merchantId, row.variantId)
+    let reversalId: string | null = null
+    await db.transaction(async (tx) => {
+      // Move back: destination -> source. Availability is validated against
+      // the destination's current holdings/pool, so a reversal can fail
+      // with INSUFFICIENT_STOCK if the stock has since been consumed.
+      await this.moveStockTx(tx, merchantId, {
+        variant,
+        fromWarehouseId: row.toWarehouseId as string,
+        toWarehouseId: row.fromWarehouseId as string,
+        quantity: row.quantity
+      })
+      await tx.update(stockTransfers).set({ status: 'reversed' }).where(eq(stockTransfers.id, id))
+      const [reversal] = await tx
+        .insert(stockTransfers)
+        .values({
+          merchantId,
+          kind: 'reversal',
+          groupKey: row.groupKey,
+          fromWarehouseId: row.toWarehouseId,
+          toWarehouseId: row.fromWarehouseId,
+          variantId: row.variantId,
+          quantity: row.quantity,
+          status: 'completed',
+          completedAt: new Date()
+        })
+        .returning()
+      reversalId = reversal.id
+    })
+    return ok({ reversed: true, id, reversalId, status: 'reversed' })
   }
 
   /**
@@ -333,23 +518,14 @@ export class WarehousesService {
   }
 
   /**
-   * Move a single line inside an open transaction. Locks the variant row so a
-   * concurrent move of the same variant (bulk, single, or storefront checkout)
-   * serializes against it, then re-validates availability. When the source
-   * warehouse has no allocation row, the unallocated global pool is the source:
-   * available = global inventory − allocations held in every OTHER warehouse.
+   * Pure stock movement inside an open transaction (no ledger insert).
+   * Shared by instant transfers, deferred receive and reversal so all
+   * three validate availability identically.
    */
-  private static async transferLineTx(
+  private static async moveStockTx(
     tx: Tx,
     merchantId: string,
-    line: {
-      variant: TransferVariant
-      fromWarehouseId: string
-      toWarehouseId: string
-      quantity: number
-      kind: 'manual' | 'bulk'
-      groupKey: string | null
-    }
+    line: { variant: TransferVariant; fromWarehouseId: string; toWarehouseId: string; quantity: number }
   ) {
     // Serialize per-variant moves (including storefront checkout locks) by
     // locking the variant row itself.
@@ -412,6 +588,28 @@ export class WarehousesService {
           updatedAt: new Date()
         }
       })
+  }
+
+  /**
+   * Move a single line inside an open transaction. Locks the variant row so a
+   * concurrent move of the same variant (bulk, single, or storefront checkout)
+   * serializes against it, then re-validates availability. When the source
+   * warehouse has no allocation row, the unallocated global pool is the source:
+   * available = global inventory − allocations held in every OTHER warehouse.
+   */
+  private static async transferLineTx(
+    tx: Tx,
+    merchantId: string,
+    line: {
+      variant: TransferVariant
+      fromWarehouseId: string
+      toWarehouseId: string
+      quantity: number
+      kind: 'manual' | 'bulk'
+      groupKey: string | null
+    }
+  ) {
+    await this.moveStockTx(tx, merchantId, line)
 
     // The ledger row lives in the same transaction as the movement so a
     // partial failure can never leave moved stock without a record.

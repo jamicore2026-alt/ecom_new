@@ -17,30 +17,38 @@
 
 	let name = $state('')
 	let nameAr = $state('')
+	let slug = $state('')
 	let parentId = $state('')
 	let sortOrder = $state('0')
 	let status = $state('active')
 	let image = $state('')
+	let description = $state('')
 	let editing = $state<Category | null>(null)
+	let deleteTarget = $state<Category | null>(null)
+	let reassignTo = $state('')
 
 	function startEdit(c: Category) {
 		editing = c
 		name = c.name
 		nameAr = c.nameAr ?? ''
+		slug = c.slug ?? ''
 		parentId = c.parentId ?? ''
 		sortOrder = String(c.sortOrder)
 		status = c.status
 		image = c.image ?? ''
+		description = c.description ?? ''
 	}
 
 	function reset() {
 		editing = null
 		name = ''
 		nameAr = ''
+		slug = ''
 		parentId = ''
 		sortOrder = '0'
 		status = 'active'
 		image = ''
+		description = ''
 	}
 
 	async function submit() {
@@ -50,10 +58,12 @@
 			const body: Record<string, unknown> = {
 				name,
 				nameAr: nameAr === '' ? null : nameAr,
+				slug: slug || undefined,
 				parentId: parentId || null,
 				sortOrder: Number(sortOrder || 0),
 				status,
-				image: image || undefined
+				image: image || null,
+				description: description || null
 			}
 			if (editing) {
 				await api.put<{ success: boolean }>(`/api/categories/${editing.id}`, body)
@@ -76,10 +86,21 @@
 	}
 
 	async function remove(c: Category) {
-		if (!confirm(`Delete category "${c.name}"? Products will be uncategorized.`)) return
+		deleteTarget = c
+		reassignTo = ''
+	}
+
+	async function confirmDelete() {
+		if (!deleteTarget) return
 		try {
-			await api.delete<{ success: boolean }>(`/api/categories/${c.id}`)
-			toast.success('Category deleted')
+			const path = reassignTo
+				? `/api/categories/${deleteTarget.id}?reassignTo=${encodeURIComponent(reassignTo)}`
+				: `/api/categories/${deleteTarget.id}`
+			await api.delete<{ success: boolean }>(path)
+			toast.success(
+				reassignTo ? 'Category deleted — products moved' : 'Category deleted — products uncategorized'
+			)
+			deleteTarget = null
 			onSaved()
 		} catch (e) {
 			toast.error((e as Error).message)
@@ -110,6 +131,18 @@
 				<div>
 					<label for="cat-name-ar" class="field-label">Name (Arabic)</label>
 					<input id="cat-name-ar" class="field" bind:value={nameAr} dir="rtl" />
+				</div>
+				<div>
+					<label for="cat-slug" class="field-label">Slug</label>
+					<input id="cat-slug" class="field" bind:value={slug} placeholder="Auto-generated from name" />
+				</div>
+				<div>
+					<label for="cat-image" class="field-label">Image URL</label>
+					<input id="cat-image" class="field" bind:value={image} placeholder="https://…" />
+				</div>
+				<div class="sm:col-span-2">
+					<label for="cat-description" class="field-label">Description</label>
+					<textarea id="cat-description" rows="2" class="field" bind:value={description}></textarea>
 				</div>
 				<div>
 					<label for="cat-parent" class="field-label">Parent</label>
@@ -170,3 +203,26 @@
 		</ul>
 	</div>
 </Modal>
+
+{#if deleteTarget}
+	<Modal title={`Delete "${deleteTarget.name}"?`} open={true} width="sm" onClose={() => (deleteTarget = null)}>
+		<div class="space-y-4">
+			<p class="text-sm text-secondary">Move its products to another category, or leave them uncategorized.</p>
+			<div>
+				<label for="cat-reassign" class="field-label">Reassign products to</label>
+				<select id="cat-reassign" class="field" bind:value={reassignTo}>
+					<option value="">None (uncategorized)</option>
+					{#each flatten(categories) as c (c.id)}
+						{#if c.id !== deleteTarget.id}
+							<option value={c.id}>{'—'.repeat(c.depth + 1)} {c.name}</option>
+						{/if}
+					{/each}
+				</select>
+			</div>
+			<div class="flex justify-end gap-2 pt-2">
+				<Button variant="secondary" onclick={() => (deleteTarget = null)}>Cancel</Button>
+				<Button onclick={confirmDelete}>Delete category</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}

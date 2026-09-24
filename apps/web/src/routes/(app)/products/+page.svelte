@@ -25,15 +25,47 @@
 	let search = $state('')
 	let status = $state('')
 	let categoryId = $state('')
+	let minPrice = $state('')
+	let maxPrice = $state('')
+	let lowStockOnly = $state(false)
 	let page = $state(1)
+
+	// client-side sorting (API has no sort param — toggling here)
+	let sortKey = $state<'price' | 'stock' | 'updated' | null>(null)
+	let sortDir = $state<1 | -1>(1)
+
+	const sortedItems = $derived.by(() => {
+		if (!sortKey) return items
+		const dir = sortDir
+		return [...items].sort((a, b) => {
+			if (sortKey === 'price') return (a.price - b.price) * dir
+			if (sortKey === 'stock') return (a.stock - b.stock) * dir
+			return (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()) * dir
+		})
+	})
+
+	function toggleSort(key: 'price' | 'stock' | 'updated') {
+		if (sortKey !== key) {
+			sortKey = key
+			sortDir = 1
+		} else {
+			sortDir = sortDir === 1 ? -1 : 1
+		}
+	}
+
+	function sortArrow(key: 'price' | 'stock' | 'updated'): string {
+		if (sortKey !== key) return ''
+		return sortDir === 1 ? ' ↑' : ' ↓'
+	}
 
 	// selection + bulk
 	let selected = $state<string[]>([])
 	let bulkModal = $state(false)
-	let bulkAction = $state<'set_status' | 'set_category' | 'multiply_price' | 'set_inventory'>('set_status')
+	let bulkAction = $state<'set_status' | 'set_category' | 'multiply_price' | 'set_inventory' | 'set_visibility' | 'set_compare_at' | 'clear_sale'>('set_status')
 	let bulkValue = $state('')
 	let bulkStatus = $state('active')
 	let bulkCategory = $state('')
+	let bulkVisibility = $state('both')
 
 	// create / edit
 	let editOpen = $state(false)
@@ -45,6 +77,8 @@
 	let importing = $state(false)
 	let importOpen = $state(false)
 	let importFile = $state<File | null>(null)
+	let importDryRun = $state(false)
+	let downloadingTemplate = $state(false)
 	let importResult = $state<{ created: number; updated: number; failed: number; errors: Array<{ line: number; message: string }> } | null>(null)
 
 	const canWrite = () => session.can('products:write')
@@ -60,19 +94,35 @@
 		}
 	}
 
+	async function downloadTemplate() {
+		downloadingTemplate = true
+		try {
+			await api.download('/api/products/import/template', 'products-import-template.csv')
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			downloadingTemplate = false
+		}
+	}
+
 	async function runImport() {
 		if (!importFile) return
 		importing = true
 		try {
 			const form = new FormData()
 			form.append('file', importFile, importFile.name)
+			const path = importDryRun ? '/api/products/import?dryRun=1' : '/api/products/import'
 			const res = await api.upload<{ success: boolean; data: { created: number; updated: number; failed: number; errors: Array<{ line: number; message: string }> } }>(
-				'/api/products/import',
+				path,
 				form
 			)
 			importResult = res.data
-			toast.success(`Imported ${res.data.created} created, ${res.data.updated} updated`)
-			load()
+			if (importDryRun) {
+				toast.success(`Dry run: ${res.data.created} would create, ${res.data.updated} would update`)
+			} else {
+				toast.success(`Imported ${res.data.created} created, ${res.data.updated} updated`)
+				load()
+			}
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -87,6 +137,9 @@
 			if (search) params.search = search
 			if (status) params.status = status
 			if (categoryId) params.categoryId = categoryId
+			if (minPrice) params.minPrice = minPrice
+			if (maxPrice) params.maxPrice = maxPrice
+			if (lowStockOnly) params.lowStock = 'true'
 			const res = await api.get<{ success: boolean; data: { items: ProductListItem[]; meta: PaginationMeta } }>(
 				'/api/products',
 				params
@@ -142,6 +195,9 @@
 			else if (bulkAction === 'set_category') value = bulkCategory || null
 			else if (bulkAction === 'multiply_price') value = Number(bulkValue)
 			else if (bulkAction === 'set_inventory') value = Number(bulkValue)
+			else if (bulkAction === 'set_visibility') value = bulkVisibility
+			else if (bulkAction === 'set_compare_at') value = bulkValue === '' ? null : Number(bulkValue)
+			else if (bulkAction === 'clear_sale') value = null
 
 			await api.post<{ success: boolean }>('/api/products/bulk', {
 				ids: selected,
@@ -222,6 +278,30 @@
 					<option value={c.id}>{c.name}</option>
 				{/each}
 			</select>
+			<input
+				class="field w-28"
+				type="number"
+				min="0"
+				step="0.01"
+				placeholder="Min price"
+				aria-label="Minimum price"
+				bind:value={minPrice}
+				onkeydown={(e) => e.key === 'Enter' && applyFilters()}
+			/>
+			<input
+				class="field w-28"
+				type="number"
+				min="0"
+				step="0.01"
+				placeholder="Max price"
+				aria-label="Maximum price"
+				bind:value={maxPrice}
+				onkeydown={(e) => e.key === 'Enter' && applyFilters()}
+			/>
+			<label class="flex items-center gap-1.5 text-sm text-secondary">
+				<input type="checkbox" class="field-check" bind:checked={lowStockOnly} onchange={applyFilters} />
+				Low stock
+			</label>
 			<Button variant="secondary" size="sm" onclick={applyFilters}>{t('products.apply')}</Button>
 			{#if selected.length > 0 && canWrite()}
 				<span class="text-sm text-secondary">{t('products.selected', { n: selected.length })}</span>
@@ -246,7 +326,7 @@
 			</div>
 		{:else}
 			<div class="divide-y divide-outline-variant/60 md:hidden">
-				{#each items as p (p.id)}
+				{#each sortedItems as p (p.id)}
 					<div class="flex items-start gap-3 px-4 py-3">
 						{#if canWrite()}
 							<input type="checkbox" class="mt-1 field-check" checked={selected.includes(p.id)} onchange={() => toggle(p.id)} aria-label="Select {p.name}" />
@@ -288,19 +368,31 @@
 								</th>
 							{/if}
 							<th class="w-12 px-table-cell-x py-table-cell-y font-semibold"></th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.name')}</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.sku')}</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.price')}</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">Sale</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">Visibility</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.stock')}</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.status')}</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.updated')}</th>
+						<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.name')}</th>
+						<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.sku')}</th>
+						<th class="px-table-cell-x py-table-cell-y font-semibold">
+							<button class="font-semibold uppercase hover:text-on-surface" onclick={() => toggleSort('price')} aria-label="Sort by price">
+								{t('common.price')}{sortArrow('price')}
+							</button>
+						</th>
+						<th class="px-table-cell-x py-table-cell-y font-semibold">Sale</th>
+						<th class="px-table-cell-x py-table-cell-y font-semibold">Visibility</th>
+						<th class="px-table-cell-x py-table-cell-y font-semibold">
+							<button class="font-semibold uppercase hover:text-on-surface" onclick={() => toggleSort('stock')} aria-label="Sort by stock">
+								{t('common.stock')}{sortArrow('stock')}
+							</button>
+						</th>
+						<th class="px-table-cell-x py-table-cell-y font-semibold">{t('common.status')}</th>
+						<th class="px-table-cell-x py-table-cell-y font-semibold">
+							<button class="font-semibold uppercase hover:text-on-surface" onclick={() => toggleSort('updated')} aria-label="Sort by updated date">
+								{t('products.updated')}{sortArrow('updated')}
+							</button>
+						</th>
 							<th class="px-table-cell-x py-table-cell-y text-right font-semibold">{t('common.actions')}</th>
 						</tr>
 					</thead>
 					<tbody>
-						{#each items as p (p.id)}
+						{#each sortedItems as p (p.id)}
 							<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
 								{#if canWrite()}
 									<td class="px-table-cell-x py-table-cell-y">
@@ -381,6 +473,9 @@
 					<option value="set_category">Set category</option>
 					<option value="multiply_price">Multiply price</option>
 					<option value="set_inventory">Set inventory</option>
+					<option value="set_visibility">Set visibility</option>
+					<option value="set_compare_at">Set compare-at price</option>
+					<option value="clear_sale">Clear sale (compare-at + dates)</option>
 				</select>
 			</div>
 			{#if bulkAction === 'set_status'}
@@ -402,6 +497,28 @@
 						{/each}
 					</select>
 				</div>
+			{:else if bulkAction === 'set_visibility'}
+				<div>
+					<label for="bulk-visibility" class="field-label">Visibility</label>
+					<select id="bulk-visibility" class="field" bind:value={bulkVisibility}>
+						<option value="both">Online store &amp; POS</option>
+						<option value="website">Online store only</option>
+						<option value="pos">POS only</option>
+					</select>
+				</div>
+			{:else if bulkAction === 'set_compare_at'}
+				<div>
+					<label for="bulk-value" class="field-label">Compare-at price (empty clears it)</label>
+					<input
+						id="bulk-value"
+						type="number"
+						class="field"
+						bind:value={bulkValue}
+						placeholder="49.99"
+					/>
+				</div>
+			{:else if bulkAction === 'clear_sale'}
+				<p class="text-sm text-secondary">Clears the compare-at price and the sale window on all selected products.</p>
 			{:else}
 				<div>
 					<label for="bulk-value" class="field-label">
@@ -436,6 +553,10 @@
 			<p class="text-sm text-secondary">
 				One row per variant. Existing products are matched by SKU and updated — nothing is deleted.
 			</p>
+			<div class="flex items-center justify-between gap-2">
+				<p class="text-sm text-secondary">Need the column format?</p>
+				<Button variant="secondary" size="sm" loading={downloadingTemplate} onclick={downloadTemplate}>Download template</Button>
+			</div>
 			<input
 				type="file"
 				accept=".csv,text/csv"
@@ -449,8 +570,8 @@
 			{#if importResult}
 				<div class="rounded border border-outline-variant bg-surface-container-low p-3 text-sm">
 					<p>
-						<span class="font-semibold text-success">{importResult.created} created</span> ·
-						<span class="font-semibold text-primary">{importResult.updated} updated</span> ·
+						<span class="font-semibold text-success">{importResult.created} {importDryRun ? 'would create' : 'created'}</span> ·
+						<span class="font-semibold text-primary">{importResult.updated} {importDryRun ? 'would update' : 'updated'}</span> ·
 						<span class="font-semibold {importResult.failed > 0 ? 'text-error' : 'text-secondary'}">{importResult.failed} failed</span>
 					</p>
 					{#if importResult.errors.length > 0}
@@ -462,9 +583,15 @@
 					{/if}
 				</div>
 			{/if}
-			<div class="flex justify-end gap-2 pt-2">
-				<Button variant="secondary" onclick={() => (importOpen = false)}>Close</Button>
-				<Button loading={importing} disabled={!importFile} onclick={runImport}>Import</Button>
+			<div class="flex items-center justify-between gap-2 pt-2">
+				<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+					<input type="checkbox" class="field-check" bind:checked={importDryRun} />
+					Dry run (validate only)
+				</label>
+				<div class="flex gap-2">
+					<Button variant="secondary" onclick={() => (importOpen = false)}>Close</Button>
+					<Button loading={importing} disabled={!importFile} onclick={runImport}>{importDryRun ? 'Validate' : 'Import'}</Button>
+				</div>
 			</div>
 		</div>
 	</Modal>

@@ -41,7 +41,7 @@
 		minSelections: string
 		maxSelections: string
 		perValueQuantity: boolean
-		values: Array<{ value: string; valueAr: string; priceAdjustment: string; quantity: string }>
+		values: Array<{ value: string; valueAr: string; priceAdjustment: string; quantity: string; metaHex: string }>
 	}
 	let options = $state<ProductOption[]>([])
 	let optionDrafts = $state<OptionDraft[]>([])
@@ -183,7 +183,8 @@
 				value: v.value,
 				valueAr: v.valueAr ?? '',
 				priceAdjustment: String(v.priceAdjustment ?? 0),
-				quantity: v.quantity != null ? String(v.quantity) : '0'
+				quantity: v.quantity != null ? String(v.quantity) : '0',
+				metaHex: v.meta?.hex ?? ''
 			}))
 		}))
 		if (optionDrafts.length === 0) optionDrafts = [newOptionDraft()]
@@ -198,7 +199,7 @@
 		minSelections: '1',
 		maxSelections: '1',
 		perValueQuantity: false,
-		values: [{ value: '', valueAr: '', priceAdjustment: '0', quantity: '0' }]
+		values: [{ value: '', valueAr: '', priceAdjustment: '0', quantity: '0', metaHex: '' }]
 	})
 
 	function addOptionDraft() {
@@ -210,7 +211,7 @@
 	}
 
 	function addOptionValue(i: number) {
-		optionDrafts[i].values = [...optionDrafts[i].values, { value: '', valueAr: '', priceAdjustment: '0', quantity: '0' }]
+		optionDrafts[i].values = [...optionDrafts[i].values, { value: '', valueAr: '', priceAdjustment: '0', quantity: '0', metaHex: '' }]
 		optionDrafts = [...optionDrafts]
 	}
 
@@ -239,7 +240,8 @@
 								value: v.value.trim(),
 								valueAr: v.valueAr.trim() || undefined,
 								priceAdjustment: Number(v.priceAdjustment) || 0,
-								quantity: Number(v.quantity) || 0
+								quantity: Number(v.quantity) || 0,
+								...(o.type === 'swatch' && v.metaHex.trim() ? { meta: { hex: v.metaHex.trim() } } : {})
 							}))
 					}))
 			})
@@ -298,8 +300,32 @@
 						{#if product.compareAtPrice != null}
 							<div class="flex justify-between"><dt class="text-secondary">Compare-at</dt><dd class="font-medium text-on-surface-variant line-through">{currency(product.compareAtPrice)}</dd></div>
 						{/if}
+						{#if product.saleStartsAt || product.saleEndsAt}
+							<div class="flex justify-between gap-2"><dt class="shrink-0 text-secondary">Sale window</dt><dd class="text-right font-medium">{product.saleStartsAt ? dateTimeFull(product.saleStartsAt) : '…'} → {product.saleEndsAt ? dateTimeFull(product.saleEndsAt) : '…'}</dd></div>
+						{/if}
+						{#if product.publishAt}
+							<div class="flex justify-between"><dt class="text-secondary">Publishes at</dt><dd class="font-medium">{dateTimeFull(product.publishAt)}</dd></div>
+						{/if}
 						<div class="flex justify-between"><dt class="text-secondary">Cost</dt><dd class="font-medium">{currency(product.cost)}</dd></div>
 						<div class="flex justify-between"><dt class="text-secondary">Status</dt><dd><Badge label={product.status} /></dd></div>
+						{#if product.tags?.length}
+							<div class="flex justify-between gap-2"><dt class="shrink-0 text-secondary">Tags</dt><dd class="text-right font-medium">{product.tags.join(', ')}</dd></div>
+						{/if}
+						{#if product.weight != null}
+							<div class="flex justify-between"><dt class="text-secondary">Weight</dt><dd class="font-medium">{product.weight} kg</dd></div>
+						{/if}
+						{#if product.gtin}
+							<div class="flex justify-between"><dt class="text-secondary">GTIN</dt><dd class="font-mono text-xs">{product.gtin}</dd></div>
+						{/if}
+						{#if product.barcode}
+							<div class="flex justify-between"><dt class="text-secondary">Barcode</dt><dd class="font-mono text-xs">{product.barcode}</dd></div>
+						{/if}
+						{#if product.metaTitle}
+							<div class="flex justify-between gap-2"><dt class="shrink-0 text-secondary">SEO title</dt><dd class="text-right font-medium">{product.metaTitle}</dd></div>
+						{/if}
+						{#if product.metaDescription}
+							<div class="flex justify-between gap-2"><dt class="shrink-0 text-secondary">SEO desc.</dt><dd class="max-w-55 text-right text-on-surface-variant">{product.metaDescription}</dd></div>
+						{/if}
 						<div class="flex justify-between"><dt class="text-secondary">Track inventory</dt><dd class="font-medium">{product.trackInventory ? 'Yes' : 'No'}</dd></div>
 						<div class="flex justify-between"><dt class="text-secondary">Low-stock threshold</dt><dd class="font-medium">{product.lowStockThreshold}</dd></div>
 						<div class="flex justify-between"><dt class="text-secondary">Slug</dt><dd class="font-mono text-xs text-on-surface-variant">{product.slug}</dd></div>
@@ -398,6 +424,7 @@
 													{o.name}{#if o.nameAr}<span class="text-secondary"> · {o.nameAr}</span>{/if}
 												</p>
 												<div class="flex gap-1">
+													<Badge label={o.type ?? 'radio'} />
 													<Badge label={o.required ? 'Required' : 'Optional'} />
 													{#if o.maxSelections > 1}<Badge label={`${o.maxSelections} max`} />{/if}
 												</div>
@@ -544,6 +571,24 @@
 							<label for="opt-name-ar-{i}" class="mb-1 block text-xs font-medium text-secondary">Arabic name</label>
 							<input id="opt-name-ar-{i}" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" placeholder="المقاس" bind:value={optionDrafts[i].nameAr} />
 						</div>
+						<div class="sm:col-span-2">
+							<label for="opt-type-{i}" class="mb-1 block text-xs font-medium text-secondary">Type</label>
+							<select id="opt-type-{i}" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={optionDrafts[i].type}>
+								<option value="radio">Radio — one choice, drives variants</option>
+								<option value="checkbox">Checkbox — multiple choices</option>
+								<option value="select">Select — dropdown</option>
+								<option value="swatch">Swatch — color/image picker</option>
+								<option value="number">Number — free numeric input</option>
+								<option value="text">Text — free text input</option>
+							</select>
+							{#if optionDrafts[i].type === 'number'}
+								<p class="mt-1 text-xs text-secondary">Customers type any number (e.g. engraving depth, quantity). No preset values needed — add one row as an example if you like.</p>
+							{:else if optionDrafts[i].type === 'text'}
+								<p class="mt-1 text-xs text-secondary">Customers type free text (e.g. gift message, name). No preset values needed — add one row as an example if you like.</p>
+							{:else if optionDrafts[i].type === 'swatch'}
+								<p class="mt-1 text-xs text-secondary">Set a hex color per value below — the storefront renders it as a color dot. Put an image URL in the value field instead for image swatches.</p>
+							{/if}
+						</div>
 					</div>
 					<div class="mt-3 flex flex-wrap items-center gap-4 text-sm">
 						<label class="flex items-center gap-1.5 text-on-surface-variant">
@@ -579,6 +624,13 @@
 								{/if}
 								<button type="button" class="px-1 text-secondary hover:text-error" onclick={() => removeOptionValue(i, j)}>×</button>
 							</div>
+							{#if optionDrafts[i].type === 'swatch'}
+								<div class="ms-1 flex items-center gap-2">
+									<input type="color" class="h-7 w-10 cursor-pointer rounded border border-outline-variant" value={optionDrafts[i].values[j].metaHex || '#000000'} oninput={(e) => (optionDrafts[i].values[j].metaHex = (e.currentTarget as HTMLInputElement).value)} aria-label="Swatch color for {optionDrafts[i].values[j].value || `value ${j + 1}`}" />
+									<input class="w-28 rounded-lg border border-outline-variant px-2 py-1 font-mono text-xs" placeholder="#ff0000" bind:value={optionDrafts[i].values[j].metaHex} aria-label="Swatch hex code" />
+									<span class="text-xs text-secondary">swatch color (meta.hex)</span>
+								</div>
+							{/if}
 						{/each}
 						<button type="button" class="text-xs font-medium text-primary hover:underline" onclick={() => addOptionValue(i)}>+ Add value</button>
 					</div>

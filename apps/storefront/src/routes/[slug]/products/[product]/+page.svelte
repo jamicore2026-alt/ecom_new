@@ -19,7 +19,15 @@
 		`${siteUrl(data.origin)}/${data.slug}/products/${product.slug}`
 	)
 	const ogImage = $derived(absoluteImageUrl(product.images?.[0] ?? product.image, data.origin))
-	const description = $derived(metaDescription(product.description, t('product.buyMeta', { product: product.name, store: store.settings.name })))
+	// Merchant-controlled SEO fields (fallback: product name / description).
+	const seoTitle = $derived(
+		(product as { metaTitle?: string | null }).metaTitle?.trim() ||
+			localized(product.name, product.nameAr)
+	)
+	const description = $derived(
+		(product as { metaDescription?: string | null }).metaDescription?.trim() ||
+			metaDescription(product.description, t('product.buyMeta', { product: product.name, store: store.settings.name }))
+	)
 
 	const optionNames = $derived(
 		product.variants.length > 1
@@ -371,22 +379,22 @@
 </script>
 
 <svelte:head>
-	<title>{localized(product.name, product.nameAr)} — {store.settings.name}</title>
+	<title>{seoTitle} — {store.settings.name}</title>
 	<meta name="description" content={description} />
 	<link rel="canonical" href={canonicalUrl} />
 	<meta property="og:type" content="product" />
 	<meta property="og:site_name" content={store.settings.name} />
-	<meta property="og:title" content={localized(product.name, product.nameAr)} />
+	<meta property="og:title" content={seoTitle} />
 	<meta property="og:description" content={description} />
 	<meta property="og:url" content={canonicalUrl} />
 	{#if ogImage}
 		<meta property="og:image" content={ogImage} />
 		<meta property="og:image:width" content="1200" />
 		<meta property="og:image:height" content="630" />
-		<meta property="og:image:alt" content={localized(product.name, product.nameAr)} />
+		<meta property="og:image:alt" content={seoTitle} />
 	{/if}
 	<meta name="twitter:card" content="summary_large_image" />
-	<meta name="twitter:title" content={localized(product.name, product.nameAr)} />
+	<meta name="twitter:title" content={seoTitle} />
 	<meta name="twitter:description" content={description} />
 	{#if ogImage}
 		<meta name="twitter:image" content={ogImage} />

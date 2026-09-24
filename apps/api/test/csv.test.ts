@@ -78,7 +78,19 @@ describe('Products CSV export/import', () => {
 
     const rows = parseCsv(text)
     expect(rows[0][0]).toBe('sku')
-    expect(rows[0].length).toBe(17)
+    expect(rows[0].length).toBe(27)
+    expect(rows[0].slice(17)).toEqual([
+      'visibility',
+      'barcode',
+      'tags',
+      'gtin',
+      'weight',
+      'meta_title',
+      'meta_description',
+      'sale_starts_at',
+      'sale_ends_at',
+      'publish_at'
+    ])
 
     const mine = rows.filter((r) => r[0] === FIX_A || r[13] === `${FIX_A}-S` || r[13] === `${FIX_A}-M`)
     // parent sku repeats on each variant row
@@ -129,7 +141,17 @@ describe('Products CSV export/import', () => {
       'CSVFIX-BETA-ONE',
       '{"Color":"Red"}',
       '',
-      '4'
+      '4',
+      'website',
+      'CSV-BARCODE-1',
+      'fresh|imported',
+      '6281000000011',
+      '0.5',
+      'Beta SEO Title',
+      'Beta SEO description.',
+      '2026-01-01T00:00:00.000Z',
+      '2026-12-31T00:00:00.000Z',
+      ''
     ])
 
     const csv = toCsv(header, mine)
@@ -165,6 +187,63 @@ describe('Products CSV export/import', () => {
     createdIds.push(beta.body.data.items[0].id)
     expect(beta.body.data.items[0].nameAr).toBe('بيتا')
     expect(beta.body.data.items[0].descriptionAr).toBe('وصف بيتا')
+    // extended columns survived the round-trip
+    const betaDetail = await call(`/api/products/${beta.body.data.items[0].id}`, {
+      headers: { authorization: `Bearer ${adminToken}` }
+    })
+    expect(betaDetail.body.data.visibility).toBe('website')
+    expect(betaDetail.body.data.barcode).toBe('CSV-BARCODE-1')
+    expect(betaDetail.body.data.tags).toEqual(['fresh', 'imported'])
+    expect(betaDetail.body.data.gtin).toBe('6281000000011')
+    expect(Number(betaDetail.body.data.weight)).toBe(0.5)
+    expect(betaDetail.body.data.metaTitle).toBe('Beta SEO Title')
+    expect(betaDetail.body.data.metaDescription).toBe('Beta SEO description.')
+    expect(new Date(betaDetail.body.data.saleStartsAt).getFullYear()).toBe(2026)
+    expect(new Date(betaDetail.body.data.saleEndsAt).getMonth()).toBe(11)
+  })
+
+  it('serves an import template with header row + sample', async () => {
+    const res = await raw('/api/products/import/template', {
+      headers: { authorization: `Bearer ${adminToken}` }
+    })
+    expect(res.status).toBe(200)
+    expect(res.res.headers.get('content-type')).toContain('text/csv')
+    const rows = parseCsv(await res.res.text())
+    expect(rows.length).toBe(2)
+    expect(rows[0]).toContain('visibility')
+    expect(rows[0]).toContain('sale_starts_at')
+    expect(rows[1][rows[0].indexOf('name')]).toBe('Sample T-Shirt')
+
+    const staffRes = await raw('/api/products/import/template', {
+      headers: { authorization: `Bearer ${staffToken}` }
+    })
+    expect(staffRes.status).toBe(403)
+  })
+
+  it('dry-runs an import without writing anything', async () => {
+    const csv = [
+      'sku,name,price,visibility,tags,sale_starts_at',
+      'CSVFIX-DRY,Dry Run Row,9.99,bogus-visibility,fresh|dry,not-a-date'
+    ].join('\n')
+    const bad = await call('/api/products/import?dryRun=1', multipart(csv, adminToken))
+    expect(bad.status).toBe(200)
+    expect(bad.body.data.failed).toBe(1)
+    expect(bad.body.data.created).toBe(0)
+
+    const good = [
+      'sku,name,price,visibility,tags,gtin',
+      'CSVFIX-DRY2,Dry Run Good,9.99,website,fresh|dry,6281000000022'
+    ].join('\n')
+    const res = await call('/api/products/import?dryRun=1', multipart(good, adminToken))
+    expect(res.status).toBe(200)
+    expect(res.body.data.created).toBe(1)
+    expect(res.body.data.dryRun).toBe(true)
+
+    // nothing was actually written
+    const search = await call('/api/products?search=CSVFIX-DRY2', {
+      headers: { authorization: `Bearer ${adminToken}` }
+    })
+    expect(search.body.data.meta.total).toBe(0)
   })
 
   it('reports per-row errors without blocking other blocks', async () => {

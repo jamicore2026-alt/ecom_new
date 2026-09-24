@@ -35,17 +35,19 @@ const purchaseOrderUpdateBody = t.Partial(t.Object({
   items: t.Optional(t.Array(poItemSchema, { minItems: 1 }))
 }))
 
-const receiveBody = t.Object({
-  warehouseId: t.String(),
-  notes: t.Optional(t.String()),
-  items: t.Array(
-    t.Object({
-      purchaseOrderItemId: t.String(),
-      quantity: t.Integer({ minimum: 1 })
-    }),
-    { minItems: 1 }
-  )
+const receiveLineSchema = t.Object({
+  purchaseOrderItemId: t.String(),
+  quantity: t.Integer({ minimum: 1 }),
+  warehouseId: t.Optional(t.String())
 })
+
+const receiveBody = t.Object({
+  warehouseId: t.Optional(t.String()),
+  notes: t.Optional(t.String()),
+  items: t.Array(receiveLineSchema, { minItems: 1 })
+})
+
+const returnBody = receiveBody
 
 const idParam = t.Object({ id: t.String() })
 
@@ -96,4 +98,15 @@ export const procurementModule = new Elysia({ prefix: '/api' })
     ProcurementService.receiveGoods(auth.db, auth.merchant.id, params.id, auth.user.id, body), {
     params: idParam,
     body: receiveBody
+  })
+  .post('/purchase-orders/:id/return', async ({ auth, params, body }) =>
+    ProcurementService.returnGoods(auth.db, auth.merchant.id, params.id, auth.user.id, body), {
+    params: idParam,
+    body: returnBody
+  })
+  .delete('/suppliers/:id', async ({ auth, params }) => ProcurementService.deleteSupplier(auth.db, auth.merchant.id, params.id), {
+    params: idParam
+  })
+  .delete('/purchase-orders/:id', async ({ auth, params }) => ProcurementService.deletePurchaseOrder(auth.db, auth.merchant.id, params.id), {
+    params: idParam
   })

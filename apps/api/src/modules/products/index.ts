@@ -1,4 +1,4 @@
-import { Elysia } from 'elysia'
+import { Elysia, t } from 'elysia'
 import { authPlugin, hasPermission, requirePermission } from '../../plugins/auth'
 import { outletGuard } from '../../plugins/outlet'
 import type { AuthContext } from '../../plugins/auth'
@@ -40,6 +40,16 @@ export const productsModule = new Elysia({ prefix: '/api' })
     },
     { detail: { summary: 'Export products as CSV (one row per variant)' }, beforeHandle: needProductRead }
   )
+  // registered before '/products/:id' so "import/template" is not captured as an id
+  .get(
+    '/products/import/template',
+    async ({ auth, set }) => {
+      set.headers['content-type'] = 'text/csv; charset=utf-8'
+      set.headers['content-disposition'] = 'attachment; filename="products-import-template.csv"'
+      return ProductsService.csvTemplate()
+    },
+    { detail: { summary: 'Download a CSV import template (header row + sample)' }, beforeHandle: needProductRead }
+  )
   .get('/products/:id', async ({ params, auth }) => ProductsService.get(auth.db, auth.merchant.id, params.id), {
     beforeHandle: needProductRead
   })
@@ -80,17 +90,25 @@ export const productsModule = new Elysia({ prefix: '/api' })
   })
   .post(
     '/products/import',
-    async ({ body, auth, request }) => {
+    async ({ body, auth, request, query }) => {
       const text = await body.file.text()
-      const result = await ProductsService.importCsv(auth.db, auth.merchant.id, text)
-      await auditFromRequest(auth, request, {
-        action: 'product.import',
-        entityType: 'product',
-        metadata: { created: result.data.created, updated: result.data.updated }
+      const result = await ProductsService.importCsv(auth.db, auth.merchant.id, text, {
+        dryRun: query?.dryRun === '1' || query?.dryRun === 'true'
       })
+      if (!result.data.dryRun) {
+        await auditFromRequest(auth, request, {
+          action: 'product.import',
+          entityType: 'product',
+          metadata: { created: result.data.created, updated: result.data.updated }
+        })
+      }
       return result
     },
-    { body: importCsvBody, detail: { summary: 'Import products from CSV (upsert by SKU)' } }
+    {
+      body: importCsvBody,
+      query: t.Object({ dryRun: t.Optional(t.String()) }),
+      detail: { summary: 'Import products from CSV (upsert by SKU). ?dryRun=1 validates only.' }
+    }
   )
   .put(
     '/products/:id',
@@ -174,15 +192,15 @@ export const productsModule = new Elysia({ prefix: '/api' })
     })
     return result
   }, { body: categoryBody })
-  .delete('/categories/:id', async ({ params, auth, request }) => {
-    const result = await ProductsService.deleteCategory(auth.db, auth.merchant.id, params.id)
+  .delete('/categories/:id', async ({ params, auth, request, query }) => {
+    const result = await ProductsService.deleteCategory(auth.db, auth.merchant.id, params.id, query?.reassignTo ?? null)
     await auditFromRequest(auth, request, {
       action: 'category.delete',
       entityType: 'category',
       entityId: params.id
     })
     return result
-  })
+  }, { query: t.Object({ reassignTo: t.Optional(t.String()) }) })
   .put('/variants/:id', async ({ params, body, auth, request }) => {
     const result = await ProductsService.updateVariant(auth.db, auth.merchant.id, params.id, body)
     await auditFromRequest(auth, request, {

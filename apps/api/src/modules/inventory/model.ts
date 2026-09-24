@@ -6,7 +6,8 @@ export const adjustBody = t.Object({
     adjustment: 'adjustment',
     purchase: 'purchase',
     return: 'return',
-    sale: 'sale'
+    sale: 'sale',
+    stocktake: 'stocktake'
   })
 })
 
