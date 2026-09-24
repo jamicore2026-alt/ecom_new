@@ -50,12 +50,23 @@ export const foodOrderStatusBody = t.Object({
   })
 })
 
-/** POS payment capture — only the payment method (+ cash tender) is
- *  client-supplied; money totals stay server-computed. */
+/** POS payment capture — split-aware: an optional partial `amount` (defaults
+ *  to the remaining balance), an optional `tip` (accumulates into
+ *  `orders.tip_total`), an optional `discountAmount` + `discountReason`
+ *  (accumulates into `orders.discount_total`). Money totals stay
+ *  server-computed. */
 export const foodOrderPayBody = t.Object({
   paymentMethod: t.Optional(t.String({ maxLength: 50 })),
   /** Cash received from the customer (for cash payments) — server computes change. */
-  cashReceived: t.Optional(t.Number({ minimum: 0 }))
+  cashReceived: t.Optional(t.Number({ minimum: 0 })),
+  /** Partial amount applied to the balance; defaults to the remaining balance. */
+  amount: t.Optional(t.Number()),
+  /** Gratuity added by this payment — accumulates into the order tip total. */
+  tip: t.Optional(t.Number({ minimum: 0 })),
+  /** POS discount granted by this payment — accumulates into the order discount total. */
+  discountAmount: t.Optional(t.Number({ minimum: 0 })),
+  /** Reason for the discount (recorded on the payment transaction). */
+  discountReason: t.Optional(t.String({ maxLength: 500 }))
 })
 
 export const foodOrderParams = t.Object({ id: t.String() })

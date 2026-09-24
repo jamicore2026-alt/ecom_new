@@ -176,10 +176,13 @@ describe('restaurant-era outlet reads default-deny (delivery + menu)', () => {
     expect(deniedTransition.body.error.code).toBe('OUTLET_SCOPE')
   })
 
-  it('keeps drivers as a merchant-wide shared pool but scopes writes', async () => {
+  it('scopes driver reads to assigned outlets plus the unassigned pool', async () => {
     const driversRes = await call('/api/drivers', { headers: scopeB })
     expect(driversRes.status).toBe(200)
-    expect(driversRes.body.data.items.length).toBeGreaterThan(0)
+    // A branch-scoped caller must never enumerate another outlet's drivers.
+    for (const d of driversRes.body.data.items as Array<{ assignedOutletId?: string | null }>) {
+      expect(d.assignedOutletId ?? null).not.toBe(mainOutletId)
+    }
 
     const [adminUser] = await db.select().from(users).where(eq(users.email, 'admin@jamicore.com'))
     const [user] = await db

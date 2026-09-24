@@ -232,14 +232,28 @@ export class FoodOrdersService {
   }
 
   /**
-   * Record payment for a POS/food order. Only an unpaid order may be paid, and
-   * the flip is atomic (guarded by `WHERE payment_status='unpaid'`) so a
-   * double-click/race can never record two payments. Money totals always come
-   * from the server-computed order; the client only supplies the method (+ cash
-   * tender). A real `payment_transactions` row is always written so refunds,
-   * journals and reporting see the payment.
+   * Record payment for a POS/food order, supporting split payments, tips and
+   * POS discounts. Each call inserts its own `payment_transactions` row and
+   * moves `paymentStatus` to `paid` once cumulative paid covers the balance
+   * (`total + tipTotal - discountTotal`), else `partially_paid`.
+   *
+   * Money totals always come from the server-computed order; the client only
+   * supplies the method, an optional partial `amount` (defaults to the
+   * remaining balance), an optional `tip` (accumulates into `tip_total`), an
+   * optional `discountAmount` (accumulates into `discount_total`) and tender
+   * details. Overpay is only allowed for cash (excess becomes change).
+   * The flip to `paid` is guarded (`WHERE payment_status IN
+   * ('unpaid','partially_paid')`) so a double-click/race can never record two
+   * full payments — a fully-paid order replays as `ALREADY_PAID`.
    */
-  static async pay(db: DB, merchantId: string, id: string, scope: OutletScope, paymentMethod?: string, cashReceived?: number) {
+  static async pay(db: DB, merchantId: string, id: string, scope: OutletScope, input: {
+    paymentMethod?: string
+    cashReceived?: number
+    amount?: number
+    tip?: number
+    discountAmount?: number
+    discountReason?: string
+  } = {}) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     if (!order) throw notFound('NOT_FOUND', 'Food order not found')
     if (!isFoodOrderType(order.orderType)) throw badRequest('NOT_FOOD_ORDER', 'This is not a food order')
@@ -247,43 +261,120 @@ export class FoodOrdersService {
     if (['refunded', 'partially_refunded', 'failed'].includes(order.paymentStatus)) {
       throw conflict('INVALID_TRANSITION', `A ${order.paymentStatus} order cannot be paid`)
     }
+    if (order.paymentStatus === 'paid') throw conflict('ALREADY_PAID', 'This order has already been paid')
 
-    const method = paymentMethod ?? 'cash'
+    const method = input.paymentMethod ?? 'cash'
     const isCash = method === 'cash'
-    if (cashReceived !== undefined && !isCash) {
+    const tip = input.tip ?? 0
+    const discountAmount = input.discountAmount ?? 0
+    if (!(tip >= 0)) throw badRequest('BAD_REQUEST', 'Tip cannot be negative')
+    if (!(discountAmount >= 0)) throw badRequest('BAD_REQUEST', 'Discount cannot be negative')
+    if (input.cashReceived !== undefined && !isCash) {
       throw badRequest('BAD_REQUEST', 'Cash tender only applies to cash payments')
     }
-    if (isCash && cashReceived !== undefined && cashReceived + 0.001 < Number(order.total)) {
-      throw badRequest('BAD_REQUEST', `Cash received (${cashReceived.toFixed(2)}) is less than the total (${Number(order.total).toFixed(2)})`)
+    if (input.cashReceived !== undefined && !(input.cashReceived >= 0)) {
+      throw badRequest('BAD_REQUEST', 'Cash received cannot be negative')
+    }
+    if (input.amount !== undefined && !(input.amount > 0)) {
+      throw badRequest('BAD_REQUEST', 'Payment amount must be greater than zero')
     }
 
-    const values: Partial<typeof orders.$inferSelect> = { paymentStatus: 'paid', expiresAt: null }
-    if (paymentMethod) values.paymentMethod = paymentMethod
+    const updated = await db.transaction(async (tx) => {
+      // Re-read + sum inside the tx so tip/discount accumulation, the
+      // remaining-balance math and the status flip are atomic.
+      const [fresh] = await tx.select().from(orders).where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
+      if (!fresh) throw notFound('NOT_FOUND', 'Food order not found')
+      if (fresh.paymentStatus === 'paid') throw conflict('ALREADY_PAID', 'This order has already been paid')
+      if (['refunded', 'partially_refunded', 'failed'].includes(fresh.paymentStatus)) {
+        throw conflict('INVALID_TRANSITION', `A ${fresh.paymentStatus} order cannot be paid`)
+      }
 
-    await db.transaction(async (tx) => {
+      const txns = await tx
+        .select({ amount: paymentTransactions.amount })
+        .from(paymentTransactions)
+        .where(and(
+          eq(paymentTransactions.orderId, id),
+          eq(paymentTransactions.merchantId, merchantId),
+          eq(paymentTransactions.status, 'paid')
+        ))
+      const alreadyPaid = round2(txns.reduce((sum, t) => sum + Number(t.amount), 0))
+
+      const newTipTotal = round2(Number(fresh.tipTotal ?? 0) + tip)
+      const newDiscountTotal = round2(Number(fresh.discountTotal ?? 0) + discountAmount)
+      const owing = round2(Number(fresh.total) + newTipTotal - newDiscountTotal - alreadyPaid)
+      if (owing <= 0) throw conflict('ALREADY_PAID', 'This order has already been paid')
+
+      // Default to the remaining balance so "pay the rest" needs no amount.
+      const applied = input.amount === undefined ? owing : round2(input.amount)
+      if (!(applied > 0)) throw badRequest('BAD_REQUEST', 'Payment amount must be greater than zero')
+      if (applied - owing > 0.001 && !isCash) {
+        throw badRequest(
+          'OVERPAY_NOT_ALLOWED',
+          `Amount (${applied.toFixed(2)}) exceeds the remaining balance (${owing.toFixed(2)}); overpay is only allowed for cash`
+        )
+      }
+
+      let change: number | null = null
+      if (isCash) {
+        const tender = input.cashReceived ?? applied
+        if (tender + 0.001 < applied) {
+          throw badRequest('BAD_REQUEST', `Cash received (${tender.toFixed(2)}) is less than the payment amount (${applied.toFixed(2)})`)
+        }
+        change = round2(tender - applied)
+      }
+
+      const cumulative = round2(alreadyPaid + applied)
+      const fullBalance = round2(Number(fresh.total) + newTipTotal - newDiscountTotal)
+      const newStatus = cumulative + 0.001 >= fullBalance ? 'paid' : 'partially_paid'
+
       const [paid] = await tx
         .update(orders)
-        .set(values)
-        .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId), eq(orders.paymentStatus, 'unpaid')))
+        .set({
+          tipTotal: newTipTotal,
+          discountTotal: newDiscountTotal,
+          paymentStatus: newStatus,
+          paymentMethod: method,
+          expiresAt: null
+        })
+        .where(and(
+          eq(orders.id, id),
+          eq(orders.merchantId, merchantId),
+          inArray(orders.paymentStatus, ['unpaid', 'partially_paid'])
+        ))
         .returning()
 
       if (!paid) throw conflict('ALREADY_PAID', 'This order has already been paid')
 
-      const change = isCash && cashReceived !== undefined ? round2(cashReceived - Number(paid.total)) : null
       await tx.insert(paymentTransactions).values({
         merchantId,
         orderId: paid.id,
         provider: method,
         providerRef: null,
         status: 'paid',
-        amount: Number(paid.total),
+        amount: applied,
         currency: paid.currency,
-        raw: isCash && cashReceived !== undefined ? { cashReceived, change } : null
+        raw: {
+          cashReceived: input.cashReceived ?? null,
+          change,
+          tip,
+          discountAmount,
+          discountReason: input.discountReason ?? null
+        }
       })
+
+      return paid
     })
 
     const refetched = await this.get(db, merchantId, id, scope)
-    return refetched
+    // `get` projects a fixed column set without tip/discount — merge the
+    // freshly accumulated totals so POS clients can display the balance.
+    return ok({
+      ...(refetched.data as Record<string, unknown>),
+      paymentStatus: updated.paymentStatus,
+      paymentMethod: updated.paymentMethod,
+      tipTotal: Number(updated.tipTotal ?? 0),
+      discountTotal: Number(updated.discountTotal ?? 0)
+    })
   }
 
   static async update(db: DB, merchantId: string, id: string, input: { items?: { menuItemId: string; quantity: number; modifiers?: { modifierId: string; quantity?: number }[] }[]; notes?: string; scheduledFor?: string }, scope: OutletScope) {

@@ -31,7 +31,7 @@ export const deliveryModule = new Elysia({ prefix: '/api' })
     params: deliveryParams,
     detail: { summary: 'Get a delivery zone' }
   })
-  .get('/drivers', async ({ query, auth }) => DriversService.list(auth.db, auth.merchant.id, query), {
+  .get('/drivers', async ({ query, auth, merchantContext }) => DriversService.list(auth.db, auth.merchant.id, query, merchantContext), {
     query: driverQuery,
     detail: { summary: 'List drivers' }
   })

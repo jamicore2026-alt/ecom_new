@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte'
-	import { api, getSelectedOutletId } from '$lib/api'
+	import { api, ApiError, getSelectedOutletId } from '$lib/api'
 	import { session } from '$lib/session.svelte'
 	import { toast } from '$lib/toast.svelte'
 	import Button from '$lib/components/Button.svelte'
@@ -41,6 +41,43 @@
 	let placing = $state(false)
 	let receiptOrder = $state<FoodOrder | null>(null)
 	let receiptPaid = $state(false)
+
+	// Split-tender state: extra partial payments collected in the payment
+	// modal. The main paymentMethod/cashReceived below covers whatever
+	// remains after these splits (amount omitted → server computes exact
+	// remainder from its own totals).
+	type PaySplit = { method: string; amount: number; cashReceived: number | null }
+	let splits = $state<PaySplit[]>([])
+	let splitMethod = $state('card')
+	let splitAmount = $state<number | null>(null)
+	let splitCash = $state<number | null>(null)
+	let tipAmount = $state<number | null>(null)
+	let discountAmount = $state<number | null>(null)
+	let discountReason = $state('')
+	let receiptPayments = $state<{ method: string; amount: number; change: number | null }[]>([])
+
+	// Offline outbox: order+pay payloads queued in localStorage when the
+	// network drops mid-sale. The saleKey (order idempotency key) is persisted
+	// inside each queued payload so retries can never duplicate the order.
+	const OUTBOX_KEY = 'ecom:pos-outbox'
+	type OutboxPay = {
+		paymentMethod?: string
+		amount?: number
+		cashReceived?: number
+		tip?: number
+		discountAmount?: number
+		discountReason?: string
+	}
+	type OutboxItem = {
+		saleKey: string
+		orderId: string | null
+		createBody: Record<string, unknown>
+		pays: OutboxPay[]
+		queuedAt: string
+	}
+	let outbox = $state<OutboxItem[]>([])
+	let syncing = $state(false)
+	let isOnline = $state(true)
 
 	const canSell = $derived(session.can('orders.create'))
 
@@ -182,6 +219,102 @@
 		return (line.price + mods) * line.quantity
 	}
 
+	const round2 = (n: number) => Math.round(n * 100) / 100
+	const tipVal = () => Math.max(0, tipAmount ?? 0)
+	const discVal = () => Math.max(0, discountAmount ?? 0)
+	// Client-side estimate (server totals are authoritative once the order
+	// exists — the final charge omits `amount` so the server bills exactly).
+	const estimateTotal = () => round2(cartTotal() + tipVal() - discVal())
+	const splitsTotal = () => round2(splits.reduce((a, s) => a + s.amount, 0))
+	const remainingDue = () => round2(estimateTotal() - splitsTotal())
+
+	function addSplit() {
+		const amount = splitAmount ?? remainingDue()
+		if (!(amount > 0)) {
+			toast.error(t('pos.splitAmountInvalid'))
+			return
+		}
+		if (splitMethod === 'cash' && splitCash !== null && splitCash < amount) {
+			toast.error(t('pos.cashTooLittle'))
+			return
+		}
+		splits = [...splits, { method: splitMethod, amount: round2(amount), cashReceived: splitMethod === 'cash' ? splitCash : null }]
+		splitAmount = null
+		splitCash = null
+	}
+
+	function removeSplit(i: number) {
+		splits = splits.filter((_, idx) => idx !== i)
+	}
+
+	/** Anything that is not a server rejection is treated as a network failure. */
+	function isOfflineError(e: unknown) {
+		return !(e instanceof ApiError)
+	}
+
+	function loadOutbox() {
+		try {
+			const raw = localStorage.getItem(OUTBOX_KEY)
+			outbox = raw ? (JSON.parse(raw) as OutboxItem[]) : []
+		} catch {
+			outbox = []
+		}
+	}
+
+	function persistOutbox() {
+		try {
+			localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox))
+		} catch {
+			// Storage full/blocked — keep the in-memory queue.
+		}
+	}
+
+	function queueOutbox(item: OutboxItem) {
+		outbox = [...outbox, item]
+		persistOutbox()
+	}
+
+	/** Replay queued sales: idempotent create (same saleKey) then each pay.
+	 *  A pay that answers ALREADY_PAID means the payment already landed before
+	 *  the disconnect, so the item is treated as synced. */
+	async function syncOutbox() {
+		if (syncing || outbox.length === 0 || !navigator.onLine) return
+		syncing = true
+		try {
+			const pending: OutboxItem[] = []
+			for (const item of outbox) {
+				try {
+					let orderId = item.orderId
+					if (!orderId) {
+						const res = await api.post<{ success: boolean; data: FoodOrder }>('/api/food-orders', {
+							...item.createBody,
+							idempotencyKey: item.saleKey
+						})
+						orderId = res.data.id
+					}
+					for (const p of item.pays) {
+						try {
+							await api.post(`/api/food-orders/${orderId}/pay`, p)
+						} catch (e) {
+							if (e instanceof ApiError && e.code === 'ALREADY_PAID') break
+							throw e
+						}
+					}
+				} catch (e) {
+					if (e instanceof ApiError && e.code === 'ALREADY_PAID') continue
+					pending.push(item)
+					if (!(e instanceof ApiError)) break // still offline — stop trying
+				}
+			}
+			const synced = outbox.length - pending.length
+			outbox = pending
+			persistOutbox()
+			if (synced > 0) toast.success(t('pos.outboxSynced', { count: String(synced) }))
+		} finally {
+			syncing = false
+		}
+	}
+
 	async function placeOrder() {
 		if (cart.length === 0) {
 			toast.error(t('pos.addItems'))
@@ -195,40 +328,97 @@
 		if (placing) return
 		placing = true
 
-		try {
-			const res = await api.post<{ success: boolean; data: FoodOrder }>('/api/food-orders', {
-				orderType: 'POS',
-				outletId,
-				customerName: customerName || undefined,
-				notes: notes || undefined,
-				idempotencyKey: saleKey,
-				items: cart.map((line) => ({
-					menuItemId: line.menuItemId,
-					quantity: line.quantity,
-					modifiers: line.modifiers.length ? line.modifiers.map((m) => ({ modifierId: m.modifierId })) : undefined
-				}))
-			})
-			const order = res.data
+		const createBody = {
+			orderType: 'POS',
+			outletId,
+			customerName: customerName || undefined,
+			notes: notes || undefined,
+			idempotencyKey: saleKey,
+			items: cart.map((line) => ({
+				menuItemId: line.menuItemId,
+				quantity: line.quantity,
+				modifiers: line.modifiers.length ? line.modifiers.map((m) => ({ modifierId: m.modifierId })) : undefined
+			}))
+		}
+		// Tip/discount ride on the first payment (they accumulate server-side,
+		// so they must be sent exactly once). The final payment omits `amount`
+		// so the server bills its exact remaining balance (incl. tax).
+		const firstExtras = {
+			...(tipVal() > 0 ? { tip: tipVal() } : {}),
+			...(discVal() > 0 ? { discountAmount: discVal() } : {}),
+			...(discountReason.trim() ? { discountReason: discountReason.trim() } : {})
+		}
+		const splitPays: OutboxPay[] = splits.map((s, i) => ({
+			paymentMethod: s.method,
+			amount: s.amount,
+			...(s.cashReceived !== null ? { cashReceived: s.cashReceived } : {}),
+			...(i === 0 ? firstExtras : {})
+		}))
+		const finalPay: OutboxPay = {
+			paymentMethod,
+			...(paymentMethod === 'cash' && cashReceived !== null ? { cashReceived } : {}),
+			...(splitPays.length === 0 ? firstExtras : {})
+		}
+		const pays = remainingDue() > 0.001 || splitPays.length === 0
+			? [...splitPays, finalPay]
+			: splitPays
 
-			// Capture payment — authorized + audited on the server. A paid order
-			// is returned unchanged, so replaying the same idempotent sale stays safe.
-			let paid = false
+		let orderId: string | null = null
+		let payIdx = 0
+		try {
+			const res = await api.post<{ success: boolean; data: FoodOrder }>('/api/food-orders', createBody)
+			let order = res.data
+			orderId = order.id
+
+			// Capture payment(s) — authorized + audited on the server.
+			const taken: { method: string; amount: number; change: number | null }[] = []
 			try {
-				await api.post<{ success: boolean; data: FoodOrder }>(`/api/food-orders/${order.id}/pay`, {
-					paymentMethod,
-					...(paymentMethod === 'cash' && cashReceived !== null ? { cashReceived } : {})
-				})
-				paid = true
+				for (; payIdx < pays.length; payIdx++) {
+					const p = pays[payIdx]
+					const paid = await api.post<{ success: boolean; data: FoodOrder }>(
+						`/api/food-orders/${orderId}/pay`,
+						p
+					)
+					order = paid.data
+					// Last pay may omit `amount` — derive what was applied from
+					// the server's authoritative totals for the receipt.
+					const serverBalance =
+						Number(order.total) + Number(order.tipTotal ?? 0) - Number(order.discountTotal ?? 0)
+					const appliedSoFar = taken.reduce((a, x) => a + x.amount, 0)
+					const applied = p.amount ?? round2(serverBalance - appliedSoFar)
+					const tender = p.cashReceived ?? applied
+					taken.push({
+						method: p.paymentMethod ?? 'cash',
+						amount: applied,
+						change: (p.paymentMethod ?? 'cash') === 'cash' ? round2(tender - applied) : null
+					})
+				}
 			} catch (payErr) {
+				if (isOfflineError(payErr) && orderId) {
+					// Order exists on the server; queue only the unsent payments.
+					queueOutbox({ saleKey, orderId, createBody, pays: pays.slice(payIdx), queuedAt: new Date().toISOString() })
+					toast.error(t('pos.offlineQueued'))
+					completing = false
+					return
+				}
 				toast.error(t('pos.paymentNotRecorded', { message: (payErr as Error).message }))
 			}
 
 			receiptOrder = order
-			receiptPaid = paid
+			receiptPaid = order.paymentStatus === 'paid'
+			receiptPayments = taken
 			completing = false
 			clearCart()
 		} catch (e) {
-			toast.error((e as Error).message)
+			if (isOfflineError(e)) {
+				// Create never reached the server — queue the whole sale with
+				// its idempotency key so the retry cannot duplicate the order.
+				queueOutbox({ saleKey, orderId, createBody, pays, queuedAt: new Date().toISOString() })
+				toast.error(t('pos.offlineQueued'))
+				completing = false
+			} else {
+				toast.error((e as Error).message)
+			}
 		} finally {
 			placing = false
 		}
@@ -236,13 +426,37 @@
 
 	function startSale() {
 		receiptOrder = null
+		receiptPayments = []
+		splits = []
+		splitAmount = null
+		splitCash = null
+		tipAmount = null
+		discountAmount = null
+		discountReason = ''
+		cashReceived = null
 		clearCart()
 		newSaleKey()
 	}
 
 	onMount(() => {
 		newSaleKey()
-		load()
+		loadOutbox()
+		isOnline = navigator.onLine
+		const goOnline = () => {
+			isOnline = true
+			void syncOutbox()
+		}
+		const goOffline = () => {
+			isOnline = false
+		}
+		window.addEventListener('online', goOnline)
+		window.addEventListener('offline', goOffline)
+		if (isOnline && outbox.length > 0) void syncOutbox()
+		void load()
+		return () => {
+			window.removeEventListener('online', goOnline)
+			window.removeEventListener('offline', goOffline)
+		}
 	})
 </script>
 
@@ -268,6 +482,19 @@
 			{/if}
 			{#if cart.length}
 				<Button variant="secondary" onclick={clearCart}><Icon name="delete_sweep" size="text-[18px]" /> {t('pos.clear')}</Button>
+			{/if}
+			{#if outbox.length > 0}
+				<span class="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning ring-1 ring-inset ring-warning" role="status">
+					<Icon name="cloud_off" size="text-[16px]" />
+					{isOnline ? t('pos.queuedSync', { count: String(outbox.length) }) : t('pos.offlineQueuedCount', { count: String(outbox.length) })}
+				</span>
+				<Button variant="secondary" onclick={() => void syncOutbox()} loading={syncing} disabled={syncing}>
+					<Icon name="sync" size="text-[18px]" /> {t('pos.syncNow')}
+				</Button>
+			{:else if !isOnline}
+				<span class="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning ring-1 ring-inset ring-warning" role="status">
+					<Icon name="cloud_off" size="text-[16px]" /> {t('pos.offline')}
+				</span>
 			{/if}
 		</div>
 	</div>
@@ -443,6 +670,100 @@
 				<span class="text-sm text-secondary">{t('pos.totalDue')}</span>
 				<span class="font-mono-label text-mono-label text-on-surface">{currency(cartTotal())}</span>
 			</div>
+			<div class="grid grid-cols-2 gap-3">
+				<div>
+					<label for="pos-tip" class="field-label">{t('pos.tip')}</label>
+					<input
+						id="pos-tip"
+						type="number"
+						inputmode="decimal"
+						min="0"
+						step="0.01"
+						class="field"
+						bind:value={tipAmount}
+						placeholder="0.00"
+					/>
+				</div>
+				<div>
+					<label for="pos-discount" class="field-label">{t('pos.discount')}</label>
+					<input
+						id="pos-discount"
+						type="number"
+						inputmode="decimal"
+						min="0"
+						step="0.01"
+						class="field"
+						bind:value={discountAmount}
+						placeholder="0.00"
+					/>
+				</div>
+			</div>
+			{#if (discountAmount ?? 0) > 0}
+				<div>
+					<label for="pos-discount-reason" class="field-label">{t('pos.discountReason')}</label>
+					<input
+						id="pos-discount-reason"
+						class="field"
+						bind:value={discountReason}
+						placeholder={t('pos.discountReasonPlaceholder')}
+					/>
+				</div>
+			{/if}
+			<div class="rounded border border-outline-variant p-3">
+				<div class="mb-2 flex items-center justify-between">
+					<span class="text-sm font-medium text-on-surface">{t('pos.splitPayments')}</span>
+					<span class="text-sm text-secondary">{t('pos.remaining')}: <span class="font-mono-label text-mono-label text-on-surface">{currency(Math.max(0, remainingDue()))}</span></span>
+				</div>
+				{#if splits.length > 0}
+					<ul class="mb-3 space-y-1.5">
+						{#each splits as s, i (i)}
+							<li class="flex items-center justify-between rounded bg-surface-container-low px-2.5 py-1.5 text-sm">
+								<span class="text-on-surface-variant">{s.method} · {currency(s.amount)}{s.cashReceived !== null ? ` (${t('pos.cashReceived')}: ${currency(s.cashReceived)})` : ''}</span>
+								<span class="flex items-center gap-2">
+									<span class="font-mono-label text-mono-label text-on-surface">{currency(s.amount)}</span>
+									<button
+										class="rounded p-1 text-xs text-error hover:bg-error-container/40"
+										onclick={() => removeSplit(i)}
+										aria-label={t('pos.removeSplit')}
+									>✕</button>
+								</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				<div class="grid grid-cols-[1fr_110px_auto] gap-2">
+					<select class="field" bind:value={splitMethod} aria-label={t('pos.paymentMethod')}>
+						<option value="card">{t('pos.card')}</option>
+						<option value="cash">{t('pos.cash')}</option>
+						<option value="bank_transfer">{t('pos.bankTransfer')}</option>
+						<option value="wallet">{t('pos.wallet')}</option>
+						<option value="gift_card">{t('pos.giftCard')}</option>
+					</select>
+					<input
+						type="number"
+						inputmode="decimal"
+						min="0.01"
+						step="0.01"
+						class="field"
+						bind:value={splitAmount}
+						placeholder={String(Math.max(0, remainingDue()))}
+						aria-label={t('pos.splitAmount')}
+					/>
+					<Button variant="secondary" onclick={addSplit}>{t('pos.addSplit')}</Button>
+				</div>
+				{#if splitMethod === 'cash'}
+					<input
+						type="number"
+						inputmode="decimal"
+						min="0"
+						step="0.01"
+						class="field mt-2"
+						bind:value={splitCash}
+						placeholder={t('pos.cashReceived')}
+						aria-label={t('pos.cashReceived')}
+					/>
+				{/if}
+			</div>
 			<div>
 				<label for="pos-pay-method" class="field-label">{t('pos.paymentMethod')}</label>
 				<select id="pos-pay-method" class="field" bind:value={paymentMethod}>
@@ -475,7 +796,7 @@
 			{/if}
 			<div class="pt-1">
 				<Button class="w-full" size="md" onclick={placeOrder} loading={placing} disabled={placing}>
-					<Icon name="check" size="text-[20px]" /> {t('pos.charge')} {currency(cartTotal())}
+					<Icon name="check" size="text-[20px]" /> {t('pos.charge')} {currency(Math.max(0, remainingDue()))}
 				</Button>
 			</div>
 		</div>
@@ -511,8 +832,26 @@
 			<div class="space-y-1 text-sm">
 				<div class="flex justify-between text-secondary"><span>{t('pos.subtotal')}</span><span class="text-on-surface-variant">{currency(receiptOrder.subtotal)}</span></div>
 				<div class="flex justify-between text-secondary"><span>{t('pos.tax')}</span><span class="text-on-surface-variant">{currency(receiptOrder.taxTotal)}</span></div>
+				{#if (receiptOrder.tipTotal ?? 0) > 0}
+					<div class="flex justify-between text-secondary"><span>{t('pos.tip')}</span><span class="text-on-surface-variant">{currency(receiptOrder.tipTotal ?? 0)}</span></div>
+				{/if}
+				{#if (receiptOrder.discountTotal ?? 0) > 0}
+					<div class="flex justify-between text-secondary"><span>{t('pos.discount')}</span><span class="text-on-surface-variant">−{currency(receiptOrder.discountTotal ?? 0)}</span></div>
+				{/if}
 				<div class="flex justify-between font-semibold text-on-surface"><span>{t('pos.total')}</span><span>{currency(receiptOrder.total)}</span></div>
 			</div>
+
+			{#if receiptPayments.length > 0}
+				<div class="space-y-1 text-sm">
+					<div class="text-xs font-medium text-secondary">{t('pos.payments')}</div>
+					{#each receiptPayments as p (p.method + p.amount)}
+						<div class="flex justify-between text-secondary">
+							<span>{p.method}{p.change !== null && p.change > 0 ? ` (${t('pos.change')}: ${currency(p.change)})` : ''}</span>
+							<span class="text-on-surface-variant">{currency(p.amount)}</span>
+						</div>
+					{/each}
+				</div>
+			{/if}
 
 			<div class="flex gap-2 pt-1">
 				<Button class="flex-1" onclick={startSale}><Icon name="add" size="text-[18px]" /> {t('pos.newSale')}</Button>

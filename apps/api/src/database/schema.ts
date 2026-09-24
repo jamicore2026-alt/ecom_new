@@ -540,6 +540,8 @@ export const orders = pgTable(
     subtotal: money('subtotal').notNull().default(0),
     shippingTotal: money('shipping_total').notNull().default(0),
     discountTotal: money('discount_total').notNull().default(0),
+    /** POS tips / gratuity collected across (split) payments. */
+    tipTotal: money('tip_total').notNull().default(0),
     taxTotal: money('tax_total').notNull().default(0),
     total: money('total').notNull().default(0),
     currency: varchar('currency', { length: 10 }).notNull().default('USD'),
@@ -1465,6 +1467,38 @@ export const fulfillmentItems = pgTable(
   (t) => [
     index('fulfillment_items_fulfillment_idx').on(t.fulfillmentId),
     index('fulfillment_items_order_item_idx').on(t.orderItemId)
+  ]
+)
+
+/** Cash-drawer shifts: open bank → drops/payouts → close with expected/actual
+ *  cash and variance. One open shift per outlet at a time. */
+export const registerShifts = pgTable(
+  'register_shifts',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    outletId: varchar('outlet_id', { length: 30 }).references(() => outlets.id, {
+      onDelete: 'set null'
+    }),
+    openedBy: varchar('opened_by', { length: 30 })
+      .notNull()
+      .references(() => users.id, { onDelete: 'set null' }),
+    openBank: money('open_bank').notNull().default(0),
+    status: varchar('status', { length: 20 }).notNull().default('open'),
+    drops: jsonb('drops').$type<Array<{ amount: number; reason?: string; at: string }>>().notNull().default([]),
+    payouts: jsonb('payouts').$type<Array<{ amount: number; reason?: string; at: string }>>().notNull().default([]),
+    expectedCash: money('expected_cash'),
+    actualCash: money('actual_cash'),
+    closedBy: varchar('closed_by', { length: 30 }).references(() => users.id, {
+      onDelete: 'set null'
+    }),
+    openedAt: tstz('opened_at').defaultNow().notNull(),
+    closedAt: tstz('closed_at'),
+    createdAt: tstz('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    index('register_shifts_merchant_idx').on(t.merchantId),
+    index('register_shifts_outlet_status_idx').on(t.outletId, t.status)
   ]
 )
 

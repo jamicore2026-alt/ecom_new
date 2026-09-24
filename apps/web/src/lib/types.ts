@@ -747,6 +747,9 @@ export interface FoodOrder {
 	subtotal: number
 	taxTotal: number
 	total: number
+	tipTotal?: number
+	discountTotal?: number
+	paymentMethod?: string | null
 	currency: string
 	notes: string | null
 	createdAt: string

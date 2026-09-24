@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, isNull, or, notInArray } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, inArray, isNull, or, notInArray } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import {
@@ -186,15 +186,27 @@ export class DriversService {
     return driver ?? null
   }
 
-  static async list(db: DB, merchantId: string, query: { outletId?: string; status?: string; search?: string; page?: number; limit?: number }) {
+  static async list(db: DB, merchantId: string, query: { outletId?: string; status?: string; search?: string; page?: number; limit?: number }, scope?: OutletScope) {
     const { page, limit, offset } = parsePagination(query)
-    const conds = [eq(drivers.merchantId, merchantId)]
-    if (query.outletId) conds.push(eq(drivers.assignedOutletId, query.outletId))
+    const conds = [eq(drivers.merchantId, merchantId)] as (SQL | undefined)[]
+    if (scope) {
+      // Outlet-scoped callers only see drivers assigned to their own outlets
+      // (plus the merchant-wide shared pool, unassigned drivers).
+      const scopedIds = effectiveOutletIds(scope)
+      if (scopedIds === null) return ok({ items: [], meta: makeMeta(page, limit, 0) })
+      conds.push(or(inArray(drivers.assignedOutletId, scopedIds), isNull(drivers.assignedOutletId)))
+      if (query.outletId) {
+        if (!scopedIds.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+        conds.push(eq(drivers.assignedOutletId, query.outletId))
+      }
+    } else if (query.outletId) {
+      conds.push(eq(drivers.assignedOutletId, query.outletId))
+    }
     if (query.status) {
       if (!isDriverStatus(query.status)) throw badRequest('INVALID_DRIVER_STATUS', 'Unknown driver status')
       conds.push(eq(drivers.status, query.status))
     }
-    if (query.search) conds.push(eq(drivers.name, query.search.trim()))
+    if (query.search) conds.push(ilike(drivers.name, `%${query.search.trim()}%`))
 
     const where = and(...conds)
     const [{ value: total }] = await db.select({ value: count() }).from(drivers).where(where)
@@ -346,6 +358,15 @@ export class DriversService {
 
 /* ------------------------------ delivery orders ------------------------------ */
 
+/** Great-circle distance in km between two lat/lng points. */
+const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+  const rad = (d: number) => (d * Math.PI) / 180
+  const a =
+    Math.sin(rad(lat2 - lat1) / 2) ** 2 +
+    Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lng2 - lng1) / 2) ** 2
+  return 2 * 6371 * Math.asin(Math.sqrt(a))
+}
+
 export class DeliveryOrdersService {
   static async create(
     db: DB,
@@ -375,6 +396,33 @@ export class DeliveryOrdersService {
       zone = found
     }
 
+    // Enforce the zone's ordering rules against the server-computed order total.
+    const orderTotal = Number(order.total)
+    if (zone) {
+      if (Number(zone.minOrder) > 0 && orderTotal < Number(zone.minOrder)) {
+        throw badRequest(
+          'BELOW_MIN_ORDER',
+          `This order (${orderTotal.toFixed(2)}) is below the zone minimum (${Number(zone.minOrder).toFixed(2)})`
+        )
+      }
+      const address = (input.address ?? order.shippingAddress ?? {}) as Record<string, unknown>
+      const lat = Number(address.lat ?? address.latitude)
+      const lng = Number(address.lng ?? address.longitude)
+      if (zone.radiusKm !== null && zone.radiusKm !== undefined && Number.isFinite(lat) && Number.isFinite(lng)) {
+        const distanceKm = haversineKm(Number(zone.centerLat), Number(zone.centerLng), lat, lng)
+        if (distanceKm > Number(zone.radiusKm)) {
+          throw badRequest('OUT_OF_DELIVERY_ZONE', 'This address is outside the delivery zone radius')
+        }
+      }
+    }
+
+    // Free delivery once the order reaches the zone threshold (explicit fee wins).
+    const freeDelivery =
+      zone?.freeDeliveryThreshold !== null &&
+      zone?.freeDeliveryThreshold !== undefined &&
+      orderTotal >= Number(zone.freeDeliveryThreshold)
+    const fee = input.fee ?? (freeDelivery ? 0 : (zone?.deliveryFee ?? 0))
+
     const [row] = await db
       .insert(deliveryOrders)
       .values({
@@ -384,7 +432,7 @@ export class DeliveryOrdersService {
         zoneId: zone ? zone.id : null,
         status: 'UNASSIGNED',
         address: input.address ?? order.shippingAddress ?? {},
-        fee: input.fee ?? zone?.deliveryFee ?? 0,
+        fee,
         etaMin: input.etaMin ?? zone?.etaMin ?? 30,
         notes: input.notes ?? null
       })

@@ -53,6 +53,7 @@ export const NAV_ITEMS: NavItem[] = [
 	// Restaurant — dine-in operations
 	{ label: 'Menu', key: 'nav.menu', route: '/menu', icon: 'restaurant_menu', group: 'Restaurant', module: 'restaurant', permission: 'menu.read' },
 	{ label: 'Register', key: 'nav.pos', route: '/pos', icon: 'point_of_sale', group: 'Restaurant', module: 'restaurant', permission: ['orders.read', 'orders.create', 'payments.create'] },
+	{ label: 'Shifts', key: 'nav.shifts', route: '/pos/shifts', icon: 'account_balance_wallet', group: 'Restaurant', module: 'restaurant', permission: 'payments.read' },
 	{ label: 'Food Orders', key: 'nav.foodOrders', route: '/food-orders', icon: 'orders', group: 'Restaurant', module: 'restaurant', permission: ['orders.read', 'orders.create'] },
 	{ label: 'Tables', key: 'nav.tables', route: '/tables', icon: 'table_restaurant', group: 'Restaurant', module: 'tables', permission: 'tables.read' },
 	{ label: 'Kitchen', key: 'nav.kitchen', route: '/kitchen', icon: 'local_fire_department', group: 'Restaurant', module: 'kitchen', permission: 'kitchen.read' },
