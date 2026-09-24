@@ -1445,6 +1445,29 @@ export const fulfillments = pgTable(
   ]
 )
 
+/** Split-fulfillment lines: which order items (and how many units) ship in
+ *  each fulfillment. A fulfillment with no lines covers the whole order
+ *  (legacy behavior). */
+export const fulfillmentItems = pgTable(
+  'fulfillment_items',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    fulfillmentId: varchar('fulfillment_id', { length: 30 })
+      .notNull()
+      .references(() => fulfillments.id, { onDelete: 'cascade' }),
+    orderItemId: varchar('order_item_id', { length: 30 })
+      .notNull()
+      .references(() => orderItems.id, { onDelete: 'cascade' }),
+    quantity: integer('quantity').notNull(),
+    createdAt: tstz('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    index('fulfillment_items_fulfillment_idx').on(t.fulfillmentId),
+    index('fulfillment_items_order_item_idx').on(t.orderItemId)
+  ]
+)
+
 /* --------------------------- customer addresses --------------------------- */
 
 export const customerAddresses = pgTable(

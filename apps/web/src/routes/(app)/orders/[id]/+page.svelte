@@ -35,6 +35,7 @@
 	let refundConfirmOpen = $state(false)
 	let returnStatusTarget = $state<{ r: ReturnRecord; status: 'approved' | 'rejected' } | null>(null)
 	let cancelConfirmOpen = $state(false)
+	let cancelRefundConfirmOpen = $state(false)
 	// Same key per refund attempt: a retry after a gateway failure reuses it so
 	// the server can never double-refund (unique merchant+key).
 	let refundAttemptId = $state('')
@@ -203,6 +204,27 @@
 		}
 	}
 
+	// Cancel a paid order AND refund the remaining balance in one transaction.
+	// POST /api/orders/:id/cancel with { refund: true }.
+	async function cancelOrderWithRefund() {
+		cancelRefundConfirmOpen = false
+		saving = true
+		try {
+			await api.post<{ success: boolean }>(`/api/orders/${id}/cancel`, { refund: true })
+			toast.success('Order cancelled and refunded')
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			saving = false
+		}
+	}
+
+	const canCancelRefund = () =>
+		order !== null &&
+		['pending', 'processing'].includes(order.status) &&
+		['paid', 'partially_refunded'].includes(order.paymentStatus)
+
 	const pendingReturns = () => (order?.returns ?? []).filter((r) => r.status === 'pending')
 	const availableToReturn = (item: OrderItem) => {
 		if (!order) return 0
@@ -256,6 +278,16 @@
 					>
 						Cancel order
 					</Button>
+					{#if canCancelRefund()}
+						<Button
+							variant="danger"
+							size="sm"
+							onclick={() => (cancelRefundConfirmOpen = true)}
+							disabled={saving}
+						>
+							Cancel & refund
+						</Button>
+					{/if}
 					<Button variant="secondary" size="sm" onclick={() => { refundOpen = true; refundAttemptId = crypto.randomUUID() }} disabled={saving || refundable() <= 0}>
 						Record refund
 					</Button>
@@ -601,6 +633,15 @@
 	confirmLabel="Cancel order"
 	onConfirm={cancelOrder}
 	onCancel={() => (cancelConfirmOpen = false)}
+/>
+
+<ConfirmDialog
+	open={cancelRefundConfirmOpen}
+	title={`Cancel order #${order?.orderNumber} and refund ${order ? currency(refundable(), order.currency) : ''}?`}
+	message="The remaining balance is refunded to the original payment method and inventory is restocked in one step. This cannot be undone."
+	confirmLabel="Cancel & refund"
+	onConfirm={cancelOrderWithRefund}
+	onCancel={() => (cancelRefundConfirmOpen = false)}
 />
 
 <ConfirmDialog

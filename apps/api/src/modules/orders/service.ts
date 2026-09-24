@@ -11,6 +11,7 @@ import {
   branchOrderCondition
 } from '../../shared/outlet-scope'
 import {
+  coupons,
   customers,
   inventoryLogs,
   orderItems,
@@ -389,6 +390,168 @@ export class OrdersService {
       .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
     emit(merchantId, 'order.cancelled', { orderId: id, orderNumber: updated.orderNumber })
     return ok(updated)
+  }
+
+  /**
+   * Cancel a PAID order and refund it in ONE transaction.
+   *
+   * Route: POST /api/orders/:id/cancel with `{ refund: true }`.
+   * Preconditions: status is pending/processing AND paymentStatus is
+   * paid/partially_refunded. The remaining refundable balance
+   * (total − non-failed refunds) is recorded as a completed `original`-method
+   * refund, the order flips to cancelled/refunded, inventory is restocked and
+   * the coupon quota restored — atomically, under one order row lock.
+   * Plain cancel (no `refund` flag) keeps the REFUND_REQUIRED behavior.
+   */
+  static async cancelWithRefund(
+    db: DB,
+    merchantId: string,
+    id: string,
+    opts: { idempotencyKey?: string } = {},
+    branchIds: string[] | null = null
+  ) {
+    // Idempotent replay: same key + already-cancelled order returns current state.
+    if (opts.idempotencyKey) {
+      const [existing] = await db
+        .select()
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.merchantId, merchantId),
+            eq(refunds.idempotencyKey, opts.idempotencyKey)
+          )
+        )
+      if (existing?.status === 'completed') {
+        const [order] = await db
+          .select()
+          .from(orders)
+          .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
+        if (order && order.status === 'cancelled') return ok({ ...order, refund: existing })
+      }
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [order] = await tx
+        .select()
+        .from(orders)
+        .where(and(eq(orders.id, id), eq(orders.merchantId, merchantId)))
+        .for('update')
+      if (!order) throw notFound('NOT_FOUND', 'Order not found')
+      assertOrderInBranchScope(branchIds, order.outletId)
+      if (order.status === 'cancelled' || order.status === 'refunded') {
+        throw badRequest('INVALID_TRANSITION', `Order is already ${order.status}`)
+      }
+      if (!['pending', 'processing'].includes(order.status)) {
+        throw badRequest('INVALID_TRANSITION', `Cannot cancel a ${order.status} order`)
+      }
+      if (!['paid', 'partially_refunded'].includes(order.paymentStatus)) {
+        throw badRequest(
+          'NOTHING_TO_REFUND',
+          'Only paid orders can be cancelled with a refund — use plain cancel'
+        )
+      }
+
+      const [sumRow] = await tx
+        .select({ sum: sql<number>`coalesce(sum(${refunds.amount}), 0)` })
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.orderId, order.id),
+            sql`${refunds.status} != 'failed'`
+          )
+        )
+      const already = Number(sumRow?.sum ?? 0)
+      const remaining = Number((order.total - already).toFixed(2))
+      if (remaining <= 0) {
+        throw badRequest('NOTHING_TO_REFUND', 'Order has no refundable balance left')
+      }
+
+      const [refundRow] = await tx
+        .insert(refunds)
+        .values({
+          merchantId,
+          orderId: order.id,
+          returnId: null,
+          amount: remaining,
+          method: 'original',
+          providerRef: null,
+          status: 'completed',
+          idempotencyKey: opts.idempotencyKey ?? createId(),
+          attemptCount: 1
+        })
+        .returning()
+
+      const [updated] = await tx
+        .update(orders)
+        .set({
+          status: 'cancelled',
+          paymentStatus: 'refunded',
+          fulfillmentStatus: 'unfulfilled',
+          expiresAt: null,
+          updatedAt: new Date()
+        })
+        .where(eq(orders.id, order.id))
+        .returning()
+
+      // Restock (same semantics as cancelPendingOrderTx: approved returns
+      // already restocked their units, so exclude them).
+      const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, order.id))
+      const approvedRows = await tx
+        .select({
+          orderItemId: returnsTable.orderItemId,
+          returned: sql<number>`coalesce(sum(${returnsTable.quantity}), 0)`
+        })
+        .from(returnsTable)
+        .where(and(eq(returnsTable.orderId, order.id), eq(returnsTable.status, 'approved')))
+        .groupBy(returnsTable.orderItemId)
+      const approvedByItem = new Map(approvedRows.map((r) => [r.orderItemId, Number(r.returned)]))
+      for (const item of items) {
+        if (!item.variantId) continue
+        const quantity = Math.max(0, item.quantity - (approvedByItem.get(item.id) ?? 0))
+        if (quantity === 0) continue
+        const [variant] = await tx
+          .select()
+          .from(productVariants)
+          .where(eq(productVariants.id, item.variantId))
+          .for('update')
+        if (!variant) continue
+        const afterValue = variant.inventory + quantity
+        await tx
+          .update(productVariants)
+          .set({ inventory: afterValue })
+          .where(eq(productVariants.id, variant.id))
+        await tx.insert(inventoryLogs).values({
+          merchantId: order.merchantId,
+          variantId: variant.id,
+          change: quantity,
+          beforeValue: variant.inventory,
+          afterValue,
+          reason: 'cancel-refund',
+          reference: order.orderNumber
+        })
+      }
+
+      if (order.couponCode) {
+        await tx
+          .update(coupons)
+          .set({ usedCount: sql`greatest(${coupons.usedCount} - 1, 0)` })
+          .where(and(eq(coupons.merchantId, order.merchantId), eq(coupons.code, order.couponCode)))
+      }
+
+      return { updated, refundRow }
+    })
+
+    emit(merchantId, 'refund.completed', {
+      refundId: result.refundRow.id,
+      orderId: result.updated.id,
+      orderNumber: result.updated.orderNumber,
+      amount: result.refundRow.amount
+    })
+    emit(merchantId, 'order.cancelled', {
+      orderId: result.updated.id,
+      orderNumber: result.updated.orderNumber
+    })
+    return ok({ ...result.updated, refund: result.refundRow })
   }
 
   private static dispatchOrderEvents(merchantId: string, order: Order) {

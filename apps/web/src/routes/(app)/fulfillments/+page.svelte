@@ -74,6 +74,16 @@
 	let createOrderId = $state('')
 	let createCarrier = $state('')
 	let createCourier = $state('')
+	interface CreateLine {
+		orderItemId: string
+		name: string
+		sku: string | null
+		ordered: number
+		selected: boolean
+		qty: string
+	}
+	let createLines = $state<CreateLine[]>([])
+	let createLinesLoading = $state(false)
 
 	// Ship modal
 	let showShip = $state(false)
@@ -127,7 +137,34 @@
 		createOrderId = ''
 		createCarrier = ''
 		createCourier = ''
+		createLines = []
 		showCreate = true
+	}
+
+	async function loadCreateItems() {
+		if (!createOrderId.trim()) {
+			toast.error('Order ID is required')
+			return
+		}
+		createLinesLoading = true
+		try {
+			const res = await api.get<{ success: boolean; data: { items: Array<{ id: string; name: string; sku: string | null; quantity: number }> } }>(
+				`/api/orders/${createOrderId.trim()}`
+			)
+			createLines = (res.data.items ?? []).map((i) => ({
+				orderItemId: i.id,
+				name: i.name,
+				sku: i.sku,
+				ordered: i.quantity,
+				selected: false,
+				qty: String(i.quantity)
+			}))
+			if (createLines.length === 0) toast.error('Order has no items')
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			createLinesLoading = false
+		}
 	}
 
 	async function createFulfillment() {
@@ -135,12 +172,22 @@
 			toast.error('Order ID is required')
 			return
 		}
+		const lines = createLines
+			.filter((l) => l.selected)
+			.map((l) => ({ orderItemId: l.orderItemId, quantity: Number(l.qty) }))
+		for (const l of lines) {
+			if (!Number.isInteger(l.quantity) || l.quantity < 1) {
+				toast.error('Line quantities must be whole numbers >= 1')
+				return
+			}
+		}
 		saving = true
 		try {
 			await api.post<{ success: boolean; data: Fulfillment }>('/api/fulfillments', {
 				orderId: createOrderId.trim(),
 				...(createCarrier.trim() ? { carrier: createCarrier.trim() } : {}),
-				...(createCourier.trim() ? { courierProvider: createCourier.trim() } : {})
+				...(createCourier.trim() ? { courierProvider: createCourier.trim() } : {}),
+				...(lines.length > 0 ? { items: lines } : {})
 			})
 			toast.success('Fulfillment created')
 			showCreate = false
@@ -333,8 +380,44 @@
 		<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); createFulfillment() }}>
 			<div>
 				<label class="field-label" for="fc-order">Order ID</label>
-				<input id="fc-order" class="field" bind:value={createOrderId} placeholder="Raw order ID" required />
+				<div class="flex gap-2">
+					<input id="fc-order" class="field" bind:value={createOrderId} placeholder="Raw order ID" required />
+					<Button variant="secondary" size="sm" onclick={loadCreateItems} disabled={createLinesLoading}>
+						{createLinesLoading ? 'Loading…' : 'Load items'}
+					</Button>
+				</div>
 			</div>
+			{#if createLines.length > 0}
+				<div>
+					<span class="field-label">Split lines (leave all unchecked = whole order)</span>
+					<div class="mt-1 space-y-2 rounded border border-outline-variant p-3">
+						{#each createLines as line (line.orderItemId)}
+							<div class="flex items-center gap-3 text-sm">
+								<input
+									type="checkbox"
+									id="fc-line-{line.orderItemId}"
+									bind:checked={line.selected}
+									class="h-4 w-4 accent-primary"
+								/>
+								<label for="fc-line-{line.orderItemId}" class="min-w-0 flex-1">
+									<span class="block truncate font-medium text-on-surface">{line.name}</span>
+									<span class="block text-xs text-secondary">Ordered {line.ordered}{line.sku ? ` · ${line.sku}` : ''}</span>
+								</label>
+								<input
+									type="number"
+									min="1"
+									max={line.ordered}
+									step="1"
+									bind:value={line.qty}
+									disabled={!line.selected}
+									aria-label={`Quantity for ${line.name}`}
+									class="field w-20"
+								/>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
 			<div>
 				<label class="field-label" for="fc-carrier">Carrier</label>
 				<input id="fc-carrier" class="field" bind:value={createCarrier} placeholder="e.g. FedEx" />

@@ -1,12 +1,14 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, ne, sql } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import { createLogger } from '../../shared/logger'
 
 const log = createLogger('fulfillments')
 import {
   customers,
+  fulfillmentItems,
   fulfillments,
   merchants,
+  orderItems,
   orders,
   storeSettings
 } from '../../database/schema'
@@ -92,10 +94,15 @@ export class FulfillmentsService {
       .where(and(eq(fulfillments.id, id), eq(fulfillments.merchantId, merchantId)))
     if (!row) throw notFound('FULFILLMENT_NOT_FOUND', 'Fulfillment not found')
     assertOrderInBranchScope(branchIds, row.orders.outletId)
+    const lines = await db
+      .select()
+      .from(fulfillmentItems)
+      .where(eq(fulfillmentItems.fulfillmentId, row.fulfillments.id))
     return ok({
       ...row.fulfillments,
       orderNumber: row.orders.orderNumber,
-      customerEmail: row.customers?.email ?? null
+      customerEmail: row.customers?.email ?? null,
+      lines
     })
   }
 
@@ -108,6 +115,7 @@ export class FulfillmentsService {
       carrier?: string
       courierProvider?: string
       metadata?: Record<string, unknown>
+      items?: Array<{ orderItemId: string; quantity: number }>
     }
   ) {
     // Validate the order belongs to this merchant and is fulfillable.
@@ -121,27 +129,92 @@ export class FulfillmentsService {
       throw badRequest('ORDER_NOT_FULFILLABLE', 'Cancelled/refunded orders cannot be fulfilled')
     }
 
-    const [row] = await db
-      .insert(fulfillments)
-      .values({
-        merchantId,
-        orderId: order.id,
-        status: 'unfulfilled',
-        carrier: input.carrier ?? null,
-        courierProvider: input.courierProvider ?? null,
-        metadata: input.metadata ?? {}
-      })
-      .returning()
+    // Empty/missing `items` = whole-order legacy fulfillment (no lines stored).
+    const requested = (input.items ?? []).filter((l) => l.quantity >= 1)
+    if ((input.items ?? []).length > 0 && requested.length !== (input.items ?? []).length) {
+      throw badRequest('INVALID_QUANTITY', 'Line quantities must be >= 1')
+    }
+    // Merge duplicate lines for the same order item so the cumulative check
+    // sees the true requested total.
+    const merged = new Map<string, number>()
+    for (const line of requested) {
+      merged.set(line.orderItemId, (merged.get(line.orderItemId) ?? 0) + line.quantity)
+    }
+
+    const created = await db.transaction(async (tx) => {
+      if (merged.size > 0) {
+        const rows = await tx
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, order.id))
+        const byId = new Map(rows.map((r) => [r.id, r]))
+        for (const [orderItemId, quantity] of merged) {
+          const item = byId.get(orderItemId)
+          if (!item) {
+            throw badRequest('ORDER_ITEM_MISMATCH', 'Order item does not belong to this order')
+          }
+          // Cumulative quantity across non-cancelled fulfillments for this
+          // order item must never exceed the ordered quantity.
+          const [sumRow] = await tx
+            .select({ total: sql<number>`coalesce(sum(${fulfillmentItems.quantity}), 0)` })
+            .from(fulfillmentItems)
+            .innerJoin(fulfillments, eq(fulfillmentItems.fulfillmentId, fulfillments.id))
+            .where(
+              and(
+                eq(fulfillmentItems.orderItemId, orderItemId),
+                eq(fulfillments.orderId, order.id),
+                ne(fulfillments.status, 'cancelled')
+              )
+            )
+          const already = Number(sumRow?.total ?? 0)
+          if (already + quantity > item.quantity) {
+            throw badRequest(
+              'OVER_FULFILLED',
+              `Only ${item.quantity - already} unit(s) of "${item.name}" left to fulfill`
+            )
+          }
+        }
+      }
+
+      const [row] = await tx
+        .insert(fulfillments)
+        .values({
+          merchantId,
+          orderId: order.id,
+          status: 'unfulfilled',
+          carrier: input.carrier ?? null,
+          courierProvider: input.courierProvider ?? null,
+          metadata: input.metadata ?? {}
+        })
+        .returning()
+
+      let lines: (typeof fulfillmentItems.$inferSelect)[] = []
+      if (merged.size > 0) {
+        lines = await tx
+          .insert(fulfillmentItems)
+          .values(
+            [...merged].map(([orderItemId, quantity]) => ({
+              merchantId,
+              fulfillmentId: row.id,
+              orderItemId,
+              quantity
+            }))
+          )
+          .returning()
+      }
+
+      return { row, lines }
+    })
 
     // The order-level fulfillmentStatus is binary — a freshly created fulfillment
     // row stays 'unfulfilled' until it ships (see toOrderFulfillmentStatus).
     await dispatchWebhookEvent(db, merchantId, 'fulfillment.created', {
-      fulfillmentId: row.id,
-      orderId: row.orderId,
-      status: row.status
+      fulfillmentId: created.row.id,
+      orderId: created.row.orderId,
+      status: created.row.status
     })
 
-    return ok(row)
+    return ok({ ...created.row, lines: created.lines })
   }
 
   static async update(

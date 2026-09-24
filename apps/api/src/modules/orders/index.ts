@@ -1,4 +1,4 @@
-import { Elysia } from 'elysia'
+import { Elysia, t } from 'elysia'
 import { authPlugin, hasPermission, requirePermission } from '../../plugins/auth'
 import type { AuthContext } from '../../plugins/auth'
 import { branchScopeOf } from '../../shared/outlet-scope'
@@ -6,6 +6,7 @@ import { forbidden } from '../../shared/errors'
 import { auditFromRequest } from '../audit-logs'
 import { OrdersService } from './service'
 import {
+  cancelOrderBody,
   createRefundBody,
   createReturnBody,
   orderQuery,
@@ -78,8 +79,24 @@ export const ordersModule = new Elysia({ prefix: '/api' })
     },
     { body: updateStatusBody }
   )
-  .post('/orders/:id/cancel', async ({ params, auth }) =>
-    OrdersService.cancel(auth.db, auth.merchant.id, params.id, await scopeOf(auth))
+  .post(
+    '/orders/:id/cancel',
+    async ({ params, body, auth }) => {
+      // `{ refund: true }` = cancel a paid order AND refund the remaining
+      // balance in one transaction. Omitted/false = plain cancel, which still
+      // rejects paid orders with REFUND_REQUIRED.
+      if (body?.refund === true) {
+        return OrdersService.cancelWithRefund(
+          auth.db,
+          auth.merchant.id,
+          params.id,
+          { idempotencyKey: body.idempotencyKey },
+          await scopeOf(auth)
+        )
+      }
+      return OrdersService.cancel(auth.db, auth.merchant.id, params.id, await scopeOf(auth))
+    },
+    { body: t.Optional(cancelOrderBody) }
   )
   .post('/returns', async ({ body, auth }) =>
     OrdersService.createReturn(auth.db, auth.merchant.id, body, await scopeOf(auth)),

@@ -8,11 +8,18 @@ export const orderParams = t.Object({
   orderId: t.String()
 })
 
+export const fulfillmentLineBody = t.Object({
+  orderItemId: t.String({ minLength: 1 }),
+  quantity: t.Integer({ minimum: 1 })
+})
+
 export const createFulfillmentBody = t.Object({
   orderId: t.String(),
   carrier: t.Optional(t.String({ maxLength: 100 })),
   courierProvider: t.Optional(t.String({ maxLength: 50 })),
-  metadata: t.Optional(t.Record(t.String(), t.Any()))
+  metadata: t.Optional(t.Record(t.String(), t.Any())),
+  /** Split-fulfillment lines. Empty/missing = whole-order legacy behavior. */
+  items: t.Optional(t.Array(fulfillmentLineBody))
 })
 
 export const updateFulfillmentBody = t.Object({

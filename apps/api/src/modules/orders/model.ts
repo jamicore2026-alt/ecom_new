@@ -39,6 +39,15 @@ export const updateStatusBody = t.Object({
   fulfillmentStatus: t.Optional(fulfillmentStatusSchema)
 })
 
+export const cancelOrderBody = t.Object({
+  /** When true and the order is paid/partially_refunded, refunds the remaining
+   *  balance (original method) and cancels+restocks in one transaction.
+   *  Omitted/false = plain cancel (paid orders still get REFUND_REQUIRED). */
+  refund: t.Optional(t.Boolean()),
+  /** Idempotency key for the implicit refund — safe retries of cancel+refund. */
+  idempotencyKey: t.Optional(t.String({ maxLength: 80 }))
+})
+
 export const createReturnBody = t.Object({
   orderId: t.String({ minLength: 1 }),
   orderItemId: t.String({ minLength: 1 }),
