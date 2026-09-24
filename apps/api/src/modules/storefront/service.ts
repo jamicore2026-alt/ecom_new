@@ -36,6 +36,8 @@ import { DEFAULT_CHECKOUT_REQUIRED_FIELDS } from '../../shared/types'
 import type { CheckoutFieldRequirements, ShippingRule } from '../../shared/types'
 import { DiscountsService } from '../discounts/service'
 import { EmailsService } from '../emails/service'
+import { awardForOrder } from '../loyalty/engine'
+import { attributeOrder } from '../affiliates/service'
 import { CartsService } from '../carts/service'
 import { OrdersService } from '../orders/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
@@ -69,6 +71,8 @@ export interface CheckoutItemInput {
 
 export interface CheckoutInput extends CheckoutPreviewInput {
   email: string
+  /** Affiliate referral code (?ref=); attributes commission on order placement. */
+  referralCode?: string
   shippingAddress: CheckoutAddress
   billingAddress?: CheckoutAddress
   paymentMethod: string
@@ -1308,7 +1312,7 @@ export class StorefrontService {
       body.fulfillmentWarehouseId
     )
 
-    return db.transaction(async (tx) => {
+    const placedOrder = await db.transaction(async (tx) => {
       // Acquire ALL variant locks FIRST — before customer/order/quota writes —
       // so every checkout transaction takes row locks in one global order.
       // Concurrent checkouts then queue on the variant instead of deadlocking
@@ -1409,7 +1413,7 @@ export class StorefrontService {
           paymentProvider: opts.provider ?? null,
           couponCode: summary.coupon?.code ?? null,
           promotionId: summary.promotionId ?? null,
-          attributionChannel: 'direct',
+          attributionChannel: body.referralCode?.trim() ? 'affiliate' : 'direct',
           warehouseId: fulfillingWarehouseId,
           idempotencyKey: body.idempotencyKey ?? null,
           expiresAt: opts.expiresAt ?? null
@@ -1580,6 +1584,35 @@ export class StorefrontService {
 
       return order
     })
+
+    // Post-commit growth hooks. They run inside the request (on the still-open
+    // tenant connection) and never fail a paid checkout: any error is logged
+    // for the operator while the durable order stands.
+    const referralCode = body.referralCode?.trim()
+    if (referralCode) {
+      try {
+        await attributeOrder(db, store.merchant.id, {
+          orderId: placedOrder.id,
+          customerId: placedOrder.customerId,
+          subtotal: Number(placedOrder.subtotal),
+          referralCode
+        })
+      } catch (err) {
+        log.warn('affiliate attribution failed', err)
+      }
+    }
+    if (placedOrder.customerId) {
+      try {
+        await awardForOrder(db, store.merchant.id, {
+          customerId: placedOrder.customerId,
+          orderId: placedOrder.id,
+          subtotal: Number(placedOrder.subtotal)
+        })
+      } catch (err) {
+        log.warn('loyalty award failed', err)
+      }
+    }
+    return placedOrder
   }
 
   /** Shared confirmation shape returned by the idempotent checkout replay. */

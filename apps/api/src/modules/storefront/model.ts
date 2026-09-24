@@ -73,6 +73,8 @@ export const checkoutBody = t.Object({
   paymentMethod: t.String({ maxLength: 50 }),
   notes: t.Optional(t.String({ maxLength: 2000 })),
   cartId: t.Optional(t.String({ maxLength: 30 })),
+  /** Affiliate referral code (?ref=); attributes commission on placement. */
+  referralCode: t.Optional(t.String({ maxLength: 50 })),
   fulfillmentWarehouseId: t.Optional(t.String({ maxLength: 30 })),
   // Client-generated key (e.g. crypto.randomUUID) so a double-submit/retry of
   // the same logical checkout can never create a second order. The

@@ -3,6 +3,7 @@ import { t } from 'elysia'
 import { authPlugin, requirePermission } from '../../plugins/auth'
 import { LoyaltyService } from './service'
 import { LoyaltyProgramService } from './program'
+import { expireStaleAccounts, redeemReward } from './engine'
 
 const adjustBody = t.Object({
   customerId: t.String(),
@@ -40,6 +41,15 @@ const requiredRuleBody = t.Object({
   enabled: t.Optional(t.Boolean())
 })
 
+const redeemBody = t.Object({
+  customerId: t.String(),
+  rewardId: t.String()
+})
+
+const expireBody = t.Object({
+  olderThanDays: t.Optional(t.Integer({ minimum: 1, maximum: 3650 }))
+})
+
 const rewardBody = t.Object({
   name: t.Optional(t.String({ minLength: 1 })),
   description: t.Optional(t.String()),
@@ -70,6 +80,8 @@ export const loyaltyModule = new Elysia({ prefix: '/api' })
 
   .use(requirePermission('settings.manage'))
   .post('/loyalty/adjust', async ({ auth, body }) => LoyaltyService.adjust(auth.db, auth.merchant.id, body.customerId, body), { body: adjustBody })
+  .post('/loyalty/redeem', async ({ auth, body }) => redeemReward(auth.db, auth.merchant.id, body), { body: redeemBody })
+  .post('/loyalty/expire', async ({ auth, body }) => expireStaleAccounts(auth.db, auth.merchant.id, body.olderThanDays ?? 365), { body: expireBody })
   .post('/loyalty/tiers', async ({ auth, body }) => LoyaltyProgramService.createTier(auth.db, auth.merchant.id, body), { body: requiredTierBody })
   .put('/loyalty/tiers/:id', async ({ auth, params, body }) => LoyaltyProgramService.updateTier(auth.db, auth.merchant.id, params.id, body), { body: tierBody })
   .delete('/loyalty/tiers/:id', async ({ auth, params }) => LoyaltyProgramService.deleteTier(auth.db, auth.merchant.id, params.id))

@@ -29,6 +29,7 @@ import { applyManualMarkPaid, markOrderPaidEffects } from '../../shared/order-pa
 import { cancelPendingOrderTx } from '../../shared/order-cancel'
 import { emit } from '../../shared/event-dispatch'
 import { EmailsService } from '../emails/service'
+import { reverseForRefund } from '../affiliates/service'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
 import { badRequest, conflict, notFound } from '../../shared/errors'
@@ -551,6 +552,14 @@ export class OrdersService {
       orderId: result.updated.id,
       orderNumber: result.updated.orderNumber
     })
+    // Affiliate commissions on a refunded order must not pay out. Awaited on
+    // the request connection (never fire-and-forget: the tenant connection
+    // closes after the response); failures never break the durable refund.
+    try {
+      await reverseForRefund(db, merchantId, result.updated.id)
+    } catch (err) {
+      log.warn('affiliate reversal failed', err)
+    }
     return ok({ ...result.updated, refund: result.refundRow })
   }
 
@@ -955,6 +964,13 @@ export class OrdersService {
       orderNumber: reserved.order.orderNumber,
       amount: refund.amount
     })
+    // A refunded order's affiliate commission must not pay out (awaited, but
+    // never fatal to the refund).
+    try {
+      await reverseForRefund(db, merchantId, reserved.order.id)
+    } catch (err) {
+      log.warn('affiliate reversal failed', err)
+    }
 
     return ok(refund)
   }

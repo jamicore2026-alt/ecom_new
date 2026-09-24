@@ -9,6 +9,19 @@
 	import { t } from '$lib/i18n'
 	import { track } from '$lib/analytics'
 	import type { CheckoutField, CheckoutSummary, ShopperAddress } from '$lib/types'
+
+	/** Affiliate code persisted by the store layout from ?ref= (30-day window). */
+	const readReferralCode = (): string | undefined => {
+		try {
+			const raw = localStorage.getItem('ecom:ref')
+			if (!raw) return undefined
+			const parsed = JSON.parse(raw) as { code?: string; at?: number }
+			if (!parsed.code || Date.now() - (parsed.at ?? 0) > 30 * 24 * 60 * 60 * 1000) return undefined
+			return parsed.code
+		} catch {
+			return undefined
+		}
+	}
 	import type { PageProps } from './$types'
 
 	let { data }: PageProps = $props()
@@ -288,6 +301,7 @@
 				})),
 				couponCode: couponCode.trim() || undefined,
 				email: email.trim(),
+				referralCode: readReferralCode(),
 shippingAddress: {
 				name: shippingName.trim(),
 				line1: line1.trim(),

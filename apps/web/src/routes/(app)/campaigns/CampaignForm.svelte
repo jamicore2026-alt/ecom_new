@@ -23,6 +23,40 @@
 	let fTriggerDelayHours = $state(0)
 	let fSchedule = $state('')
 
+	type AudienceType = 'all' | 'segment' | 'tag'
+	let fAudienceType = $state<AudienceType>('all')
+	let fSegmentId = $state('')
+	let fTag = $state('')
+	let segments = $state<{ id: string; name: string; customerCount: number }[]>([])
+
+	async function loadSegments() {
+		try {
+			const res = await api.get<{ success: boolean; data: { items: typeof segments } }>('/api/segments')
+			segments = res.data.items
+		} catch {
+			segments = []
+		}
+	}
+
+	function applyAudience(audience: Record<string, unknown>) {
+		const t = audience?.type
+		if (t === 'segment' && typeof audience.segmentId === 'string') {
+			fAudienceType = 'segment'
+			fSegmentId = audience.segmentId
+		} else if (t === 'tag' && typeof audience.tag === 'string') {
+			fAudienceType = 'tag'
+			fTag = audience.tag
+		} else {
+			fAudienceType = 'all'
+		}
+	}
+
+	function buildAudience(): Record<string, unknown> {
+		if (fAudienceType === 'segment' && fSegmentId) return { type: 'segment', segmentId: fSegmentId }
+		if (fAudienceType === 'tag' && fTag.trim()) return { type: 'tag', tag: fTag.trim() }
+		return { type: 'all' }
+	}
+
 	function resetForm() {
 		fName = ''
 		fType = 'email'
@@ -31,6 +65,9 @@
 		fTriggerType = ''
 		fTriggerDelayHours = 0
 		fSchedule = ''
+		fAudienceType = 'all'
+		fSegmentId = ''
+		fTag = ''
 	}
 
 	async function load() {
@@ -46,12 +83,17 @@
 			fTriggerType = c.triggerType ?? ''
 			fTriggerDelayHours = c.triggerDelayHours
 			fSchedule = c.scheduledAt ? c.scheduledAt.slice(0, 16) : ''
+			applyAudience((c.audience ?? {}) as Record<string, unknown>)
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
 			loading = false
 		}
 	}
+
+	$effect(() => {
+		loadSegments()
+	})
 
 	$effect(() => {
 		if ((campaignId ?? null) !== id) {
@@ -80,6 +122,17 @@
 			body.triggerType = fTriggerType || null
 			body.triggerDelayHours = Math.max(0, fTriggerDelayHours)
 			body.scheduledAt = fSchedule ? new Date(fSchedule).toISOString() : null
+			if (fAudienceType === 'segment' && !fSegmentId) {
+				toast.error('Select a segment for this audience')
+				saving = false
+				return
+			}
+			if (fAudienceType === 'tag' && !fTag.trim()) {
+				toast.error('Enter a tag for this audience')
+				saving = false
+				return
+			}
+			body.audience = buildAudience()
 
 			let newId = id
 			if (id) {
@@ -126,6 +179,45 @@
 						</button>
 					{/each}
 				</div>
+			</div>
+
+			<div>
+				<p class="field-label">Audience</p>
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+					{#each [
+						{ key: 'all', label: 'All customers', desc: 'Every customer email' },
+						{ key: 'segment', label: 'Segment', desc: 'Customers matching a segment' },
+						{ key: 'tag', label: 'Tag', desc: 'Customers carrying a tag' }
+					] as ch (ch.key)}
+						<button type="button" class="cursor-pointer rounded border p-3 text-left transition-colors {fAudienceType === ch.key ? 'border-primary bg-primary-fixed-dim/20' : 'border-outline-variant bg-surface-container-lowest hover:bg-surface-container'}" onclick={() => (fAudienceType = ch.key as AudienceType)}>
+							<div class="flex items-start justify-between">
+								<span class="text-sm font-semibold text-on-surface">{ch.label}</span>
+								<Icon name={fAudienceType === ch.key ? 'check_circle' : 'radio_button_unchecked'} size="text-[18px]" class={fAudienceType === ch.key ? 'text-primary' : 'text-outline'} />
+							</div>
+							<p class="mt-1 text-xs text-secondary">{ch.desc}</p>
+						</button>
+					{/each}
+				</div>
+				{#if fAudienceType === 'segment'}
+					<div class="mt-3">
+						<label class="field-label" for="cp-segment">Segment</label>
+						<select id="cp-segment" class="field" bind:value={fSegmentId}>
+							<option value="">Select a segment…</option>
+							{#each segments as s (s.id)}
+								<option value={s.id}>{s.name} ({s.customerCount})</option>
+							{/each}
+						</select>
+						{#if segments.length === 0}
+							<p class="mt-1 text-xs text-secondary">No segments yet — create one under Customers → Segments first.</p>
+						{/if}
+					</div>
+				{/if}
+				{#if fAudienceType === 'tag'}
+					<div class="mt-3">
+						<label class="field-label" for="cp-tag">Customer tag</label>
+						<input id="cp-tag" class="field" bind:value={fTag} placeholder="e.g. vip" />
+					</div>
+				{/if}
 			</div>
 
 			<div>

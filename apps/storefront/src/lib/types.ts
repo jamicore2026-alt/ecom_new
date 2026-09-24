@@ -242,6 +242,7 @@ export interface CheckoutInput {
 	items: CartItemInput[]
 	couponCode?: string
 	email: string
+	referralCode?: string
 	shippingAddress: AddressInput
 	billingAddress?: AddressInput
 	paymentMethod: string

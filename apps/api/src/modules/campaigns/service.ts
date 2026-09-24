@@ -1,9 +1,31 @@
 import { and, desc, eq } from 'drizzle-orm'
 import type { DB } from '../../database/client'
-import { campaigns, customers, merchants } from '../../database/schema'
+import { campaigns, customers, customerSegments, customerTags, merchants } from '../../database/schema'
 import { ok } from '../../shared/response'
-import { notFound } from '../../shared/errors'
+import { badRequest, notFound } from '../../shared/errors'
 import { createLogger } from '../../shared/logger'
+import { SegmentsService, type SegmentDefinition } from '../segments/service'
+
+export type CampaignAudience =
+  | { type: 'all' }
+  | { type: 'segment'; segmentId: string }
+  | { type: 'tag'; tag: string }
+  | { type: 'list'; emails: string[] }
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function normalizeEmails(raw: unknown[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const email = item.trim().toLowerCase()
+    if (!email || !EMAIL_RE.test(email) || seen.has(email)) continue
+    seen.add(email)
+    out.push(email)
+  }
+  return out
+}
 
 const log = createLogger('campaigns')
 import { getMailer, renderEmail } from '../../shared/mailer'
@@ -110,6 +132,7 @@ export class CampaignsService {
       name?: string
       subject?: string
       content?: string
+      audience?: Record<string, unknown>
       triggerType?: string
       triggerDelayHours?: number
       scheduledAt?: string
@@ -122,6 +145,7 @@ export class CampaignsService {
         ...(input.name !== undefined && { name: input.name }),
         ...(input.subject !== undefined && { subject: input.subject }),
         ...(input.content !== undefined && { content: input.content }),
+        ...(input.audience !== undefined && { audience: input.audience as object }),
         ...(input.triggerType !== undefined && { triggerType: input.triggerType }),
         ...(input.triggerDelayHours !== undefined && { triggerDelayHours: input.triggerDelayHours }),
         ...(input.scheduledAt !== undefined && { scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null })
@@ -139,11 +163,79 @@ export class CampaignsService {
     return ok({ deleted: true })
   }
 
-  private static async resolveAudience(db: DB, merchantId: string, _audience: Record<string, unknown>) {
-    const all = await db
-      .select({ email: customers.email })
-      .from(customers)
-      .where(eq(customers.merchantId, merchantId))
-    return all.map((c) => c.email).filter(Boolean) as string[]
+  /**
+   * Resolve a campaign audience descriptor to a deduped, validated email list.
+   * Supported shapes:
+   * - { type: 'all' } (default when missing/empty) — all customer emails
+   * - { type: 'segment', segmentId } — live members via SegmentsService.listMembers
+   * - { type: 'tag', tag } — customers carrying the tag (tags column or customer_tags)
+   * - { type: 'list', emails } — explicit email list
+   */
+  static async resolveAudience(
+    db: DB,
+    merchantId: string,
+    audience: Record<string, unknown> | CampaignAudience | null | undefined
+  ): Promise<string[]> {
+    const a = (audience ?? {}) as Record<string, unknown>
+    const type = typeof a.type === 'string' ? a.type : 'all'
+
+    if (type === 'all') {
+      const all = await db
+        .select({ email: customers.email })
+        .from(customers)
+        .where(eq(customers.merchantId, merchantId))
+      return normalizeEmails(all.map((c) => c.email))
+    }
+
+    if (type === 'segment') {
+      const segmentId = a.segmentId
+      if (typeof segmentId !== 'string' || !segmentId) {
+        throw badRequest('INVALID_AUDIENCE', 'Segment audience requires a segmentId')
+      }
+      const [segment] = await db
+        .select()
+        .from(customerSegments)
+        .where(and(eq(customerSegments.id, segmentId), eq(customerSegments.merchantId, merchantId)))
+      if (!segment) throw notFound('SEGMENT_NOT_FOUND', 'Segment not found')
+      const members = await SegmentsService.listMembers(
+        db,
+        merchantId,
+        (segment.definition ?? {}) as SegmentDefinition
+      )
+      return normalizeEmails(members.map((m) => m.email))
+    }
+
+    if (type === 'tag') {
+      const tag = a.tag
+      if (typeof tag !== 'string' || !tag.trim()) {
+        throw badRequest('INVALID_AUDIENCE', 'Tag audience requires a tag')
+      }
+      const wanted = tag.trim()
+      const [rows, tagged] = await Promise.all([
+        db
+          .select({ id: customers.id, email: customers.email, tags: customers.tags })
+          .from(customers)
+          .where(eq(customers.merchantId, merchantId)),
+        db
+          .select({ customerId: customerTags.customerId })
+          .from(customerTags)
+          .where(and(eq(customerTags.merchantId, merchantId), eq(customerTags.tag, wanted)))
+      ])
+      const taggedIds = new Set(tagged.map((t) => t.customerId))
+      const emails = rows
+        .filter((c) => (Array.isArray(c.tags) && c.tags.includes(wanted)) || taggedIds.has(c.id))
+        .map((c) => c.email)
+      return normalizeEmails(emails)
+    }
+
+    if (type === 'list') {
+      const emails = a.emails
+      if (!Array.isArray(emails)) {
+        throw badRequest('INVALID_AUDIENCE', 'List audience requires an emails array')
+      }
+      return normalizeEmails(emails)
+    }
+
+    throw badRequest('INVALID_AUDIENCE', `Unknown audience type: ${type}`)
   }
 }

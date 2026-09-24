@@ -46,6 +46,16 @@
 	let newCode = $state('')
 	let newRate = $state(10)
 
+	let acting = $state<string | null>(null)
+	let payoutLoading = $state(false)
+	let minPayout = $state(0)
+	let payoutResult = $state<{
+		payouts: { affiliateId: string; total: number; count: number }[]
+		skipped: { affiliateId: string; total: number; count: number }[]
+		totalAmount: number
+		totalCount: number
+	} | null>(null)
+
 	const canManage = () => session.can('staff.manage')
 
 	async function load() {
@@ -117,6 +127,57 @@
 		}
 	}
 
+	async function refreshReferrals() {
+		if (!selected) return
+		await selectAffiliate(selected)
+	}
+
+	async function approveReferral(r: Referral) {
+		acting = r.id
+		try {
+			await api.post(`/api/affiliates/referrals/${r.id}/approve`)
+			toast.success('Commission approved')
+			await refreshReferrals()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			acting = null
+		}
+	}
+
+	async function cancelReferral(r: Referral) {
+		const reason = prompt('Cancel reason (optional)', '') ?? undefined
+		acting = r.id
+		try {
+			await api.post(`/api/affiliates/referrals/${r.id}/cancel`, reason ? { reason } : {})
+			toast.success('Commission cancelled')
+			await refreshReferrals()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			acting = null
+		}
+	}
+
+	async function runPayout() {
+		payoutLoading = true
+		try {
+			const res = await api.post<{
+				success: boolean
+				data: NonNullable<typeof payoutResult>
+			}>('/api/affiliates/payouts', { minPayout: Math.max(0, minPayout) })
+			payoutResult = res.data
+			toast.success(`Payout complete: ${currency(res.data.totalAmount)} across ${res.data.totalCount} referral(s)`)
+			await refreshReferrals()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			payoutLoading = false
+		}
+	}
+
+	const canAct = (r: Referral) => r.commissionStatus === 'pending' || r.commissionStatus === 'approved'
+
 </script>
 
 <svelte:head>
@@ -133,6 +194,38 @@
 			<Button size="sm" onclick={() => { newName = ''; newEmail = ''; newCode = ''; newRate = 10; showCreate = true }}><Icon name="add" size="text-[16px]" /> New affiliate</Button>
 		{/if}
 	</div>
+
+	{#if canManage()}
+		<Card>
+			<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+				<div>
+					<label class="field-label" for="payout-min">Minimum payout</label>
+					<input id="payout-min" class="field" type="number" min="0" step="1" bind:value={minPayout} />
+				</div>
+				<Button size="sm" onclick={runPayout} loading={payoutLoading}>
+					<Icon name="payments" size="text-[16px]" /> {payoutLoading ? 'Running…' : 'Run payout'}
+				</Button>
+				{#if payoutResult}
+					<p class="text-sm text-secondary">
+						Paid {currency(payoutResult.totalAmount)} across {payoutResult.totalCount} referral(s)
+						{#if payoutResult.skipped.length > 0}
+							· skipped {payoutResult.skipped.length} affiliate(s) below threshold
+						{/if}
+					</p>
+				{/if}
+			</div>
+			{#if payoutResult && payoutResult.payouts.length > 0}
+				<ul class="mt-3 space-y-1 text-sm">
+					{#each payoutResult.payouts as p (p.affiliateId)}
+						<li class="flex items-center justify-between gap-2 text-secondary">
+							<span class="font-mono text-xs">{p.affiliateId}</span>
+							<span class="font-mono-label text-mono-label text-on-surface">{currency(p.total)} · {p.count} referral(s)</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</Card>
+	{/if}
 
 	{#if loading}
 		<div class="space-y-2 p-5">
@@ -204,15 +297,35 @@
 											<th class="px-table-cell-x py-table-cell-y font-semibold">Commission</th>
 											<th class="px-table-cell-x py-table-cell-y font-semibold">Order</th>
 											<th class="px-table-cell-x py-table-cell-y font-semibold">Date</th>
+											{#if canManage()}
+												<th class="px-table-cell-x py-table-cell-y font-semibold text-right">Actions</th>
+											{/if}
 										</tr>
 									</thead>
 									<tbody>
 										{#each referrals as r (r.id)}
 											<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
-												<td class="px-table-cell-x py-table-cell-y"><Badge label={r.conversionStatus} /></td>
+												<td class="px-table-cell-x py-table-cell-y">
+													<div class="flex flex-wrap items-center gap-1">
+														<Badge label={r.conversionStatus} />
+														<Badge label={r.commissionStatus} />
+													</div>
+												</td>
 												<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{currency(parseFloat(r.commissionAmount))}</td>
 												<td class="px-table-cell-x py-table-cell-y font-mono text-xs text-secondary">{r.orderId ?? '—'}</td>
 												<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTime(r.createdAt)}</td>
+												{#if canManage()}
+													<td class="px-table-cell-x py-table-cell-y">
+														<div class="flex items-center justify-end gap-1">
+															{#if r.commissionStatus === 'pending'}
+																<Button size="sm" variant="secondary" onclick={() => approveReferral(r)} loading={acting === r.id}>Approve</Button>
+															{/if}
+															{#if canAct(r)}
+																<Button size="sm" variant="secondary" onclick={() => cancelReferral(r)} loading={acting === r.id}>Cancel</Button>
+															{/if}
+														</div>
+													</td>
+												{/if}
 											</tr>
 										{/each}
 									</tbody>
