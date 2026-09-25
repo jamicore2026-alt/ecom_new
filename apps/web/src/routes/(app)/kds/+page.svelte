@@ -3,7 +3,7 @@
 	import { api } from '$lib/api'
 	import { session } from '$lib/session.svelte'
 	import { toast } from '$lib/toast.svelte'
-	import type { KdsBoard, KdsTicket, KotStatus } from '$lib/types'
+	import type { KdsBoard, KdsTicket, KotStatus, StationMetric } from '$lib/types'
 
 	const canManage = $derived(session.can('kds.manage'))
 
@@ -16,25 +16,71 @@
 	}
 
 	let board = $state<KdsBoard>({ stations: [], delayedCount: 0 })
+	let metrics = $state<StationMetric[]>([])
 	let loading = $state(true)
 	let timer: ReturnType<typeof setInterval> | null = null
+	let poll: ReturnType<typeof setInterval> | null = null
 	let now = $state(Date.now())
+	let readyOnly = $state(false)
+	let soundOn = $state(false)
+	let knownTickets = $state<Set<string>>(new Set())
 
 	function refreshAge() {
 		now = Date.now()
 	}
 
-	async function load() {
-		loading = true
+	/** Short WebAudio beep for new tickets. Off by default; toggle to enable. */
+	function beep() {
 		try {
-			const res = await api.get<{ success: boolean; data: KdsBoard }>('/api/kitchen/kds')
-			board = res.data
-		} catch (e) {
-			toast.error((e as Error).message)
-		} finally {
-			loading = false
+			const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+			const ctx = new Ctx()
+			const osc = ctx.createOscillator()
+			const gain = ctx.createGain()
+			osc.connect(gain)
+			gain.connect(ctx.destination)
+			osc.frequency.value = 880
+			gain.gain.setValueAtTime(0.15, ctx.currentTime)
+			osc.start()
+			osc.stop(ctx.currentTime + 0.25)
+			osc.onended = () => void ctx.close()
+		} catch {
+			// audio unavailable — silent
 		}
 	}
+
+	async function load(quiet = false) {
+		if (!quiet) loading = true
+		try {
+			const [b, m] = await Promise.all([
+				api.get<{ success: boolean; data: KdsBoard }>('/api/kitchen/kds'),
+				api.get<{ success: boolean; data: StationMetric[] }>('/api/kitchen/metrics/stations').catch(() => null)
+			])
+			const ids = new Set(b.data.stations.flatMap((s) => s.tickets.map((t) => t.id)))
+			if (soundOn && knownTickets.size > 0) {
+				for (const id of ids) {
+					if (!knownTickets.has(id)) {
+						beep()
+						break
+					}
+				}
+			}
+			knownTickets = ids
+			board = b.data
+			if (m) metrics = m.data
+		} catch (e) {
+			if (!quiet) toast.error((e as Error).message)
+		} finally {
+			if (!quiet) loading = false
+		}
+	}
+
+	const visibleStations = $derived(
+		readyOnly
+			? board.stations
+					.map((s) => ({ ...s, tickets: s.tickets.filter((t) => t.status === 'READY') }))
+					.filter((s) => s.tickets.length > 0)
+			: board.stations
+	)
 
 	function fmt(sec: number) {
 		const m = Math.floor(sec / 60)
@@ -94,8 +140,10 @@
 	onMount(() => {
 		load()
 		timer = setInterval(refreshAge, 1000)
+		poll = setInterval(() => void load(true), 20000)
 		return () => {
 			if (timer) clearInterval(timer)
+			if (poll) clearInterval(poll)
 		}
 	})
 </script>
@@ -108,17 +156,56 @@
 			<h1 class="font-display text-display text-on-surface">Kitchen Display</h1>
 			<p class="mt-1 text-body-sm text-secondary">Live preparation board by station.</p>
 		</div>
-		{#if board.delayedCount > 0}
-			<span class="inline-flex self-start rounded-full bg-error/10 px-2 py-0.5 text-xs font-medium text-error ring-1 ring-inset ring-error">{board.delayedCount} delayed</span>
-		{/if}
+		<div class="flex flex-wrap items-center gap-2">
+			{#if board.delayedCount > 0}
+				<span class="inline-flex self-start rounded-full bg-error/10 px-2 py-0.5 text-xs font-medium text-error ring-1 ring-inset ring-error">{board.delayedCount} delayed</span>
+			{/if}
+			{#if (board.heldCount ?? 0) > 0}
+				<span class="inline-flex self-start rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning ring-1 ring-inset ring-warning">{board.heldCount} held</span>
+			{/if}
+			<button
+				type="button"
+				class="rounded-full px-3 py-1 text-xs font-medium transition-colors {readyOnly ? 'bg-success text-on-success' : 'bg-surface-container-low text-on-surface-variant'}"
+				onclick={() => (readyOnly = !readyOnly)}
+			>
+				{readyOnly ? 'Ready view ✓' : 'Order-ready screen'}
+			</button>
+			<button
+				type="button"
+				class="rounded-full px-3 py-1 text-xs font-medium transition-colors {soundOn ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant'}"
+				onclick={() => (soundOn = !soundOn)}
+				title="New-ticket sound (off by default)"
+			>
+				{soundOn ? '🔔 Sound on' : '🔕 Sound off'}
+			</button>
+		</div>
 	</div>
+
+	{#if board.unavailableNotice}
+		<div class="rounded border border-warning/40 bg-warning/10 p-3 text-sm text-warning" role="status">{board.unavailableNotice}</div>
+	{/if}
+
+	{#if metrics.length > 0}
+		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+			{#each metrics as m (m.stationId)}
+				<div class="rounded border border-outline-variant bg-surface-container-low p-3">
+					<div class="text-xs font-semibold text-on-surface">{m.stationName}</div>
+					<div class="mt-1 flex gap-3 text-xs text-secondary">
+						<span>Avg prep <strong class="text-on-surface">{m.avgPrepMin ?? '—'}{m.avgPrepMin !== null ? 'm' : ''}</strong></span>
+						<span>Delayed <strong class="text-on-surface">{m.delayedCount}</strong></span>
+						<span>Ready <strong class="text-on-surface">{m.readyCount}</strong></span>
+					</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
 
 	{#if loading && board.stations.length === 0}
 		<div class="py-10 text-center text-sm text-secondary">Loading board…</div>
 	{/if}
 
 	<div class="grid gap-4 lg:grid-cols-3 xl:grid-cols-4">
-		{#each board.stations as station (station.id)}
+		{#each visibleStations as station (station.id)}
 			{#if station.tickets.length > 0}
 				<section class="rounded border border-outline-variant bg-surface-container-low p-3">
 					<header class="mb-3 flex items-center justify-between">
@@ -149,10 +236,17 @@
 													<button type="button" class="rounded border border-success/40 px-1.5 py-0.5 text-xs text-success hover:bg-success/10" onclick={() => itemDone(ticket, item.id, 'READY')}>Done</button>
 												{/if}
 											</div>
+											{#if (item.allergens ?? []).length > 0}
+												<div class="ml-4 mt-0.5 flex flex-wrap gap-1">
+													{#each item.allergens ?? [] as a (a)}
+														<span class="inline-flex rounded-full bg-error/10 px-1.5 py-0.5 text-[10px] font-semibold text-error ring-1 ring-inset ring-error">⚠ {a}</span>
+													{/each}
+												</div>
+											{/if}
 											{#if item.modifiers.length > 0}
 												<div class="ml-4 text-xs text-secondary">
 													{#each item.modifiers as m (m.name)}
-														<span class="mr-2">{m.quantity > 1 ? `${m.quantity}× ` : ''}{m.groupName}: {m.name}</span>
+														<span class="mr-2">+ {m.quantity > 1 ? `${m.quantity}× ` : ''}{m.groupName}: {m.name}</span>
 													{/each}
 												</div>
 											{/if}

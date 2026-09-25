@@ -90,6 +90,10 @@ export interface CheckoutPreviewInput {
   couponCode?: string
   /** Optional country so previewed totals match the final order's shipping/tax. */
   shippingAddress?: { country?: string; state?: string; city?: string; postalCode?: string }
+  /** Spend the shopper's store-credit balance (preview needs the account email
+   *  to look the balance up; checkout already carries it). */
+  useStoreCredit?: boolean
+  email?: string
 }
 
 /** Drizzle transaction type used inside `db.transaction(async (tx) => ...)`. */
@@ -217,6 +221,8 @@ interface CheckoutLine {
   trackInventory: boolean
   quantity: number
   total: number
+  /** Unit weight (kg) from the product — 0 when the merchant never set one. */
+  weight: number
 }
 
 export interface StorefrontQuery {
@@ -997,7 +1003,8 @@ export class StorefrontService {
         customSelections,
         trackInventory: product.trackInventory && !variant.unlimited,
         quantity: item.quantity,
-        total: roundForCurrency(price * item.quantity, currency)
+        total: roundForCurrency(price * item.quantity, currency),
+        weight: number(product.weight ?? 0) || 0
       }
     })
   }
@@ -1005,7 +1012,8 @@ export class StorefrontService {
   private static shippingRate(
     store: StorePayload,
     subtotal: number,
-    location?: CheckoutAddress
+    location?: CheckoutAddress,
+    weightKg = 0
   ) {
     return computeShippingRate(
       {
@@ -1019,7 +1027,8 @@ export class StorefrontService {
         state: location?.state,
         city: location?.city,
         postalCode: location?.postalCode
-      }
+      },
+      weightKg
     )
   }
 
@@ -1048,15 +1057,15 @@ export class StorefrontService {
     )
   }
 
-  private static taxFor(
+  /** Merchant tax rate (%) for a location, or null when no rate applies.
+   *  Snapshot onto each order item at checkout for per-line VAT on invoices. */
+  private static taxRateFor(
     store: StorePayload,
-    taxable: number,
-    currency: string,
     location?: { country?: string; state?: string }
-  ) {
-    if (!store.taxes.autoCalculate) return 0
+  ): number | null {
+    if (!store.taxes.autoCalculate) return null
     const rates = store.taxes.rates
-    if (!rates.length) return 0
+    if (!rates.length) return null
     // Region resolution (P1-11): most specific configured match wins —
     // "US-NY" style combos, then bare state, then bare country, then an
     // empty-region default row. Case-insensitive because merchants type
@@ -1069,8 +1078,19 @@ export class StorefrontService {
       (s ? rates.find((r) => norm(r.region) === s) : undefined) ??
       (c ? rates.find((r) => norm(r.region) === c) : undefined) ??
       rates.find((r) => !r.region?.trim())
-    if (!row) return 0
-    return roundForCurrency(taxable * (number(row.rate) / 100), currency)
+    if (!row) return null
+    return number(row.rate)
+  }
+
+  private static taxFor(
+    store: StorePayload,
+    taxable: number,
+    currency: string,
+    location?: { country?: string; state?: string }
+  ) {
+    const rate = this.taxRateFor(store, location)
+    if (rate === null) return 0
+    return roundForCurrency(taxable * (rate / 100), currency)
   }
 
   private static async buildSummary(
@@ -1135,14 +1155,24 @@ export class StorefrontService {
 
     const address = body.shippingAddress as CheckoutAddress | undefined
     const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
+    // Order weight (kg) from product weights — drives weight-tiered shipping
+    // rules (0 when the merchant never set weights).
+    const orderWeight = Number(
+      items.reduce((sum, i) => sum + (i.weight || 0) * i.quantity, 0).toFixed(3)
+    )
     const shipping = coupon?.freeShipping
-      ? { method: 'Free shipping', rate: 0 }
+      ? { method: 'Free shipping', rate: 0, etaDays: undefined as number | undefined }
       : this.shippingRate(store, subtotal, {
           country: str(address?.country),
           state: str(address?.state),
           city: str(address?.city),
           postalCode: str(address?.postalCode)
-        })
+        }, orderWeight)
+    // VAT snapshot for per-line invoice breakdowns (merchant rate at checkout).
+    const vatRate = this.taxRateFor(store, {
+      country: str(address?.country),
+      state: str(address?.state)
+    })
     const taxTotal = this.taxFor(
       store,
       subtotal - discountTotal + shipping.rate,
@@ -1152,7 +1182,29 @@ export class StorefrontService {
         state: str(address?.state)
       }
     )
-    const total = roundForCurrency(subtotal + shipping.rate - discountTotal + taxTotal, currency)
+    let total = roundForCurrency(subtotal + shipping.rate - discountTotal + taxTotal, currency)
+
+    // Store-credit spend: min(balance, total) applied as a discount — the total
+    // drops, the balance is decremented in createOrderTx, usage is returned.
+    let storeCreditUsed = 0
+    let storeCreditBalance: number | null = null
+    if (body.useStoreCredit) {
+      const creditEmail = (body.email ?? '').trim().toLowerCase()
+      if (creditEmail) {
+        const [holder] = await db
+          .select({ storeCredit: customers.storeCredit })
+          .from(customers)
+          .where(and(eq(customers.merchantId, store.merchant.id), eq(customers.email, creditEmail)))
+        storeCreditBalance = holder ? number(holder.storeCredit) : 0
+        storeCreditUsed = roundForCurrency(Math.min(Math.max(storeCreditBalance, 0), total), currency)
+        if (storeCreditUsed > 0) {
+          discountTotal = roundForCurrency(discountTotal + storeCreditUsed, currency)
+          total = roundForCurrency(total - storeCreditUsed, currency)
+        }
+      } else {
+        storeCreditBalance = 0
+      }
+    }
 
     return {
       store,
@@ -1164,7 +1216,11 @@ export class StorefrontService {
       shipping,
       taxTotal,
       total,
-      coupon
+      coupon,
+      orderWeight,
+      vatRate,
+      storeCreditUsed,
+      storeCreditBalance
     }
   }
 
@@ -1179,7 +1235,9 @@ export class StorefrontService {
       taxTotal: summary.taxTotal,
       total: summary.total,
       coupon: summary.coupon,
-      shipping: { method: summary.shipping.method, rate: summary.shipping.rate },
+      shipping: { method: summary.shipping.method, rate: summary.shipping.rate, etaDays: summary.shipping.etaDays ?? null },
+      storeCreditUsed: summary.storeCreditUsed,
+      storeCreditBalance: summary.storeCreditBalance,
       currency: summary.store.merchant.currency
     })
   }
@@ -1293,6 +1351,10 @@ export class StorefrontService {
       total: number
       coupon: { code: string } | null
       promotionId?: string | null
+      /** Merchant VAT rate (%) snapshot — written onto every order item. */
+      vatRate?: number | null
+      /** Store-credit amount already discounted off the total (spend it here). */
+      storeCreditUsed?: number
     },
     opts: { paymentStatus: 'unpaid' | 'paid'; provider?: string; expiresAt?: Date | null }
   ) {
@@ -1491,7 +1553,9 @@ export class StorefrontService {
           sku: item.sku,
           price: item.price,
           quantity: item.quantity,
-          total: item.total
+          total: item.total,
+          // VAT snapshot for per-line invoice breakdowns (merchant rate now).
+          vatRate: summary.vatRate ?? null
         })
         if (item.trackInventory) {
           // Already locked at the top of the transaction — reuse that snapshot.
@@ -1580,6 +1644,18 @@ export class StorefrontService {
             )
           }
         }
+      }
+
+      // Store-credit spend: the preview already discounted min(balance, total)
+      // off the order total — decrement the holder's balance atomically here
+      // so concurrent checkouts can't double-spend it (clamped at 0).
+      if (summary.storeCreditUsed && summary.storeCreditUsed > 0 && customerId) {
+        await tx
+          .update(customers)
+          .set({
+            storeCredit: sql`greatest(${customers.storeCredit} - ${summary.storeCreditUsed}, 0)`
+          })
+          .where(eq(customers.id, customerId))
       }
 
       return order
@@ -1682,7 +1758,9 @@ export class StorefrontService {
           taxTotal: summary.taxTotal,
           total: summary.total,
           coupon: summary.coupon,
-          promotionId: summary.promotion?.id ?? null
+          promotionId: summary.promotion?.id ?? null,
+          vatRate: summary.vatRate ?? null,
+          storeCreditUsed: summary.storeCreditUsed ?? 0
         }, { paymentStatus })
       } catch (err) {
         // Concurrent duplicate raced past the pre-check — the unique
@@ -1718,7 +1796,8 @@ export class StorefrontService {
       return ok({
         ...this.confirmationFor(result),
         email: body.email.trim().toLowerCase(),
-        createdAt: result.createdAt
+        createdAt: result.createdAt,
+        storeCreditUsed: summary.storeCreditUsed ?? 0
       })
     }
 
@@ -1744,7 +1823,9 @@ export class StorefrontService {
       taxTotal: summary.taxTotal,
       total: summary.total,
       coupon: summary.coupon,
-      promotionId: summary.promotion?.id ?? null
+      promotionId: summary.promotion?.id ?? null,
+      vatRate: summary.vatRate ?? null,
+      storeCreditUsed: summary.storeCreditUsed ?? 0
     }, { paymentStatus })
 
     // Fire-and-forget follow-ups run on the platform admin connection — the
@@ -1765,7 +1846,8 @@ export class StorefrontService {
     return ok({
       ...this.confirmationFor(result),
       email: body.email.trim().toLowerCase(),
-      createdAt: result.createdAt
+      createdAt: result.createdAt,
+      storeCreditUsed: summary.storeCreditUsed ?? 0
     })
   }
 
@@ -1831,7 +1913,9 @@ export class StorefrontService {
         taxTotal: summary.taxTotal,
         total: summary.total,
         coupon: summary.coupon,
-        promotionId: summary.promotion?.id ?? null
+        promotionId: summary.promotion?.id ?? null,
+        vatRate: summary.vatRate ?? null,
+        storeCreditUsed: summary.storeCreditUsed ?? 0
       }, {
         paymentStatus: 'unpaid',
         provider: providerId,

@@ -187,6 +187,30 @@ export const storefrontApi = {
 			headers: { authorization: `Bearer ${token}` }
 		}),
 
+	cancelMyOrder: (fetchFn: typeof fetch, slug: string, token: string, orderId: string) =>
+		request<{ id: string; status: string }>(fetchFn, `/${slug}/auth/orders/${encodeURIComponent(orderId)}/cancel`, {
+			method: 'POST',
+			headers: { authorization: `Bearer ${token}` }
+		}),
+
+	requestMyReturn: (
+		fetchFn: typeof fetch,
+		slug: string,
+		token: string,
+		orderId: string,
+		body: { orderItemId: string; quantity: number; reason?: string }
+	) =>
+		request<{ id: string; status: string }>(fetchFn, `/${slug}/auth/orders/${encodeURIComponent(orderId)}/returns`, {
+			method: 'POST',
+			headers: { authorization: `Bearer ${token}` },
+			body: JSON.stringify(body)
+		}),
+
+	profile: (fetchFn: typeof fetch, slug: string, token: string) =>
+		request<ShopperCustomer>(fetchFn, `/${slug}/auth/me`, {
+			headers: { authorization: `Bearer ${token}` }
+		}),
+
 	wishlist: (fetchFn: typeof fetch, slug: string, token: string) =>
 		request<{ items: WishListItem[] }>(fetchFn, `/${slug}/auth/wishlist`, {
 			headers: { authorization: `Bearer ${token}` }

@@ -5,6 +5,8 @@ import { auditFromRequest } from '../audit-logs'
 import {
   KitchenStationsService,
   KitchenTicketsService,
+  KitchenMetricsService,
+  HoldFireService,
   KdsBoardService
 } from './service'
 import {
@@ -16,7 +18,9 @@ import {
   kotItemStatusBody,
   kotTicketQuery,
   kotGenerateBody,
-  kotPriorityBody
+  kotPriorityBody,
+  holdBody,
+  metricsQuery
 } from './model'
 
 const ticketItemParams = t.Object({ id: t.String(), itemId: t.String() })
@@ -45,6 +49,10 @@ export const kitchenModule = new Elysia({ prefix: '/api' })
   .get('/kitchen/tickets/:id', async ({ params, auth, merchantContext }) => KitchenTicketsService.get(auth.db, auth.merchant.id, params.id, merchantContext), {
     params: kitchenParams,
     detail: { summary: 'Get a kitchen ticket with items' }
+  })
+  .get('/kitchen/metrics/stations', async ({ query, auth, merchantContext }) => KitchenMetricsService.stationMetrics(auth.db, auth.merchant.id, query, merchantContext), {
+    query: metricsQuery,
+    detail: { summary: 'Station performance metrics (avg prep time, delayed count)' }
   })
 
   /* Station management: permission `kitchen.manage`. */
@@ -97,3 +105,13 @@ export const kitchenModule = new Elysia({ prefix: '/api' })
     await auditFromRequest(auth, request, { action: 'kot.item.status', entityType: 'kitchen_ticket', entityId: params.id, metadata: { itemId: params.itemId, status: body.status } })
     return result
   }, { params: ticketItemParams, body: kotItemStatusBody })
+  .post('/kitchen/order-items/:itemId/hold', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await HoldFireService.setHold(auth.db, auth.merchant.id, params.itemId, body.fireAt, merchantContext)
+    await auditFromRequest(auth, request, { action: 'kot.hold', entityType: 'food_order_item', entityId: params.itemId, metadata: { fireAt: body.fireAt } })
+    return result
+  }, { params: t.Object({ itemId: t.String() }), body: holdBody })
+  .post('/kitchen/order-items/:itemId/fire', async ({ params, auth, request, merchantContext }) => {
+    const result = await HoldFireService.fireNow(auth.db, auth.merchant.id, params.itemId, merchantContext)
+    await auditFromRequest(auth, request, { action: 'kot.fire', entityType: 'food_order_item', entityId: params.itemId })
+    return result
+  }, { params: t.Object({ itemId: t.String() }) })

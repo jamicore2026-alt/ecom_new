@@ -16,6 +16,9 @@ import {
   deliveryAssignBody,
   deliveryTransitionBody,
   driverTransitionBody,
+  deliveryTrackingBody,
+  deliveryPodBody,
+  deliveryFailBody,
   driverMeBody
 } from './model'
 
@@ -34,6 +37,9 @@ export const deliveryModule = new Elysia({ prefix: '/api' })
   .get('/drivers', async ({ query, auth, merchantContext }) => DriversService.list(auth.db, auth.merchant.id, query, merchantContext), {
     query: driverQuery,
     detail: { summary: 'List drivers' }
+  })
+  .get('/drivers/live', async ({ auth, merchantContext }) => DriversService.live(auth.db, auth.merchant.id, merchantContext), {
+    detail: { summary: 'Live driver locations with active deliveries' }
   })
   .get('/drivers/:id', async ({ params, auth }) => DriversService.get(auth.db, auth.merchant.id, params.id), {
     params: deliveryParams,
@@ -116,6 +122,21 @@ export const deliveryModule = new Elysia({ prefix: '/api' })
     await auditFromRequest(auth, request, { action: 'delivery.status', entityType: 'delivery_order', entityId: params.id, metadata: { status: body.status } })
     return result
   }, { params: deliveryParams, body: deliveryTransitionBody })
+  .post('/deliveries/:id/tracking', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await DeliveryOrdersService.setTracking(auth.db, auth.merchant.id, params.id, body.trackingUrl, merchantContext)
+    await auditFromRequest(auth, request, { action: 'delivery.tracking', entityType: 'delivery_order', entityId: params.id })
+    return result
+  }, { params: deliveryParams, body: deliveryTrackingBody })
+  .post('/deliveries/:id/pod', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await DeliveryOrdersService.recordPod(auth.db, auth.merchant.id, params.id, body, merchantContext)
+    await auditFromRequest(auth, request, { action: 'delivery.pod', entityType: 'delivery_order', entityId: params.id })
+    return result
+  }, { params: deliveryParams, body: deliveryPodBody })
+  .post('/deliveries/:id/fail', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await DeliveryOrdersService.recordFailure(auth.db, auth.merchant.id, params.id, body, merchantContext)
+    await auditFromRequest(auth, request, { action: 'delivery.fail', entityType: 'delivery_order', entityId: params.id, metadata: { reason: body.reason } })
+    return result
+  }, { params: deliveryParams, body: deliveryFailBody })
 
 /* Driver self-service: OWN scope via delivery.read (driver role). */
 export const driverSelfModule = new Elysia({ prefix: '/api' })

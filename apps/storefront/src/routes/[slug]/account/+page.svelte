@@ -57,6 +57,14 @@
 	let ordersLoading = $state(false)
 	let ordersLoadedFor = $state('')
 
+	// self-serve: cancel + return requests on your own orders
+	let actionBusy = $state('')
+	let actionError = $state('')
+	let returnFor = $state('')
+	let retItemId = $state('')
+	let retQty = $state('1')
+	let retReason = $state('')
+
 	$effect(() => {
 		if (account.signedIn && ordersLoadedFor !== account.customer?.id) {
 			loadOrders()
@@ -276,6 +284,57 @@
 
 	const formatDate = (iso: string) =>
 		new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+
+	const storeCredit = $derived(account.customer?.storeCredit ?? 0)
+
+	async function cancelOwnOrder(order: ShopperOrderSummary) {
+		if (!window.confirm(`Cancel order ${order.orderNumber}?`)) return
+		actionBusy = order.id
+		actionError = ''
+		try {
+			await account.cancelOrder(fetch, order.id)
+			await loadOrders()
+		} catch (e) {
+			if (account.isAuthError(e)) {
+				account.logout()
+				return
+			}
+			actionError = e instanceof ApiError ? e.message : t('account.genericError')
+		} finally {
+			actionBusy = ''
+		}
+	}
+
+	function openReturn(order: ShopperOrderSummary) {
+		returnFor = order.id
+		retItemId = order.items[0]?.id ?? ''
+		retQty = String(order.items[0]?.quantity ?? 1)
+		retReason = ''
+		actionError = ''
+	}
+
+	async function submitReturn(order: ShopperOrderSummary) {
+		if (!retItemId) return
+		actionBusy = order.id
+		actionError = ''
+		try {
+			await account.requestReturn(fetch, order.id, {
+				orderItemId: retItemId,
+				quantity: Math.max(1, Number(retQty) || 1),
+				...(retReason.trim() ? { reason: retReason.trim() } : {})
+			})
+			returnFor = ''
+			await loadOrders()
+		} catch (e) {
+			if (account.isAuthError(e)) {
+				account.logout()
+				return
+			}
+			actionError = e instanceof ApiError ? e.message : t('account.genericError')
+		} finally {
+			actionBusy = ''
+		}
+	}
 </script>
 
 <svelte:head>
@@ -291,6 +350,11 @@
 				<p class="mt-1 text-sm text-neutral-500">
 					{t('account.signedInAs', { email: account.customer.email })}
 				</p>
+				{#if storeCredit > 0}
+					<p class="mt-1 text-sm font-medium text-green-700">
+						Store credit: {money(storeCredit, orders[0]?.currency ?? 'USD')}
+					</p>
+				{/if}
 			</div>
 			<button
 				type="button"
@@ -374,6 +438,95 @@
 									<span class="text-xs text-neutral-400">{order.itemCount} {t('order.items')}</span>
 									<span class="text-sm font-semibold text-neutral-900">{money(order.total, order.currency)}</span>
 								</div>
+								<div class="mt-3 flex flex-wrap gap-2">
+									{#if order.status === 'pending'}
+										<button
+											type="button"
+											disabled={actionBusy === order.id}
+											class="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+											onclick={(e) => {
+												e.preventDefault()
+												e.stopPropagation()
+												cancelOwnOrder(order)
+											}}
+										>
+											{actionBusy === order.id ? t('common.loading') : 'Cancel order'}
+										</button>
+									{/if}
+									{#if ['pending', 'processing', 'shipped', 'delivered'].includes(order.status)}
+										<button
+											type="button"
+											class="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+											onclick={(e) => {
+												e.preventDefault()
+												e.stopPropagation()
+												if (returnFor === order.id) returnFor = ''
+												else openReturn(order)
+											}}
+										>
+											Request return
+										</button>
+									{/if}
+								</div>
+								{#if returnFor === order.id}
+									<form
+										class="mt-3 space-y-2 rounded-lg bg-neutral-50 p-3"
+										onsubmit={(e) => {
+											e.preventDefault()
+											submitReturn(order)
+										}}
+									>
+										<div class="grid grid-cols-2 gap-2">
+											<select
+												bind:value={retItemId}
+												onclick={(e) => e.stopPropagation()}
+												class="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm"
+											>
+												{#each order.items as item}
+													<option value={item.id ?? ''}>{item.quantity} × {item.name}</option>
+												{/each}
+											</select>
+											<input
+												type="number"
+												min="1"
+												bind:value={retQty}
+												onclick={(e) => e.stopPropagation()}
+												class="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm"
+											/>
+										</div>
+										<input
+											type="text"
+											bind:value={retReason}
+											placeholder="Reason (optional)"
+											onclick={(e) => e.stopPropagation()}
+											class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm"
+										/>
+										<div class="flex gap-2">
+											<button
+												type="submit"
+												disabled={actionBusy === order.id || !retItemId}
+												class="rounded-lg bg-brand-600 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+												onclick={(e) => e.stopPropagation()}
+											>
+												Submit return
+											</button>
+											<button
+												type="button"
+												class="rounded-lg border border-neutral-300 px-4 py-2 text-xs font-medium text-neutral-700"
+												onclick={(e) => {
+													e.preventDefault()
+													e.stopPropagation()
+													returnFor = ''
+												}}
+											>
+												Close
+											</button>
+										</div>
+									</form>
+								{/if}
+								{#if actionError}
+									<p class="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{actionError}</p>
+								{/if}
 							</a>
 						</li>
 					{/each}

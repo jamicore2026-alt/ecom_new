@@ -67,6 +67,22 @@ export const deliveryAssignBody = t.Object({ driverId: t.String() })
 export const deliveryTransitionBody = t.Object({ status: t.Enum(deliveryStatusEnum) })
 export const driverTransitionBody = t.Object({ status: t.Enum(driverStatusEnum) })
 
+export const deliveryTrackingBody = t.Object({
+  trackingUrl: t.String({ minLength: 10, maxLength: 1024 })
+})
+export const deliveryPodBody = t.Object({
+  note: t.Optional(t.String({ maxLength: 1000 })),
+  photoUrl: t.Optional(t.String({ maxLength: 1024 })),
+  signature: t.Optional(t.String({ maxLength: 255 }))
+})
+const failReasonEnum = Object.fromEntries(
+  ['no_answer', 'wrong_address', 'refused', 'cancelled', 'other'].map((r) => [r, r])
+)
+export const deliveryFailBody = t.Object({
+  reason: t.Enum(failReasonEnum),
+  note: t.Optional(t.String({ maxLength: 1000 }))
+})
+
 export const driverMeBody = t.Object({
   status: t.Optional(t.Enum(driverStatusEnum)),
   lat: t.Optional(t.Number()),

@@ -42,3 +42,9 @@ export const kotTicketQuery = t.Object({
 export const kotGenerateBody = t.Object({
   priority: t.Optional(t.Enum(priorityEnum))
 })
+
+export const holdBody = t.Object({
+  fireAt: t.Union([t.String(), t.Null()])
+})
+
+export const metricsQuery = t.Object({ outletId: t.Optional(t.String()) })

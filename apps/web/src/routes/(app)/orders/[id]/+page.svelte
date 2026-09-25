@@ -30,10 +30,13 @@
 
 	let refundOpen = $state(false)
 	let refundAmount = $state('')
-	let refundMethod = $state<'original'>('original')
+	let refundMethod = $state<'original' | 'store_credit'>('original')
 	let refundReturnId = $state('')
 	let refundConfirmOpen = $state(false)
 	let returnStatusTarget = $state<{ r: ReturnRecord; status: 'approved' | 'rejected' } | null>(null)
+	let exchangeTarget = $state<ReturnRecord | null>(null)
+	let exchangeVariantId = $state('')
+	let exchangeQty = $state('1')
 	let cancelConfirmOpen = $state(false)
 	let cancelRefundConfirmOpen = $state(false)
 	// Same key per refund attempt: a retry after a gateway failure reuses it so
@@ -138,6 +141,42 @@
 			await api.patch<{ success: boolean }>(`/api/returns/${target.r.id}`, { status: target.status })
 			toast.success(`Return ${target.status}`)
 			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	// Exchange: approve the return AND create a linked replacement order
+	// (same total) for the given replacement variant.
+	async function confirmExchange() {
+		const target = exchangeTarget
+		if (!target || !exchangeVariantId.trim()) return
+		saving = true
+		try {
+			const res = await api.patch<{ success: boolean; data: { exchangeOrder?: { orderNumber: string } } }>(
+				`/api/returns/${target.id}`,
+				{
+					status: 'approved',
+					replacementVariantId: exchangeVariantId.trim(),
+					replacementQuantity: Math.max(1, Number(exchangeQty) || 1)
+				}
+			)
+			toast.success(`Exchange order ${res.data.exchangeOrder?.orderNumber ?? ''} created`)
+			exchangeTarget = null
+			exchangeVariantId = ''
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			saving = false
+		}
+	}
+
+	async function invoiceAction(inv: Invoice, action: 'issue' | 'pay' | 'void' | 'send') {
+		try {
+			await api.post<{ success: boolean }>(`/api/invoices/${inv.id}/${action}`)
+			toast.success(`Invoice ${action === 'send' ? 'sent' : action === 'void' ? 'voided' : action === 'pay' ? 'marked paid' : 'issued'}`)
+			loadInvoices()
 		} catch (e) {
 			toast.error((e as Error).message)
 		}
@@ -384,8 +423,9 @@
 										<td class="px-table-cell-x py-table-cell-y"><Badge label={r.status} /></td>
 										<td class="px-table-cell-x py-table-cell-y">
 											{#if canWrite() && r.status === 'pending'}
-												<div class="flex gap-2">
+												<div class="flex flex-wrap gap-2">
 													<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-success hover:bg-primary-fixed-dim/40" onclick={() => requestReturnStatus(r, 'approved')}>Approve</button>
+													<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => { exchangeTarget = r; exchangeVariantId = ''; exchangeQty = String(r.quantity) }}>Exchange</button>
 													<button class="inline-flex min-h-11 items-center rounded px-2 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => requestReturnStatus(r, 'rejected')}>Reject</button>
 												</div>
 											{:else}
@@ -468,7 +508,40 @@
 											<Badge label={inv.status} />
 										</div>
 									</a>
-									<div class="mt-1 flex justify-end">
+									<div class="mt-1 flex flex-wrap justify-end gap-1">
+										{#if canWrite() && inv.status === 'draft'}
+											<button
+												class="inline-flex min-h-11 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
+												title="Issue invoice"
+												onclick={() => invoiceAction(inv, 'issue')}
+											>
+												Issue
+											</button>
+										{/if}
+										{#if canWrite() && inv.status === 'issued'}
+											<button
+												class="inline-flex min-h-11 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
+												title="Email invoice to customer"
+												onclick={() => invoiceAction(inv, 'send')}
+											>
+												<Icon name="mail" size="text-[14px]" />
+												Send
+											</button>
+											<button
+												class="inline-flex min-h-11 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-success hover:bg-primary-fixed-dim/40"
+												title="Mark paid"
+												onclick={() => invoiceAction(inv, 'pay')}
+											>
+												Mark paid
+											</button>
+											<button
+												class="inline-flex min-h-11 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-error hover:bg-error-container/40"
+												title="Void invoice (unpaid orders only)"
+												onclick={() => invoiceAction(inv, 'void')}
+											>
+												Void
+											</button>
+										{/if}
 										<button
 											class="inline-flex min-h-11 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
 											title="Download PDF"
@@ -603,12 +676,13 @@
 				<label for="refund-amount" class="field-label">Amount (max {currency(refundable(), order.currency)})</label>
 				<input id="refund-amount" type="number" step="0.01" min="0.01" class="field" bind:value={refundAmount} required />
 			</div>
-			<div>
-				<label for="refund-method" class="field-label">Method</label>
-				<select id="refund-method" class="field" bind:value={refundMethod}>
-					<option value="original">Original payment method</option>
-				</select>
-			</div>
+						<div>
+							<label for="refund-method" class="field-label">Method</label>
+							<select id="refund-method" class="field" bind:value={refundMethod}>
+								<option value="original">Original payment method</option>
+								<option value="store_credit">Store credit (customer balance)</option>
+							</select>
+						</div>
 			<div class="flex justify-end gap-2 pt-2">
 				<Button variant="secondary" onclick={() => (refundOpen = false)}>Cancel</Button>
 				<Button type="submit" loading={saving}>Record refund</Button>
@@ -625,6 +699,44 @@
 	onConfirm={confirmReturnStatus}
 	onCancel={() => (returnStatusTarget = null)}
 />
+
+<!-- Exchange modal -->
+{#if exchangeTarget && canWrite()}
+	<Modal title="Approve as exchange" open={true} width="sm" onClose={() => (exchangeTarget = null)}>
+		<form
+			class="space-y-4"
+			onsubmit={(e) => {
+				e.preventDefault()
+				confirmExchange()
+			}}
+		>
+			<p class="text-sm text-secondary">
+				Approves the return of {number(exchangeTarget.quantity)} unit(s) and creates a linked
+				exchange order at the original price. Replacement stock is decremented.
+			</p>
+			<div>
+				<label for="exchange-variant" class="field-label">Replacement variant ID</label>
+				<input id="exchange-variant" class="field font-mono-label" bind:value={exchangeVariantId} placeholder="Variant ID" required />
+			</div>
+			<div>
+				<label for="exchange-qty" class="field-label">Quantity (max {number(exchangeTarget.quantity)})</label>
+				<input
+					id="exchange-qty"
+					type="number"
+					min="1"
+					max={exchangeTarget.quantity}
+					class="field"
+					bind:value={exchangeQty}
+					required
+				/>
+			</div>
+			<div class="flex justify-end gap-2 pt-2">
+				<Button variant="secondary" onclick={() => (exchangeTarget = null)}>Cancel</Button>
+				<Button type="submit" loading={saving}>Create exchange</Button>
+			</div>
+		</form>
+	</Modal>
+{/if}
 
 <ConfirmDialog
 	open={cancelConfirmOpen}

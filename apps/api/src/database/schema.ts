@@ -504,6 +504,8 @@ export const customers = pgTable(
     tags: jsonb('tags').$type<string[]>().notNull().default([]),
     totalSpent: money('total_spent').notNull().default(0),
     ordersCount: integer('orders_count').notNull().default(0),
+    /** Store-credit balance from refunds (method 'store_credit'). Spendable at checkout. */
+    storeCredit: money('store_credit').notNull().default(0),
     lastOrderAt: tstz('last_order_at'),
     /** Bumped on password change — invalidates previously issued shopper JWTs. */
     tokenVersion: integer('token_version').notNull().default(0),
@@ -622,7 +624,9 @@ export const orderItems = pgTable(
     sku: varchar('sku', { length: 100 }),
     price: money('price').notNull().default(0),
     quantity: integer('quantity').notNull().default(1),
-    total: money('total').notNull().default(0)
+    total: money('total').notNull().default(0),
+    /** VAT rate snapshot (%) for per-line tax breakdown on invoices. */
+    vatRate: money('vat_rate')
   },
   (t) => [index('order_items_order_idx').on(t.orderId)]
 )
@@ -651,6 +655,8 @@ export const foodOrderItems = pgTable(
     unitPrice: money('unit_price').notNull().default(0),
     quantity: integer('quantity').notNull().default(1),
     total: money('total').notNull().default(0),
+    /** Hold-and-fire: hidden from the KDS board until this time (NULL = fire immediately). */
+    fireAt: tstz('fire_at'),
     createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [index('food_order_items_order_idx').on(t.orderId)]
@@ -695,6 +701,9 @@ export const tables = pgTable(
     code: varchar('code', { length: 30 }).notNull(),
     seats: integer('seats').notNull().default(2),
     status: varchar('status', { length: 20 }).$type<TableState>().notNull().default('AVAILABLE'),
+    /** Floor-plan coordinates (percent 0-100) for the visual editor. */
+    posX: integer('pos_x'),
+    posY: integer('pos_y'),
     /** Public QR locator — opaque, grants NO private merchant access. */
     qrToken: varchar('qr_token', { length: 64 }).notNull(),
     createdAt: tstz('created_at').defaultNow().notNull(),
@@ -705,6 +714,32 @@ export const tables = pgTable(
     uniqueIndex('tables_qr_token_idx').on(t.qrToken),
     index('tables_merchant_idx').on(t.merchantId),
     index('tables_section_idx').on(t.sectionId)
+  ]
+)
+
+/** Table reservations + waitlist (guest name/phone doubles as light CRM). */
+export const reservations = pgTable(
+  'reservations',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    outletId: varchar('outlet_id', { length: 30 })
+      .notNull()
+      .references(() => outlets.id, { onDelete: 'cascade' }),
+    tableId: varchar('table_id', { length: 30 }).references(() => tables.id, {
+      onDelete: 'set null'
+    }),
+    guestName: varchar('guest_name', { length: 120 }).notNull(),
+    guestPhone: varchar('guest_phone', { length: 30 }),
+    partySize: integer('party_size').notNull().default(2),
+    reservedAt: tstz('reserved_at').notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('booked'),
+    notes: text('notes'),
+    createdAt: tstz('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    index('reservations_merchant_outlet_idx').on(t.merchantId, t.outletId),
+    index('reservations_time_idx').on(t.reservedAt)
   ]
 )
 

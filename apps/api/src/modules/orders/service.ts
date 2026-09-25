@@ -18,6 +18,7 @@ import {
   orders,
   paymentProviderConfigs,
   paymentTransactions,
+  products,
   productVariants,
   publicCustomerColumns,
   refunds,
@@ -652,7 +653,7 @@ export class OrdersService {
     db: DB,
     merchantId: string,
     id: string,
-    input: { status: 'approved' | 'rejected' },
+    input: { status: 'approved' | 'rejected'; replacementVariantId?: string; replacementQuantity?: number },
     branchIds: string[] | null = null
   ) {
     const [ret] = await db
@@ -689,6 +690,12 @@ export class OrdersService {
         throw badRequest('RETURN_ALREADY_PROCESSED', 'Return was just processed by someone else')
       }
 
+      // Exchange: approving with a replacement variant also ships a linked
+      // replacement order — validated up front so a bad variant never restocks.
+      if (input.status === 'approved' && input.replacementVariantId) {
+        await this.assertExchangeVariantTx(tx, merchantId, claimed, input.replacementVariantId, input.replacementQuantity)
+      }
+
       if (input.status === 'approved' && claimed.orderItemId) {
         // A cancelled order already restored its inventory — approving a return
         // against it would restock dead stock (P1-01). Checked inside the same
@@ -715,10 +722,33 @@ export class OrdersService {
         }
       }
 
-      return claimed
+      // The exchange order is created AFTER the restock so a stock failure on
+      // the replacement variant rolls everything back together.
+      let exchangeOrder: typeof orders.$inferSelect | null = null
+      if (input.status === 'approved' && input.replacementVariantId) {
+        exchangeOrder = await this.createExchangeOrderTx(
+          tx,
+          merchantId,
+          claimed,
+          input.replacementVariantId,
+          input.replacementQuantity ?? claimed.quantity
+        )
+      }
+
+      return { claimed, exchangeOrder }
     })
 
-    return ok(updated)
+    if (updated.exchangeOrder) {
+      emit(merchantId, 'order.created', {
+        orderId: updated.exchangeOrder.id,
+        orderNumber: updated.exchangeOrder.orderNumber,
+        status: updated.exchangeOrder.status,
+        paymentStatus: updated.exchangeOrder.paymentStatus
+      })
+    }
+    return ok(
+      updated.exchangeOrder ? { ...updated.claimed, exchangeOrder: updated.exchangeOrder } : updated.claimed
+    )
   }
 
   static async listReturns(db: DB, merchantId: string, orderId: string | undefined, branchIds: string[] | null = null) {
@@ -792,8 +822,9 @@ export class OrdersService {
       if (!order) throw notFound('NOT_FOUND', 'Order not found')
       assertOrderInBranchScope(branchIds, order.outletId)
 
-      // Wallet/store-credit methods need a credit ledger that doesn't exist yet.
-      if (input.method && input.method !== 'original') {
+      // Store-credit refunds credit `customers.store_credit` (spendable at
+      // checkout) instead of touching the gateway. Anything else is unknown.
+      if (input.method && !['original', 'store_credit'].includes(input.method)) {
         throw badRequest('REFUND_METHOD_UNAVAILABLE', `Refund method "${input.method}" is not supported`)
       }
 
@@ -937,6 +968,14 @@ export class OrdersService {
         .where(eq(refunds.id, reserved.refundRow.id))
         .returning()
 
+      // Store-credit refunds land on the customer's balance (no gateway leg).
+      if (row.method === 'store_credit' && reserved.order.customerId) {
+        await tx
+          .update(customers)
+          .set({ storeCredit: sql`${customers.storeCredit} + ${row.amount}` })
+          .where(eq(customers.id, reserved.order.customerId))
+      }
+
       // Completed refunds define the order's payment state — pending/failed
       // reservations never move money.
       const [sumRow] = await tx
@@ -1001,7 +1040,9 @@ export class OrdersService {
     let gatewayRef: string | null = null
     let failureMessage: string | null = null
     try {
-      if (order.paymentProvider) {
+      // Store-credit retries never touch the gateway — the credit leg below
+      // is the whole refund.
+      if (refund.method !== 'store_credit' && order.paymentProvider) {
         const [txn] = await db
           .select()
           .from(paymentTransactions)
@@ -1075,6 +1116,13 @@ export class OrdersService {
         })
         .where(eq(refunds.id, refund.id))
         .returning()
+
+      if (row.method === 'store_credit' && order.customerId) {
+        await tx
+          .update(customers)
+          .set({ storeCredit: sql`${customers.storeCredit} + ${row.amount}` })
+          .where(eq(customers.id, order.customerId))
+      }
 
       const [sumRow] = await tx
         .select({ sum: sql<number>`coalesce(sum(${refunds.amount}), 0)` })
@@ -1224,6 +1272,131 @@ export class OrdersService {
   }
 
   /* -------------------------------- helpers ------------------------------- */
+
+  /**
+   * Validate an exchange replacement before any stock moves: the variant must
+   * belong to this merchant and the quantity must fit inside the return.
+   */
+  private static async assertExchangeVariantTx(
+    tx: any,
+    merchantId: string,
+    ret: typeof returnsTable.$inferSelect,
+    replacementVariantId: string,
+    replacementQuantity?: number
+  ) {
+    const qty = replacementQuantity ?? ret.quantity
+    if (qty < 1 || qty > ret.quantity) {
+      throw badRequest('BAD_REQUEST', `Replacement quantity must be between 1 and ${ret.quantity}`)
+    }
+    const [variant] = await tx
+      .select({ id: productVariants.id, productId: productVariants.productId, merchantId: products.merchantId })
+      .from(productVariants)
+      .innerJoin(products, eq(productVariants.productId, products.id))
+      .where(eq(productVariants.id, replacementVariantId))
+    if (!variant || variant.merchantId !== merchantId) {
+      throw badRequest('VARIANT_NOT_FOUND', 'Replacement variant does not belong to this store')
+    }
+  }
+
+  /**
+   * Create the linked exchange order for an approved return: one line with the
+   * replacement variant at the ORIGINAL unit price (same total for the same
+   * quantity), the replacement stock decremented, and a notes link back to the
+   * source order + return. Payment status is inherited — no new money moves.
+   */
+  private static async createExchangeOrderTx(
+    tx: any,
+    merchantId: string,
+    ret: typeof returnsTable.$inferSelect,
+    replacementVariantId: string,
+    quantity: number
+  ) {
+    const [order] = await tx.select().from(orders).where(eq(orders.id, ret.orderId))
+    if (!order) throw notFound('NOT_FOUND', 'Order not found')
+    const [originalItem] = ret.orderItemId
+      ? await tx.select().from(orderItems).where(eq(orderItems.id, ret.orderItemId))
+      : []
+    // Locked variant row first, then its product (flat selects — joined
+    // `.select()` nests rows under table names, which is easy to misread).
+    const [replacement] = await tx
+      .select()
+      .from(productVariants)
+      .where(eq(productVariants.id, replacementVariantId))
+      .for('update')
+    if (!replacement) {
+      throw badRequest('VARIANT_NOT_FOUND', 'Replacement variant does not belong to this store')
+    }
+    const [replacementProduct] = await tx
+      .select()
+      .from(products)
+      .where(eq(products.id, replacement.productId))
+    if (!replacementProduct || replacementProduct.merchantId !== merchantId) {
+      throw badRequest('VARIANT_NOT_FOUND', 'Replacement variant does not belong to this store')
+    }
+
+    const unitPrice = originalItem ? Number(originalItem.price) : Number(replacement.price)
+    const lineTotal = Number((unitPrice * quantity).toFixed(2))
+
+    // Decrement replacement stock (locked read, same discipline as checkout).
+    if (replacementProduct.trackInventory && !replacement.unlimited) {
+      const after = replacement.inventory - quantity
+      if (after < 0) {
+        throw badRequest('OUT_OF_STOCK', `Only ${replacement.inventory} of the replacement available`)
+      }
+      await tx
+        .update(productVariants)
+        .set({ inventory: after })
+        .where(eq(productVariants.id, replacement.id))
+      await tx.insert(inventoryLogs).values({
+        merchantId,
+        variantId: replacement.id,
+        change: -quantity,
+        beforeValue: replacement.inventory,
+        afterValue: after,
+        reason: 'sale',
+        reference: order.orderNumber
+      })
+    }
+
+    const seg1 = createId().slice(0, 8).toUpperCase()
+    const seg2 = createId().slice(0, 8).toUpperCase()
+    const [exchange] = await tx
+      .insert(orders)
+      .values({
+        merchantId,
+        customerId: order.customerId,
+        orderNumber: `#X-${seg1}-${seg2}`,
+        status: 'pending',
+        paymentStatus: order.paymentStatus,
+        fulfillmentStatus: 'unfulfilled',
+        subtotal: lineTotal,
+        shippingTotal: 0,
+        discountTotal: 0,
+        taxTotal: 0,
+        total: lineTotal,
+        currency: order.currency,
+        shippingAddress: order.shippingAddress,
+        billingAddress: order.billingAddress,
+        notes: `Exchange for order ${order.orderNumber} (return ${ret.id})`,
+        paymentMethod: order.paymentMethod,
+        paymentProvider: order.paymentProvider
+      })
+      .returning()
+
+    await tx.insert(orderItems).values({
+      orderId: exchange.id,
+      productId: replacement.productId,
+      variantId: replacement.id,
+      name: replacementProduct.name,
+      sku: replacement.sku ?? replacementProduct.sku,
+      price: unitPrice,
+      quantity,
+      total: lineTotal,
+      vatRate: originalItem?.vatRate ?? null
+    })
+
+    return exchange
+  }
 
   private static async restockTx(
     tx: any,

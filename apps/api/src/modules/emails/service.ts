@@ -6,6 +6,7 @@ const log = createLogger('emails')
 import {
   customers,
   emailLogs,
+  invoices,
   merchants,
   notificationSettings,
   orderItems,
@@ -279,6 +280,42 @@ export class EmailsService {
       })
     } catch (e) {
       log.error('refundProcessed failed', e)
+    }
+  }
+
+  /** Email an invoice to the order's customer. Never throws — like every trigger. */
+  static async sendInvoice(db: DB, merchantId: string, invoiceId: string): Promise<void> {
+    try {
+      const [row] = await db
+        .select()
+        .from(invoices)
+        .where(eq(invoices.id, invoiceId))
+      if (!row || row.merchantId !== merchantId) return
+      const [order] = await db.select().from(orders).where(eq(orders.id, row.orderId))
+      if (!order) return
+      const identity = await this.identity(db, merchantId)
+      const to = await this.recipientFor(db, order)
+      if (!identity || !to) return
+      await this.queue(db, {
+        merchantId,
+        orderId: order.id,
+        to,
+        template: 'invoice_sent' as EmailTemplateId,
+        subject: `Invoice ${row.invoiceNumber} from ${identity.storeName}`,
+        html: renderEmail({
+          title: `Invoice ${row.invoiceNumber}`,
+          intro: `Your invoice for order ${order.orderNumber} is ready. Total due: ${this.formatMoney(Number(row.total), order.currency)}.`,
+          storeName: identity.storeName,
+          lines: [
+            { label: 'Invoice', value: row.invoiceNumber },
+            { label: 'Order', value: order.orderNumber },
+            { label: 'Status', value: row.status }
+          ],
+          total: this.formatMoney(Number(row.total), order.currency)
+        })
+      })
+    } catch (e) {
+      log.error('sendInvoice failed', e)
     }
   }
 }

@@ -30,7 +30,9 @@ export const returnStatusSchema = t.Enum({
 })
 
 export const refundMethodSchema = t.Enum({
-  original: 'original'
+  original: 'original',
+  /** Credits `customers.store_credit` instead of touching the gateway. */
+  store_credit: 'store_credit'
 })
 
 export const updateStatusBody = t.Object({
@@ -56,7 +58,17 @@ export const createReturnBody = t.Object({
 })
 
 export const updateReturnBody = t.Object({
-  status: t.Enum({ approved: 'approved', rejected: 'rejected' })
+  status: t.Enum({ approved: 'approved', rejected: 'rejected' }),
+  /** Exchange: approving with a replacement variant creates a linked exchange
+   *  order (same total) alongside the restock. Admin flow unchanged otherwise. */
+  replacementVariantId: t.Optional(t.String({ minLength: 1 })),
+  replacementQuantity: t.Optional(t.Integer({ minimum: 1 }))
+})
+
+export const shopperReturnBody = t.Object({
+  orderItemId: t.String({ minLength: 1 }),
+  quantity: t.Integer({ minimum: 1 }),
+  reason: t.Optional(t.String())
 })
 
 export const createRefundBody = t.Object({

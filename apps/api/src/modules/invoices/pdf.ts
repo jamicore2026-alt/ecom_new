@@ -5,6 +5,7 @@ import ArabicReshaper from 'arabic-reshaper'
 import bidiFactory from 'bidi-js'
 import type { Invoice, Order, OrderItem, StoreSettings } from '../../database/schema'
 import type { Address } from '../../shared/types'
+import { roundForCurrency } from '../../shared/currency'
 
 type InvoiceSettingsShape = {
   prefix?: string
@@ -19,6 +20,16 @@ type InvoiceSettingsShape = {
   footerNote?: string | null
   displayFields?: { columns: string[]; showDiscount: boolean; showTax: boolean }
   layout?: string | null
+}
+
+type InvoiceLineItem = Pick<OrderItem, 'name' | 'sku' | 'price' | 'quantity' | 'total'> & {
+  /** VAT rate (%) snapshot from order_items — drives the per-line breakdown. */
+  vatRate?: number | string | null
+}
+
+const vatRateOf = (item: InvoiceLineItem): number | null => {
+  const n = Number(item.vatRate ?? NaN)
+  return Number.isFinite(n) && n > 0 ? n : null
 }
 
 const money = (n: number, currency: string) =>
@@ -188,7 +199,7 @@ function printMixed(doc: PdfDoc, useArabic: boolean, text: string, opts: MixedOp
 export async function renderInvoicePdf(args: {
   invoice: Invoice
   order: Order
-  items: Pick<OrderItem, 'name' | 'sku' | 'price' | 'quantity' | 'total'>[]
+  items: InvoiceLineItem[]
   settings: InvoiceSettingsShape
   store: Pick<StoreSettings, 'name' | 'logo'> | null
   /** Shopper display name — prepended to the bill-to block when the stored
@@ -367,7 +378,7 @@ export async function renderInvoicePdf(args: {
       doc.addPage()
       rowY = doc.page.margins.top
     }
-    const name = isCredit ? `${item.name} (credit)` : item.name
+    const name = `${isCredit ? `${item.name} (credit)` : item.name}${vatRateOf(item) !== null ? ` — ${vatRateOf(item)}% VAT` : ''}`
     x = tableLeft
     for (const c of columns) {
       const cellX = x
@@ -425,6 +436,16 @@ export async function renderInvoicePdf(args: {
     totalRow('Shipping', money(Number(invoice.shippingTotal), currency))
   if (showTax && (invoice.taxTotal ?? 0) !== 0)
     totalRow(settings.taxLabel?.trim() || 'Tax', money(Number(invoice.taxTotal), currency))
+  // Per-line VAT breakdown from the order_items.vatRate snapshot: each distinct
+  // rate gets a row with the VAT portion (rate% of the grouped line totals).
+  const vatGroups = new Map<number, number>()
+  for (const item of items) {
+    const rate = vatRateOf(item)
+    if (rate !== null) vatGroups.set(rate, (vatGroups.get(rate) ?? 0) + Number(item.total))
+  }
+  for (const [rate, base] of [...vatGroups].sort((a, b) => a[0] - b[0])) {
+    totalRow(`VAT ${rate}%`, money(roundForCurrency((base * rate) / 100, currency), currency))
+  }
   doc.moveDown(0.3)
   doc.moveTo(totalsX, doc.y).lineTo(totalsX + totalsW, doc.y).lineWidth(0.5).strokeColor('#9ca3af').stroke()
   doc.moveDown(0.3)

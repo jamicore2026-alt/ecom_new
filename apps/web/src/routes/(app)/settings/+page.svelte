@@ -55,6 +55,9 @@
 			city: string
 			postalCode: string
 			freeAbove: string
+			weightMin: string
+			weightMax: string
+			etaDays: string
 		}>
 	>([])
 
@@ -233,18 +236,21 @@
 				shipping = res.data
 				freeShippingThreshold = String(res.data.freeShippingThreshold)
 				zones = res.data.zones.map((z) => ({ name: z.name, countriesText: z.countries.join(', '), rate: String(z.rate) }))
-				rules = (res.data.rules ?? []).map((r) => ({
-					id: r.id,
-					type: r.type,
-					name: r.name,
-					rate: String(r.rate),
-					enabled: r.enabled,
-					country: r.country ?? '',
-					state: r.state ?? '',
-					city: r.city ?? '',
-					postalCode: r.postalCode ?? '',
-					freeAbove: r.freeAbove === undefined ? '' : String(r.freeAbove)
-				}))
+			rules = (res.data.rules ?? []).map((r) => ({
+				id: r.id,
+				type: r.type,
+				name: r.name,
+				rate: String(r.rate),
+				enabled: r.enabled,
+				country: r.country ?? '',
+				state: r.state ?? '',
+				city: r.city ?? '',
+				postalCode: r.postalCode ?? '',
+				freeAbove: r.freeAbove === undefined ? '' : String(r.freeAbove),
+				weightMin: r.weightMin === undefined ? '' : String(r.weightMin),
+				weightMax: r.weightMax === undefined ? '' : String(r.weightMax),
+				etaDays: r.etaDays === undefined ? '' : String(r.etaDays)
+			}))
 			} else if (section === 'taxes') {
 				const res = await api.get<{ success: boolean; data: TaxSettings }>('/api/settings/taxes')
 				taxes = res.data
@@ -458,18 +464,21 @@
 				countries: z.countriesText.split(',').map((c) => c.trim()).filter(Boolean),
 				rate: Number(z.rate)
 			})),
-			rules: rules.map((r) => ({
-				id: r.id,
-				type: r.type,
-				name: r.name,
-				rate: Number(r.rate),
-				enabled: r.enabled,
-				freeAbove: r.freeAbove.trim() === '' ? undefined : Number(r.freeAbove),
-				country: r.country.trim() || undefined,
-				state: r.state.trim() || undefined,
-				city: r.city.trim() || undefined,
-				postalCode: r.type === 'pin' ? r.postalCode.trim() : undefined
-			})),
+		rules: rules.map((r) => ({
+			id: r.id,
+			type: r.type,
+			name: r.name,
+			rate: Number(r.rate),
+			enabled: r.enabled,
+			freeAbove: r.freeAbove.trim() === '' ? undefined : Number(r.freeAbove),
+			country: r.country.trim() || undefined,
+			state: r.state.trim() || undefined,
+			city: r.city.trim() || undefined,
+			postalCode: r.type === 'pin' ? r.postalCode.trim() : undefined,
+			weightMin: r.weightMin.trim() === '' ? undefined : Number(r.weightMin),
+			weightMax: r.weightMax.trim() === '' ? undefined : Number(r.weightMax),
+			etaDays: r.etaDays.trim() === '' ? undefined : Number(r.etaDays)
+		})),
 				freeShippingThreshold: Number(freeShippingThreshold)
 			})
 			toast.success('Shipping settings saved')
@@ -1007,9 +1016,9 @@
 					<div>
 						<div class="mb-2 flex items-center justify-between">
 							<p class="field-label">Delivery rules</p>
-							<button type="button" class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => rules = [...rules, { id: crypto.randomUUID(), type: 'default', name: '', rate: '0', enabled: true, country: '', state: '', city: '', postalCode: '', freeAbove: '' }]}>
-								+ Add rule
-							</button>
+						<button type="button" class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => rules = [...rules, { id: crypto.randomUUID(), type: 'default', name: '', rate: '0', enabled: true, country: '', state: '', city: '', postalCode: '', freeAbove: '', weightMin: '', weightMax: '', etaDays: '' }]}>
+							+ Add rule
+						</button>
 						</div>
 						<p class="mb-3 text-[11px] text-outline">Matched in order: PIN → City → State → Country → Default. A PIN ending in * is a prefix match (e.g. 1100*).</p>
 						<div class="space-y-3">
@@ -1052,6 +1061,11 @@
 										<p class="mt-2 text-[11px] text-outline">Fallback rate when no other rule matches.</p>
 									{/if}
 									<input type="number" step="0.01" min="0" class="field mt-2 w-40" placeholder="Free above (optional)" bind:value={rules[i].freeAbove} />
+								<div class="mt-2 flex flex-wrap gap-2">
+									<input type="number" step="0.001" min="0" class="field w-36" placeholder="Weight min (kg)" title="Only matches orders at/above this weight" bind:value={rules[i].weightMin} />
+									<input type="number" step="0.001" min="0" class="field w-36" placeholder="Weight max (kg)" title="Only matches orders at/below this weight" bind:value={rules[i].weightMax} />
+									<input type="number" step="1" min="0" class="field w-36" placeholder="ETA days" title="Estimated delivery days shown at checkout" bind:value={rules[i].etaDays} />
+								</div>
 								</div>
 							{/each}
 							{#if rules.length === 0}

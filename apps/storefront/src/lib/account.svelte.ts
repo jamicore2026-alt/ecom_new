@@ -80,6 +80,33 @@ class Account {
 		return storefrontApi.myOrders(fetchFn, this.slug, this.token, params)
 	}
 
+	/** Cancel your own pending order (unpaid only). */
+	async cancelOrder(fetchFn: typeof fetch, orderId: string) {
+		if (!this.token || !this.customer) {
+			throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
+		}
+		return storefrontApi.cancelMyOrder(fetchFn, this.slug, this.token, orderId)
+	}
+
+	/** Request a return on your own order. */
+	async requestReturn(fetchFn: typeof fetch, orderId: string, body: { orderItemId: string; quantity: number; reason?: string }) {
+		if (!this.token || !this.customer) {
+			throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
+		}
+		return storefrontApi.requestMyReturn(fetchFn, this.slug, this.token, orderId, body)
+	}
+
+	/** Refresh the cached profile (e.g. store-credit balance after a refund). */
+	async refreshProfile(fetchFn: typeof fetch) {
+		if (!this.token || !this.customer) {
+			throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
+		}
+		const updated = await storefrontApi.profile(fetchFn, this.slug, this.token)
+		this.customer = updated
+		this.persist({ token: this.token, expiresIn: 0, customer: updated })
+		return updated
+	}
+
 	async submitReview(
 		fetchFn: typeof fetch,
 		body: { productId: string; rating: number; title?: string; body?: string }

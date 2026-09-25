@@ -356,6 +356,7 @@
 								<td class="px-table-cell-x py-table-cell-y text-secondary" title={dateTimeFull(f.createdAt)}>{timeAgo(f.createdAt)}</td>
 								<td class="px-table-cell-x py-table-cell-y text-right">
 									<div class="flex items-center justify-end gap-1">
+										<Button variant="ghost" size="sm" onclick={() => api.download(`/api/fulfillments/${f.id}/slip?format=html`, `packing-slip-${f.orderNumber ?? f.id.slice(0, 8)}.html`).catch((e) => toast.error((e as Error).message))} title="Download printable packing slip"><Icon name="print" size="text-[14px]" /></Button>
 										{#if canShipable(f.status)}
 											<Button variant="ghost" size="sm" onclick={() => openShip(f)}><Icon name="local_shipping" size="text-[14px]" /> Ship</Button>
 										{/if}

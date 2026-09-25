@@ -20,6 +20,11 @@ export interface ShippingRule {
 	rate: number
 	freeAbove?: number
 	enabled: boolean
+	/** Weight-tier bounds (kg) — matched against the order weight. */
+	weightMin?: number
+	weightMax?: number
+	/** Estimated delivery days shown at checkout. */
+	etaDays?: number
 }
 
 export type CheckoutField = 'email' | 'phone' | 'name' | 'line1' | 'line2' | 'city' | 'state' | 'postalCode' | 'country'
@@ -223,7 +228,9 @@ export interface CheckoutSummary {
 	taxTotal: number
 	total: number
 	coupon: CheckoutCoupon | null
-	shipping: { method: string; rate: number }
+	shipping: { method: string; rate: number; etaDays?: number | null }
+	storeCreditUsed?: number
+	storeCreditBalance?: number | null
 	currency: string
 }
 
@@ -250,6 +257,8 @@ export interface CheckoutInput {
 	cartId?: string
 	/** Client-generated key so a retry of the same attempt can't double-order. */
 	idempotencyKey?: string
+	/** Spend the shopper's store-credit balance (min(credit, total) as discount). */
+	useStoreCredit?: boolean
 }
 
 export interface CheckoutPreviewInput {
@@ -257,6 +266,9 @@ export interface CheckoutPreviewInput {
 	couponCode?: string
 	/** Full destination so previewed shipping/tax match the final order. */
 	shippingAddress?: { country?: string; state?: string; city?: string; postalCode?: string }
+	/** Spend store credit — preview needs the account email to look it up. */
+	useStoreCredit?: boolean
+	email?: string
 }
 
 export interface CheckoutOrder {
@@ -268,6 +280,7 @@ export interface CheckoutOrder {
 	currency: string
 	email: string
 	createdAt: string
+	storeCreditUsed?: number
 }
 
 export interface ProviderCheckoutSession {
@@ -319,6 +332,8 @@ export interface ShopperCustomer {
 	emailVerified: boolean
 	ordersCount: number
 	totalSpent: number
+	/** Store-credit balance from refunds — spendable at checkout. */
+	storeCredit?: number
 	createdAt: string
 }
 
@@ -375,5 +390,5 @@ export interface ShopperOrderSummary {
 	currency: string
 	createdAt: string
 	itemCount: number
-	items: Array<{ name: string; sku: string | null; price: number; quantity: number; total: number }>
+	items: Array<{ id?: string; name: string; sku: string | null; price: number; quantity: number; total: number }>
 }

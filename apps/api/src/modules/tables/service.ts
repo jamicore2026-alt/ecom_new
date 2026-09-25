@@ -1,6 +1,6 @@
-import { and, asc, count, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, lte } from 'drizzle-orm'
 import type { DB } from '../../database/client'
-import { outlets, tableSections, tables, tableSessions, orders, menuItems, products, menuItemOutlets } from '../../database/schema'
+import { outlets, tableSections, tables, tableSessions, orders, foodOrderItems, menuItems, products, menuItemOutlets, reservations } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, notFound, conflict } from '../../shared/errors'
 import { isTableState, assertTableTransition, assertSessionTransition, isSessionStatus } from '../../shared/table-state'
@@ -118,6 +118,8 @@ export class TablesService {
         outletId: tables.outletId,
         sectionId: tables.sectionId,
         sectionName: tableSections.name,
+        posX: tables.posX,
+        posY: tables.posY,
         qrToken: tables.qrToken,
         createdAt: tables.createdAt
       })
@@ -157,6 +159,8 @@ export class TablesService {
         outletId: tables.outletId,
         sectionId: tables.sectionId,
         sectionName: tableSections.name,
+        posX: tables.posX,
+        posY: tables.posY,
         qrToken: tables.qrToken,
         createdAt: tables.createdAt
       })
@@ -199,7 +203,7 @@ export class TablesService {
     return ok(row)
   }
 
-  static async update(db: DB, merchantId: string, id: string, input: { sectionId?: string; name?: string; code?: string; seats?: number }, scope: OutletScope) {
+  static async update(db: DB, merchantId: string, id: string, input: { sectionId?: string; name?: string; code?: string; seats?: number; posX?: number | null; posY?: number | null }, scope: OutletScope) {
     const [existing] = await db.select().from(tables).where(and(eq(tables.id, id), eq(tables.merchantId, merchantId)))
     if (!existing) throw notFound('TABLE_NOT_FOUND', 'Table not found')
     assertInOutletScope(scope, existing.outletId)
@@ -207,13 +211,26 @@ export class TablesService {
       const [sec] = await db.select().from(tableSections).where(and(eq(tableSections.id, input.sectionId), eq(tableSections.merchantId, merchantId)))
       if (!sec) throw notFound('SECTION_NOT_FOUND', 'Table section not found')
     }
+    for (const k of ['posX', 'posY'] as const) {
+      const v = input[k]
+      if (v !== undefined && v !== null && (!Number.isInteger(v) || v < 0 || v > 100)) {
+        throw badRequest('INVALID_POSITION', `${k} must be an integer percent between 0 and 100`)
+      }
+    }
     const [updated] = await db.update(tables).set({
       sectionId: input.sectionId !== undefined ? input.sectionId : existing.sectionId,
       name: input.name ?? existing.name,
       code: input.code ?? existing.code,
-      seats: input.seats ?? existing.seats
+      seats: input.seats ?? existing.seats,
+      posX: input.posX !== undefined ? input.posX : existing.posX,
+      posY: input.posY !== undefined ? input.posY : existing.posY
     }).where(eq(tables.id, id)).returning()
     return ok(updated)
+  }
+
+  /** Floor-editor drag-drop: persist canvas percent position (0-100). */
+  static async setPosition(db: DB, merchantId: string, id: string, posX: number | null, posY: number | null, scope: OutletScope) {
+    return this.update(db, merchantId, id, { posX, posY }, scope)
   }
 
   static async status(db: DB, merchantId: string, id: string, next: string, scope: OutletScope) {
@@ -431,8 +448,13 @@ export class TablesSessionService {
     return this.get(db, merchantId, targetId, scope)
   }
 
-  /** Split a party: move `guests` from this OPEN session into a new session on `toTableId`. */
-  static async split(db: DB, merchantId: string, id: string, toTableId: string, guests: number, scope: OutletScope) {
+  /**
+   * Split a party: move `guests` from this OPEN session into a new session on
+   * `toTableId`. When `orderItemIds` is provided, those food-order lines move
+   * to a new order attached to the split session (totals recomputed); the
+   * guest count moves regardless.
+   */
+  static async split(db: DB, merchantId: string, id: string, toTableId: string, guests: number, scope: OutletScope, orderItemIds?: string[]) {
     const [session] = await db.select().from(tableSessions).where(and(eq(tableSessions.id, id), eq(tableSessions.merchantId, merchantId)))
     if (!session) throw notFound('SESSION_NOT_FOUND', 'Table session not found')
     assertInOutletScope(scope, session.outletId)
@@ -446,6 +468,16 @@ export class TablesSessionService {
       throw conflict('TABLE_OCCUPIED', `Destination table ${toTable.name} is not free`)
     }
 
+    const moveLines = [...new Set(orderItemIds ?? [])]
+    if (moveLines.length > 0) {
+      const lines = await db.select().from(foodOrderItems).where(and(eq(foodOrderItems.merchantId, merchantId), inArray(foodOrderItems.id, moveLines)))
+      if (lines.length !== moveLines.length) throw notFound('ORDER_ITEM_NOT_FOUND', 'One or more order lines were not found')
+      const orderIds = [...new Set(lines.map((l) => l.orderId))]
+      const linked = await db.select({ id: orders.id }).from(orders).where(and(eq(orders.merchantId, merchantId), inArray(orders.id, orderIds), eq(orders.tableSessionId, id)))
+      if (linked.length !== orderIds.length) throw badRequest('LINES_NOT_ON_SESSION', 'All moved lines must belong to orders on this session')
+    }
+
+    const round2 = (n: number) => Math.round(n * 100) / 100
     const [newSession] = await db.transaction(async (tx) => {
       const [s] = await tx.insert(tableSessions).values({
         merchantId,
@@ -456,11 +488,37 @@ export class TablesSessionService {
       }).returning()
       await tx.update(tableSessions).set({ guests: session.guests - guests }).where(eq(tableSessions.id, id))
       await tx.update(tables).set({ status: 'ORDERING' }).where(eq(tables.id, toTable.id))
+      if (moveLines.length > 0) {
+        const [probe] = await tx.select().from(foodOrderItems).where(eq(foodOrderItems.id, moveLines[0]))
+        const [srcOrder] = await tx.select().from(orders).where(eq(orders.id, probe!.orderId))
+        const [splitOrder] = await tx.insert(orders).values({
+          merchantId,
+          outletId: toTable.outletId,
+          orderNumber: `#F${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          orderType: srcOrder!.orderType,
+          status: srcOrder!.status,
+          paymentStatus: 'unpaid',
+          fulfillmentStatus: 'unfulfilled',
+          tableSessionId: s.id,
+          subtotal: 0,
+          taxTotal: 0,
+          total: 0,
+          currency: srcOrder!.currency,
+          notes: `Split from ${session.id}`
+        }).returning()
+        await tx.update(foodOrderItems).set({ orderId: splitOrder.id }).where(inArray(foodOrderItems.id, moveLines))
+        // Recompute totals on both sides from remaining lines.
+        for (const oid of [splitOrder.id, srcOrder!.id]) {
+          const remaining = await tx.select().from(foodOrderItems).where(eq(foodOrderItems.orderId, oid))
+          const subtotal = round2(remaining.reduce((a, l) => a + Number(l.total), 0))
+          await tx.update(orders).set({ subtotal, total: subtotal }).where(eq(orders.id, oid))
+        }
+      }
       return [s]
     })
     const origin = await this.get(db, merchantId, id, scope)
     const arrived = await this.get(db, merchantId, newSession.id, scope)
-    return ok({ session: origin.data, splitInto: arrived.data })
+    return ok({ session: origin.data, splitInto: arrived.data, movedLines: moveLines.length })
   }
 
   /** Attach an existing food order to an OPEN session (dine-in linking). */
@@ -477,6 +535,211 @@ export class TablesSessionService {
 
     await db.update(orders).set({ tableSessionId: id, outletId: session.outletId }).where(eq(orders.id, order.id))
     return this.get(db, merchantId, id, scope)
+  }
+}
+
+/* ------------------------------ reservations + waitlist ------------------------------ */
+
+const RESERVATION_STATUSES = ['booked', 'seated', 'cancelled', 'no-show', 'waitlist'] as const
+
+export class ReservationsService {
+  private static assertStatus(status: string) {
+    if (!(RESERVATION_STATUSES as readonly string[]).includes(status)) {
+      throw badRequest('INVALID_RESERVATION_STATUS', `Unknown reservation status: ${status}`)
+    }
+  }
+
+  static async list(db: DB, merchantId: string, query: { outletId?: string; status?: string; from?: string; to?: string }, scope: OutletScope) {
+    const scopedIds = effectiveOutletIds(scope)
+    if (scopedIds === null) return ok([])
+    const conds = [eq(reservations.merchantId, merchantId), inArray(reservations.outletId, scopedIds)]
+    if (query.outletId) {
+      if (!scopedIds.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+      conds.push(eq(reservations.outletId, query.outletId))
+    }
+    if (query.status) {
+      this.assertStatus(query.status)
+      conds.push(eq(reservations.status, query.status))
+    }
+    if (query.from) conds.push(gte(reservations.reservedAt, new Date(query.from)))
+    if (query.to) conds.push(lte(reservations.reservedAt, new Date(query.to)))
+    const rows = await db
+      .select({
+        id: reservations.id,
+        outletId: reservations.outletId,
+        outletName: outlets.name,
+        tableId: reservations.tableId,
+        tableName: tables.name,
+        guestName: reservations.guestName,
+        guestPhone: reservations.guestPhone,
+        partySize: reservations.partySize,
+        reservedAt: reservations.reservedAt,
+        status: reservations.status,
+        notes: reservations.notes,
+        createdAt: reservations.createdAt
+      })
+      .from(reservations)
+      .leftJoin(outlets, eq(reservations.outletId, outlets.id))
+      .leftJoin(tables, eq(reservations.tableId, tables.id))
+      .where(and(...conds))
+      .orderBy(asc(reservations.reservedAt))
+    return ok(rows)
+  }
+
+  static async waitlist(db: DB, merchantId: string, query: { outletId?: string }, scope: OutletScope) {
+    return this.list(db, merchantId, { ...query, status: 'waitlist' }, scope).then(async (res) => {
+      const rows = (res.data as unknown[]) ?? []
+      // FIFO: oldest request first.
+      rows.sort((a, b) => new Date((a as { createdAt: string }).createdAt).getTime() - new Date((b as { createdAt: string }).createdAt).getTime())
+      return ok(rows)
+    })
+  }
+
+  static async history(db: DB, merchantId: string, phone: string, scope: OutletScope) {
+    const scopedIds = effectiveOutletIds(scope)
+    if (scopedIds === null) return ok({ count: 0, reservations: [] })
+    const rows = await db
+      .select()
+      .from(reservations)
+      .where(and(eq(reservations.merchantId, merchantId), eq(reservations.guestPhone, phone.trim()), inArray(reservations.outletId, scopedIds)))
+      .orderBy(desc(reservations.reservedAt))
+    return ok({ count: rows.length, reservations: rows })
+  }
+
+  static async get(db: DB, merchantId: string, id: string, scope: OutletScope) {
+    const [row] = await db.select().from(reservations).where(and(eq(reservations.id, id), eq(reservations.merchantId, merchantId)))
+    if (!row) throw notFound('RESERVATION_NOT_FOUND', 'Reservation not found')
+    assertInOutletScope(scope, row.outletId)
+    return ok(row)
+  }
+
+  static async create(db: DB, merchantId: string, input: { outletId: string; tableId?: string; guestName: string; guestPhone?: string; partySize?: number; reservedAt: string; status?: string; notes?: string }, scope: OutletScope) {
+    assertInOutletScope(scope, input.outletId)
+    const [outlet] = await db.select().from(outlets).where(and(eq(outlets.id, input.outletId), eq(outlets.merchantId, merchantId)))
+    if (!outlet) throw notFound('OUTLET_NOT_FOUND', 'Outlet not found')
+    if (input.tableId) {
+      const [table] = await db.select().from(tables).where(and(eq(tables.id, input.tableId), eq(tables.merchantId, merchantId)))
+      if (!table) throw notFound('TABLE_NOT_FOUND', 'Table not found')
+      if (table.outletId !== input.outletId) throw badRequest('TABLE_OUTLET_MISMATCH', 'Table belongs to a different outlet')
+    }
+    const status = input.status ?? 'booked'
+    this.assertStatus(status)
+    const at = new Date(input.reservedAt)
+    if (Number.isNaN(at.getTime())) throw badRequest('INVALID_RESERVED_AT', 'reservedAt must be an ISO datetime')
+    const [row] = await db.insert(reservations).values({
+      merchantId,
+      outletId: input.outletId,
+      tableId: input.tableId ?? null,
+      guestName: input.guestName,
+      guestPhone: input.guestPhone ?? null,
+      partySize: input.partySize ?? 2,
+      reservedAt: at,
+      status,
+      notes: input.notes ?? null
+    }).returning()
+    return ok(row)
+  }
+
+  static async update(db: DB, merchantId: string, id: string, input: { guestName?: string; guestPhone?: string; partySize?: number; reservedAt?: string; notes?: string }, scope: OutletScope) {
+    const [existing] = await db.select().from(reservations).where(and(eq(reservations.id, id), eq(reservations.merchantId, merchantId)))
+    if (!existing) throw notFound('RESERVATION_NOT_FOUND', 'Reservation not found')
+    assertInOutletScope(scope, existing.outletId)
+    const set: Record<string, unknown> = {}
+    if (input.guestName !== undefined) set.guestName = input.guestName
+    if (input.guestPhone !== undefined) set.guestPhone = input.guestPhone
+    if (input.partySize !== undefined) set.partySize = input.partySize
+    if (input.notes !== undefined) set.notes = input.notes
+    if (input.reservedAt !== undefined) {
+      const at = new Date(input.reservedAt)
+      if (Number.isNaN(at.getTime())) throw badRequest('INVALID_RESERVED_AT', 'reservedAt must be an ISO datetime')
+      set.reservedAt = at
+    }
+    const [row] = await db.update(reservations).set(set).where(eq(reservations.id, id)).returning()
+    return ok(row)
+  }
+
+  static async setStatus(db: DB, merchantId: string, id: string, status: string, scope: OutletScope) {
+    this.assertStatus(status)
+    const [existing] = await db.select().from(reservations).where(and(eq(reservations.id, id), eq(reservations.merchantId, merchantId)))
+    if (!existing) throw notFound('RESERVATION_NOT_FOUND', 'Reservation not found')
+    assertInOutletScope(scope, existing.outletId)
+    const [row] = await db.update(reservations).set({ status }).where(eq(reservations.id, id)).returning()
+    return ok(row)
+  }
+
+  /** Assign a table to a reservation (validates same outlet + table state). */
+  static async assignTable(db: DB, merchantId: string, id: string, tableId: string, scope: OutletScope) {
+    const [existing] = await db.select().from(reservations).where(and(eq(reservations.id, id), eq(reservations.merchantId, merchantId)))
+    if (!existing) throw notFound('RESERVATION_NOT_FOUND', 'Reservation not found')
+    assertInOutletScope(scope, existing.outletId)
+    if (['cancelled', 'no-show'].includes(existing.status)) throw conflict('RESERVATION_CLOSED', `Cannot assign a table to a ${existing.status} reservation`)
+    const [table] = await db.select().from(tables).where(and(eq(tables.id, tableId), eq(tables.merchantId, merchantId)))
+    if (!table) throw notFound('TABLE_NOT_FOUND', 'Table not found')
+    assertInOutletScope(scope, table.outletId)
+    if (table.outletId !== existing.outletId) throw badRequest('TABLE_OUTLET_MISMATCH', 'Table belongs to a different outlet')
+    const [row] = await db.update(reservations).set({ tableId: table.id }).where(eq(reservations.id, id)).returning()
+    return ok(row)
+  }
+
+  static async remove(db: DB, merchantId: string, id: string, scope: OutletScope) {
+    const [existing] = await db.select().from(reservations).where(and(eq(reservations.id, id), eq(reservations.merchantId, merchantId)))
+    if (!existing) throw notFound('RESERVATION_NOT_FOUND', 'Reservation not found')
+    assertInOutletScope(scope, existing.outletId)
+    await db.delete(reservations).where(eq(reservations.id, id))
+    return ok({ id, deleted: true })
+  }
+}
+
+/* ------------------------------ turn-time report ------------------------------ */
+
+export class TurnTimeService {
+  /** Avg/median open→close minutes per outlet/section (closed sessions only). */
+  static async report(db: DB, merchantId: string, query: { outletId?: string }, scope: OutletScope) {
+    const scopedIds = effectiveOutletIds(scope)
+    if (scopedIds === null) return ok([])
+    const conds = [eq(tableSessions.merchantId, merchantId), eq(tableSessions.status, 'CLOSED'), inArray(tableSessions.outletId, scopedIds)]
+    if (query.outletId) {
+      if (!scopedIds.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+      conds.push(eq(tableSessions.outletId, query.outletId))
+    }
+    const rows = await db
+      .select({
+        outletId: tableSessions.outletId,
+        outletName: outlets.name,
+        sectionId: tables.sectionId,
+        sectionName: tableSections.name,
+        openedAt: tableSessions.openedAt,
+        closedAt: tableSessions.closedAt
+      })
+      .from(tableSessions)
+      .leftJoin(outlets, eq(tableSessions.outletId, outlets.id))
+      .leftJoin(tables, eq(tableSessions.tableId, tables.id))
+      .leftJoin(tableSections, eq(tables.sectionId, tableSections.id))
+      .where(and(...conds))
+    const groups = new Map<string, { outletId: string | null; outletName: string | null; sectionId: string | null; sectionName: string | null; mins: number[] }>()
+    for (const r of rows) {
+      if (!r.openedAt || !r.closedAt) continue
+      const mins = (new Date(r.closedAt).getTime() - new Date(r.openedAt).getTime()) / 60000
+      if (!Number.isFinite(mins) || mins < 0) continue
+      const key = `${r.outletId ?? 'none'}::${r.sectionId ?? 'none'}`
+      if (!groups.has(key)) groups.set(key, { outletId: r.outletId, outletName: r.outletName, sectionId: r.sectionId, sectionName: r.sectionName, mins: [] })
+      groups.get(key)!.mins.push(mins)
+    }
+    const median = (xs: number[]) => {
+      const s = [...xs].sort((a, b) => a - b)
+      const m = Math.floor(s.length / 2)
+      return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+    }
+    const out = [...groups.values()].map((g) => ({
+      outletId: g.outletId,
+      outletName: g.outletName,
+      sectionId: g.sectionId,
+      sectionName: g.sectionName,
+      sessions: g.mins.length,
+      avgMin: Math.round((g.mins.reduce((a, b) => a + b, 0) / g.mins.length) * 10) / 10,
+      medianMin: Math.round(median(g.mins) * 10) / 10
+    }))
+    return ok(out)
   }
 }
 

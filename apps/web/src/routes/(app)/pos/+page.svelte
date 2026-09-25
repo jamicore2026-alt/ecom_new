@@ -79,6 +79,25 @@
 	let syncing = $state(false)
 	let isOnline = $state(true)
 
+	// Held/parked orders: the current cart parked to localStorage under a
+	// name/note so it survives reload and can be resumed later.
+	const PARK_KEY = 'ecom:pos-parked'
+	type ParkedOrder = {
+		id: string
+		name: string
+		note: string
+		cart: CartLine[]
+		customerName: string
+		notes: string
+		savedAt: string
+	}
+	let parked = $state<ParkedOrder[]>([])
+
+	// Barcode scan: resolves products.barcode (and SKU) against the loaded
+	// menu via existing endpoints — no new API needed.
+	let scan = $state('')
+	let scanError = $state<string | null>(null)
+
 	const canSell = $derived(session.can('orders.create'))
 
 	// Use the in-session selected outlet (fall back to a local read for warm nav).
@@ -124,7 +143,8 @@
 			items = items.filter(
 				(it) =>
 					it.product.name.toLowerCase().includes(q) ||
-					it.product.sku?.toLowerCase().includes(q)
+					it.product.sku?.toLowerCase().includes(q) ||
+					(it.product.barcode?.toLowerCase().includes(q) ?? false)
 			)
 		}
 		return items
@@ -148,6 +168,111 @@
 		const groups = item.modifierGroups ?? []
 		if (groups.length) return openModifiers(item)
 		cart.push({ menuItemId: item.id, name: item.product.name, price: item.product.price, quantity: 1, modifiers: [] })
+	}
+
+	/** Resolve a scanned barcode/SKU to a menu item (client-side match over
+	 *  the already-loaded menu). Exact barcode/SKU matches win; quantity
+	 *  bumps when the same plain line is already in the cart. */
+	function scanBarcode() {
+		const code = scan.trim()
+		if (!code) return
+		const q = code.toLowerCase()
+		const exact = menu.filter(
+			(it) =>
+				it.product.barcode?.toLowerCase() === q ||
+				it.product.sku?.toLowerCase() === q
+		)
+		const pool = exact.length > 0 ? exact : menu.filter(
+			(it) =>
+				it.product.barcode?.toLowerCase().includes(q) ||
+				it.product.sku?.toLowerCase().includes(q) ||
+				it.product.name.toLowerCase().includes(q)
+		)
+		if (pool.length === 0) {
+			scanError = t('pos.scanNotFound', { code })
+			return
+		}
+		const item = pool[0]
+		if (pool.length > 1 && exact.length === 0) {
+			toast.error(t('pos.scanMultiMatch', { code, name: item.product.name }))
+		}
+		scanError = null
+		scan = ''
+		const groups = item.modifierGroups ?? []
+		if (groups.length) {
+			openModifiers(item)
+			return
+		}
+		const line = cart.find((l) => l.menuItemId === item.id && l.modifiers.length === 0)
+		if (line) {
+			line.quantity += 1
+			cart = cart.slice()
+		} else {
+			cart.push({ menuItemId: item.id, name: item.product.name, price: item.product.price, quantity: 1, modifiers: [] })
+		}
+	}
+
+	function loadParked() {
+		try {
+			const raw = localStorage.getItem(PARK_KEY)
+			parked = raw ? (JSON.parse(raw) as ParkedOrder[]) : []
+		} catch {
+			parked = []
+		}
+	}
+
+	function persistParked() {
+		try {
+			localStorage.setItem(PARK_KEY, JSON.stringify(parked))
+		} catch {
+			// Storage full/blocked — keep the in-memory list.
+		}
+	}
+
+	/** Park the current cart under a name/note; the sale key is rotated so a
+	 *  resumed cart can never collide with the next sale. */
+	function parkCart() {
+		if (cart.length === 0) {
+			toast.error(t('pos.addItems'))
+			return
+		}
+		const name = customerName.trim() || t('pos.parkNameFallback', { n: String(parked.length + 1) })
+		parked = [
+			...parked,
+			{
+				id: crypto.randomUUID(),
+				name,
+				note: notes.trim(),
+				cart: cart.map((l) => ({ ...l, modifiers: l.modifiers.map((m) => ({ ...m })) })),
+				customerName,
+				notes,
+				savedAt: new Date().toISOString()
+			}
+		]
+		persistParked()
+		clearCart()
+		newSaleKey()
+		toast.success(t('pos.parked', { name }))
+	}
+
+	function resumeParked(id: string) {
+		const entry = parked.find((p) => p.id === id)
+		if (!entry) return
+		if (cart.length > 0) {
+			toast.error(t('pos.resumeBlocked'))
+			return
+		}
+		cart = entry.cart.map((l) => ({ ...l, modifiers: l.modifiers.map((m) => ({ ...m })) }))
+		customerName = entry.customerName
+		notes = entry.notes
+		parked = parked.filter((p) => p.id !== id)
+		persistParked()
+		newSaleKey()
+	}
+
+	function deleteParked(id: string) {
+		parked = parked.filter((p) => p.id !== id)
+		persistParked()
 	}
 
 	// Modifier-selection modal actions --------------------------------------
@@ -441,6 +566,7 @@
 	onMount(() => {
 		newSaleKey()
 		loadOutbox()
+		loadParked()
 		isOnline = navigator.onLine
 		const goOnline = () => {
 			isOnline = true
@@ -481,7 +607,13 @@
 				</select>
 			{/if}
 			{#if cart.length}
+				<Button variant="secondary" onclick={parkCart}><Icon name="pause" size="text-[18px]" /> {t('pos.park')}{parked.length ? ` (${parked.length})` : ''}</Button>
 				<Button variant="secondary" onclick={clearCart}><Icon name="delete_sweep" size="text-[18px]" /> {t('pos.clear')}</Button>
+			{:else if parked.length}
+				<span class="inline-flex items-center gap-1.5 rounded-full bg-info/10 px-3 py-1.5 text-xs font-medium text-info ring-1 ring-inset ring-info" role="status">
+					<Icon name="pause" size="text-[16px]" />
+					{t('pos.parkedOrders', { count: String(parked.length) })}
+				</span>
 			{/if}
 			{#if outbox.length > 0}
 				<span class="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning ring-1 ring-inset ring-warning" role="status">
@@ -504,7 +636,29 @@
 		<div class="space-y-4">
 			{#if loading}
 				<div class="py-16 text-center text-sm text-secondary">{t('pos.loading')}</div>
-			{:else if categories.length}
+			{:else}
+				<div class="flex gap-2">
+					<div class="relative flex-1">
+						<div class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-secondary">
+							<Icon name="barcode_scanner" size="text-[16px]" />
+						</div>
+						<input
+							class="field pl-9"
+							bind:value={scan}
+							onkeydown={(e) => { if (e.key === 'Enter') scanBarcode() }}
+							placeholder={t('pos.scanPlaceholder')}
+							aria-label={t('pos.scanPlaceholder')}
+							inputmode="text"
+							autocomplete="off"
+						/>
+					</div>
+					<Button variant="secondary" onclick={scanBarcode}>{t('pos.scan')}</Button>
+				</div>
+				{#if scanError}
+					<p class="text-sm text-error" role="alert">{scanError}</p>
+				{/if}
+			{/if}
+			{#if !loading && categories.length}
 				<div class="flex flex-wrap gap-2">
 					<button
 						class="rounded-full px-4 py-1.5 text-sm font-medium transition-colors {category === '' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'}"
@@ -534,7 +688,7 @@
 				</div>
 			{/if}
 
-			{#if visibleItems().length === 0}
+			{#if !loading && visibleItems().length === 0}
 				<div class="flex flex-col items-center gap-2 py-16 text-center">
 					<Icon name="restaurant_menu" size="text-[32px]" class="text-outline" />
 					<p class="text-sm text-secondary">{query.trim() ? t('pos.searchNoResults') : t('pos.categoryEmpty')}</p>
@@ -623,6 +777,37 @@
 					<Button class="w-full" size="md" onclick={() => { completing = true }} disabled={!canSell}>
 						<Icon name="point_of_sale" size="text-[20px]" /> {t('pos.charge')} {currency(cartTotal())}
 					</Button>
+				</div>
+			{/if}
+
+			{#if parked.length > 0}
+				<div class="mt-4 border-t border-outline-variant pt-3">
+					<h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-secondary">
+						{t('pos.parkedOrders', { count: String(parked.length) })}
+					</h3>
+					<ul class="space-y-1.5">
+						{#each parked as p (p.id)}
+							<li class="flex items-center justify-between gap-2 rounded border border-outline-variant bg-surface-container-lowest px-2.5 py-1.5 text-sm">
+								<span class="min-w-0">
+									<span class="block truncate font-medium text-on-surface">{p.name}</span>
+									<span class="block text-xs text-secondary">
+										{p.cart.reduce((a, l) => a + l.quantity, 0)} items · {currency(p.cart.reduce((a, l) => a + (l.price + l.modifiers.reduce((x, m) => x + m.price, 0)) * l.quantity, 0))}{p.note ? ` · ${p.note}` : ''}
+									</span>
+								</span>
+								<span class="flex shrink-0 items-center gap-1">
+									<button
+										class="rounded px-2 py-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
+										onclick={() => resumeParked(p.id)}
+									>{t('pos.resume')}</button>
+									<button
+										class="rounded p-1.5 text-xs text-error hover:bg-error-container/40"
+										onclick={() => deleteParked(p.id)}
+										aria-label={t('pos.removeParked')}
+									>✕</button>
+								</span>
+							</li>
+						{/each}
+					</ul>
 				</div>
 			{/if}
 		</Card>

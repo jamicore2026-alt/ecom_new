@@ -74,6 +74,11 @@ const shippingRuleSchema = t.Object({
   rate: t.Number({ minimum: 0 }),
   enabled: t.Boolean(),
   freeAbove: t.Optional(t.Number({ minimum: 0 })),
+  /** Weight-tier bounds (kg) — matched against the order weight at checkout. */
+  weightMin: t.Optional(t.Number({ minimum: 0 })),
+  weightMax: t.Optional(t.Number({ minimum: 0 })),
+  /** Estimated delivery days for this rule, surfaced in the checkout preview. */
+  etaDays: t.Optional(t.Number({ minimum: 0 })),
   country: t.Optional(t.String()),
   state: t.Optional(t.String()),
   city: t.Optional(t.String()),

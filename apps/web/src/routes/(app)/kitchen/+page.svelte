@@ -171,6 +171,66 @@
 		}
 	}
 
+	async function bump() {
+		if (!selected) return
+		try {
+			await api.post<{ success: boolean }>(`/api/kitchen/tickets/${selected.id}/bump`)
+			toast.success(`#${selected.orderNumber} bumped — ready`)
+			selected = null
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function recall() {
+		if (!selected) return
+		try {
+			await api.post<{ success: boolean }>(`/api/kitchen/tickets/${selected.id}/recall`)
+			toast.success(`#${selected.orderNumber} recalled`)
+			selected = null
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	let holdMinutes = $state('15')
+
+	async function holdLine(orderItemId: string | null) {
+		if (!orderItemId) return toast.error('Line has no order item')
+		const fireAt = new Date(Date.now() + (Number(holdMinutes) || 15) * 60000).toISOString()
+		try {
+			await api.post<{ success: boolean }>(`/api/kitchen/order-items/${orderItemId}/hold`, { fireAt })
+			toast.success(`Held for ${holdMinutes || 15} min`)
+			await reloadSelected()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function fireLine(orderItemId: string | null) {
+		if (!orderItemId) return toast.error('Line has no order item')
+		try {
+			await api.post<{ success: boolean }>(`/api/kitchen/order-items/${orderItemId}/fire`)
+			toast.success('Fired to KDS now')
+			await reloadSelected()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function reloadSelected() {
+		if (!selected) return
+		try {
+			const res = await api.get<{ success: boolean; data: TicketRow }>(`/api/kitchen/tickets/${selected.id}`)
+			selected = res.data
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
 	onMount(load)
 </script>
 
@@ -307,12 +367,25 @@
 				<span class="mb-1 block text-xs text-secondary">Items</span>
 				<ul class="space-y-1 rounded border border-outline-variant bg-surface-container-low p-3 text-sm text-on-surface-variant">
 					{#each selected.items as item (item.name)}
-						<li class="flex items-center justify-between">
-							<span>{item.quantity} × {item.name}</span>
-							<span class="text-xs text-outline">{item.status}</span>
+						<li class="flex items-center justify-between gap-2">
+							<span>{item.quantity} × {item.name}
+								{#if item.fireAt && new Date(item.fireAt).getTime() > Date.now()}<span class="ml-1 rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning">held</span>{/if}
+							</span>
+							<span class="flex items-center gap-2">
+								<span class="text-xs text-outline">{item.status}</span>
+								{#if item.fireAt && new Date(item.fireAt).getTime() > Date.now()}
+									<button type="button" class="rounded px-1.5 py-0.5 text-xs font-medium text-success hover:bg-success/10" onclick={() => fireLine(item.orderItemId)}>Fire now</button>
+								{:else}
+									<button type="button" class="rounded px-1.5 py-0.5 text-xs font-medium text-warning hover:bg-warning/10" onclick={() => holdLine(item.orderItemId)}>Hold</button>
+								{/if}
+							</span>
 						</li>
 					{/each}
 				</ul>
+				<div class="mt-2 flex w-32 items-center gap-2">
+					<label for="hold-min" class="text-xs text-secondary">Hold (min)</label>
+					<input id="hold-min" class="field" type="number" min="1" bind:value={holdMinutes} />
+				</div>
 			</div>
 
 			<div class="flex flex-wrap gap-2">
@@ -322,6 +395,15 @@
 				{/if}
 				{#if selected.status === 'ACCEPTED'}
 					<Button onclick={() => transition('PREPARING')}>Start preparing</Button>
+				{/if}
+				{#if selected.status === 'PREPARING'}
+					<Button onclick={bump}>Bump (ready)</Button>
+				{/if}
+				{#if selected.status === 'PREPARING' || selected.status === 'ACCEPTED'}
+					<Button variant="secondary" onclick={recall}>Recall</Button>
+				{/if}
+				{#if selected.status === 'RECALLED'}
+					<Button onclick={() => transition('ACCEPTED')}>Accept</Button>
 				{/if}
 				{#if selected.status === 'PREPARING' || selected.status === 'ACCEPTED' || selected.status === 'NEW'}
 					<Button variant="danger" onclick={() => transition('CANCELLED')}>Cancel</Button>

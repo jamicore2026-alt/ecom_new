@@ -74,6 +74,10 @@
 	let placing = $state(false)
 	let previewed = $state(false)
 
+	// Store-credit spend (signed-in shoppers with a balance only).
+	let useStoreCredit = $state(false)
+	const storeCreditBalance = $derived(account.customer?.storeCredit ?? 0)
+
 	// Saved address book (signed-in shoppers only — guests keep manual entry).
 	let savedAddresses = $state<ShopperAddress[]>([])
 	let selectedAddressId = $state('')
@@ -147,7 +151,9 @@
 			state: region.trim() || undefined,
 			city: city.trim() || undefined,
 			postalCode: postalCode.trim() || undefined
-		}
+		},
+		useStoreCredit: useStoreCredit || undefined,
+		email: email.trim() || undefined
 	})
 
 	const refreshPreview = async () => {
@@ -170,10 +176,10 @@
 		}
 	})
 
-	// Shipping zones/tax rules can differ per destination — keep the quote in sync.
+	// Shipping zones/tax rules/credit toggle can change the quote — keep it in sync.
 	let lastPreviewKey = $state('')
 	$effect(() => {
-		const current = [country, region.trim(), city.trim(), postalCode.trim()].join('|')
+		const current = [country, region.trim(), city.trim(), postalCode.trim(), email.trim(), useStoreCredit].join('|')
 		if (lastPreviewKey && current !== lastPreviewKey && previewed) {
 			refreshPreview()
 		}
@@ -330,6 +336,7 @@ shippingAddress: {
 				paymentMethod,
 				notes: notes.trim() || undefined,
 				cartId: cart.persistedCartId,
+				useStoreCredit: useStoreCredit || undefined,
 				// Same key per attempt: a network retry reuses the original order
 				// instead of creating a second one.
 				idempotencyKey: checkoutAttemptId
@@ -638,6 +645,23 @@ shippingAddress: {
 					{/if}
 				</div>
 
+				{#if account.signedIn && storeCreditBalance > 0}
+					<label class="mt-4 flex cursor-pointer items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+						<input
+							type="checkbox"
+							bind:checked={useStoreCredit}
+							onchange={refreshPreview}
+							class="accent-green-700"
+						/>
+						<span class="text-sm font-medium text-green-800">
+							Use store credit ({money(storeCreditBalance, store.merchant.currency)})
+							{#if summary && (summary.storeCreditUsed ?? 0) > 0}
+								· −{money(summary.storeCreditUsed ?? 0, store.merchant.currency)}
+							{/if}
+						</span>
+					</label>
+				{/if}
+
 				<dl class="mt-6 space-y-2 border-t border-neutral-200 pt-4 text-sm">
 					<div class="flex justify-between text-neutral-600">
 						<dt>{t('order.subtotal')}</dt>
@@ -654,6 +678,9 @@ shippingAddress: {
 						<dd class="font-medium text-neutral-900">
 							{#if summary}
 								{summary.shippingTotal === 0 ? t('order.free') : money(summary.shippingTotal, store.merchant.currency)}
+								{#if summary.shipping.etaDays != null}
+									<span class="text-xs text-neutral-400"> · {summary.shipping.etaDays}d</span>
+								{/if}
 							{:else}
 								<span class="text-neutral-400">{t('checkout.calculatedAtCheckout')}</span>
 							{/if}

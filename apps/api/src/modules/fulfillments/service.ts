@@ -1,4 +1,4 @@
-import { and, desc, eq, ne, sql } from 'drizzle-orm'
+import { and, count, desc, eq, ne, sql } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import { createLogger } from '../../shared/logger'
 
@@ -75,13 +75,20 @@ export class FulfillmentsService {
       .limit(limit)
       .offset(offset)
 
+    // Total counts table rows matching the filters — never the page length.
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(fulfillments)
+      .innerJoin(orders, eq(fulfillments.orderId, orders.id))
+      .where(and(...conditions))
+
     return ok({
       items: rows.map((r) => ({
         ...r.fulfillments,
         orderNumber: r.orders.orderNumber,
         customerEmail: r.customers?.email ?? null
       })),
-      meta: makeMeta(page, limit, rows.length)
+      meta: makeMeta(page, limit, Number(total))
     })
   }
 
@@ -289,8 +296,7 @@ export class FulfillmentsService {
     return ok(updated)
   }
 
-  static async markShipped(
-    db: DB,
+  static async markShipped(    db: DB,
     merchantId: string,
     branchIds: string[] | null,
     id: string,
@@ -301,6 +307,70 @@ export class FulfillmentsService {
 
   static async cancel(db: DB, merchantId: string, branchIds: string[] | null, id: string) {
     return this.update(db, merchantId, branchIds, id, { status: 'cancelled' })
+  }
+
+  /**
+   * Printable packing slip for a fulfillment: fulfillment + order + shipping
+   * address + per-line items with quantities. Served as JSON by default;
+   * the route renders HTML when `?format=html`.
+   */
+  static async slip(db: DB, merchantId: string, branchIds: string[] | null, id: string) {
+    const [row] = await db
+      .select()
+      .from(fulfillments)
+      .innerJoin(orders, eq(fulfillments.orderId, orders.id))
+      .leftJoin(customers, eq(orders.customerId, customers.id))
+      .where(and(eq(fulfillments.id, id), eq(fulfillments.merchantId, merchantId)))
+    if (!row) throw notFound('FULFILLMENT_NOT_FOUND', 'Fulfillment not found')
+    assertOrderInBranchScope(branchIds, row.orders.outletId)
+
+    const lines = await db
+      .select({
+        id: fulfillmentItems.id,
+        orderItemId: fulfillmentItems.orderItemId,
+        quantity: fulfillmentItems.quantity,
+        name: orderItems.name,
+        sku: orderItems.sku
+      })
+      .from(fulfillmentItems)
+      .leftJoin(orderItems, eq(fulfillmentItems.orderItemId, orderItems.id))
+      .where(eq(fulfillmentItems.fulfillmentId, row.fulfillments.id))
+
+    // Legacy whole-order fulfillments store no lines — fall back to the full
+    // order item list so the slip is still printable.
+    const items =
+      lines.length > 0
+        ? lines.map((l) => ({
+            name: l.name ?? 'Item',
+            sku: l.sku ?? null,
+            quantity: l.quantity
+          }))
+        : (
+            await db
+              .select({ name: orderItems.name, sku: orderItems.sku, quantity: orderItems.quantity })
+              .from(orderItems)
+              .where(eq(orderItems.orderId, row.orders.id))
+          ).map((l) => ({ name: l.name, sku: l.sku ?? null, quantity: l.quantity }))
+
+    return ok({
+      fulfillment: {
+        id: row.fulfillments.id,
+        status: row.fulfillments.status,
+        carrier: row.fulfillments.carrier,
+        trackingNumber: row.fulfillments.trackingNumber,
+        trackingUrl: row.fulfillments.trackingUrl,
+        createdAt: row.fulfillments.createdAt
+      },
+      order: {
+        id: row.orders.id,
+        orderNumber: row.orders.orderNumber,
+        status: row.orders.status,
+        customerEmail: row.customers?.email ?? null,
+        shippingAddress: row.orders.shippingAddress ?? null
+      },
+      items,
+      totalQuantity: items.reduce((n, i) => n + i.quantity, 0)
+    })
   }
 
   private static async updateOrderFulfillmentStatus(

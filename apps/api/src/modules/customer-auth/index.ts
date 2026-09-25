@@ -15,7 +15,9 @@ import {
   profileUpdateBody,
   registerBody,
   resetPasswordBody,
+  shopperOrderParams,
   shopperOrdersQuery,
+  shopperReturnBody,
   storeParams,
   submitReviewBody,
   verifyEmailParams,
@@ -153,6 +155,23 @@ export const customerAuthModule = new Elysia({ prefix: '/api/store' })
       params: storeParams,
       query: shopperOrdersQuery,
       detail: { tags: ['Storefront'], summary: 'Shopper order history' }
+    }
+  )
+  .post(
+    '/:slug/auth/orders/:orderId/returns',
+    ({ params, body, shopper }) => CustomerAuthService.requestReturn(params.slug, shopper, params.orderId, body),
+    {
+      params: shopperOrderParams,
+      body: shopperReturnBody,
+      detail: { tags: ['Storefront'], summary: 'Request a return on your own order' }
+    }
+  )
+  .post(
+    '/:slug/auth/orders/:orderId/cancel',
+    ({ params, shopper }) => CustomerAuthService.cancelOrder(params.slug, shopper, params.orderId),
+    {
+      params: shopperOrderParams,
+      detail: { tags: ['Storefront'], summary: 'Cancel your own pending order' }
     }
   )
   .post(

@@ -251,6 +251,18 @@ export const en: Record<string, string> = {
 	'pos.queuedSync': '{count} queued — sync pending',
 	'pos.syncNow': 'Sync',
 	'pos.outboxSynced': '{count} queued sale(s) synced',
+	'pos.scanPlaceholder': 'Scan barcode or SKU, then Enter…',
+	'pos.scan': 'Scan',
+	'pos.scanNotFound': 'No item found for "{code}"',
+	'pos.scanMultiMatch': 'Multiple matches for "{code}" — added {name}',
+	'pos.park': 'Park',
+	'pos.parked': 'Parked "{name}"',
+	'pos.parkedOrders': 'Parked ({count})',
+	'pos.parkedEmpty': 'No parked orders.',
+	'pos.resume': 'Resume',
+	'pos.resumeBlocked': 'Clear or park the current cart before resuming',
+	'pos.removeParked': 'Delete parked order',
+	'pos.parkNameFallback': 'Park {n}',
 
 	// Settings
 	'settings.title': 'Settings',

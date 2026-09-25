@@ -19,6 +19,7 @@ import { ok } from '../../shared/response'
 import { badRequest, conflict, notFound, unauthorized } from '../../shared/errors'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { EmailsService } from '../emails/service'
+import { OrdersService } from '../orders/service'
 
 const number = (v: unknown) => Number(v)
 
@@ -49,6 +50,8 @@ const publicCustomer = (c: typeof customers.$inferSelect) => ({
   emailVerified: c.emailVerified,
   ordersCount: c.ordersCount,
   totalSpent: number(c.totalSpent),
+  /** Store-credit balance from refunds — spendable at checkout. */
+  storeCredit: number(c.storeCredit ?? 0),
   createdAt: c.createdAt
 })
 
@@ -451,6 +454,7 @@ export class CustomerAuthService {
           createdAt: order.createdAt,
           itemCount: lineItems.reduce((n, i) => n + i.quantity, 0),
           items: lineItems.map((i) => ({
+            id: i.id,
             name: i.name,
             sku: i.sku,
             price: number(i.price),
@@ -461,6 +465,47 @@ export class CustomerAuthService {
       }),
       meta: makeMeta(page, limit, Number(total))
     })
+  }
+
+  /* --------------------------- self-serve orders --------------------------- */
+
+  /** Assert the order belongs to the shopper's store AND the shopper (no enumeration). */
+  private static async requireOwnOrder(slug: string, shopper: ShopperContext, orderId: string) {
+    const { customer, merchant } = await this.requireShopper(slug, shopper)
+    const [order] = await db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.id, orderId), eq(orders.merchantId, merchant.id)))
+    if (!order || order.customerId !== customer.id) {
+      throw notFound('ORDER_NOT_FOUND', 'Order not found')
+    }
+    return { customer, merchant, order }
+  }
+
+  /** Shopper requests a return on their own order — same rules as the admin flow. */
+  static async requestReturn(
+    slug: string,
+    shopper: ShopperContext,
+    orderId: string,
+    body: { orderItemId: string; quantity: number; reason?: string }
+  ) {
+    const { merchant } = await this.requireOwnOrder(slug, shopper, orderId)
+    return OrdersService.createReturn(
+      db,
+      merchant.id,
+      { orderId, orderItemId: body.orderItemId, quantity: body.quantity, reason: body.reason },
+      null
+    )
+  }
+
+  /** Shopper cancels their own pending order (unpaid only — paid orders go
+   *  through the refund flow, surfaced as REFUND_REQUIRED). */
+  static async cancelOrder(slug: string, shopper: ShopperContext, orderId: string) {
+    const { merchant, order } = await this.requireOwnOrder(slug, shopper, orderId)
+    if (order.status !== 'pending') {
+      throw badRequest('INVALID_TRANSITION', `Only pending orders can be cancelled (this one is ${order.status})`)
+    }
+    return OrdersService.cancel(db, merchant.id, orderId, null)
   }
 
 

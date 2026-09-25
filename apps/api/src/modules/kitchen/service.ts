@@ -159,16 +159,22 @@ export class KitchenTicketsService {
         modifiers: foodOrderItems.modifiers,
         quantity: foodOrderItems.quantity,
         menuItemId: foodOrderItems.menuItemId,
-        station: menuItems.kitchenStation
+        station: menuItems.kitchenStation,
+        menuAvailable: menuItems.available,
+        menuStatus: menuItems.status
       })
       .from(foodOrderItems)
       .leftJoin(menuItems, eq(foodOrderItems.menuItemId, menuItems.id))
       .where(eq(foodOrderItems.orderId, orderId))
     if (items.length === 0) throw badRequest('NO_ITEMS', 'This order has no food items to route')
+    // Unavailable/archived menu items never reach the board — exclude with notice.
+    const skippedUnavailable = items.filter((i) => i.menuItemId && (i.menuAvailable === false || (i.menuStatus && i.menuStatus !== 'active'))).map((i) => ({ orderItemId: i.id, name: i.name }))
+    const routable = items.filter((i) => !skippedUnavailable.some((s) => s.orderItemId === i.id))
+    if (routable.length === 0) throw badRequest('NO_AVAILABLE_ITEMS', 'All items on this order are currently unavailable')
 
-    const stationsByName = await this.resolveStations(db, merchantId, new Set(items.map((i) => (i.station || DEFAULT_STATION).trim() || DEFAULT_STATION)))
-    const groups = new Map<string, typeof items>()
-    for (const item of items) {
+    const stationsByName = await this.resolveStations(db, merchantId, new Set(routable.map((i) => (i.station || DEFAULT_STATION).trim() || DEFAULT_STATION)))
+    const groups = new Map<string, typeof routable>()
+    for (const item of routable) {
       const key = (item.station || DEFAULT_STATION).trim() || DEFAULT_STATION
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key)!.push(item)
@@ -212,7 +218,9 @@ export class KitchenTicketsService {
       }
     })
 
-    return this.list(db, merchantId, { orderId }, scope)
+    const listed = await this.list(db, merchantId, { orderId }, scope)
+    const data = listed.data as unknown as { items: unknown; meta: unknown }
+    return ok({ items: data.items, meta: data.meta, skippedUnavailable })
   }
 
   static async list(db: DB, merchantId: string, query: { outletId?: string; stationId?: string; status?: string; search?: string; orderId?: string; page?: number; limit?: number }, scope: OutletScope) {
@@ -296,12 +304,27 @@ export class KitchenTicketsService {
     assertInOutletScope(scope, ticket.outletId)
 
     const items = await db
-      .select()
+      .select({
+        id: kitchenTicketItems.id,
+        ticketId: kitchenTicketItems.ticketId,
+        orderItemId: kitchenTicketItems.orderItemId,
+        menuItemId: kitchenTicketItems.menuItemId,
+        name: kitchenTicketItems.name,
+        modifiers: kitchenTicketItems.modifiers,
+        quantity: kitchenTicketItems.quantity,
+        status: kitchenTicketItems.status,
+        readyAt: kitchenTicketItems.readyAt,
+        createdAt: kitchenTicketItems.createdAt,
+        fireAt: foodOrderItems.fireAt,
+        allergens: menuItems.allergens
+      })
       .from(kitchenTicketItems)
+      .leftJoin(foodOrderItems, eq(kitchenTicketItems.orderItemId, foodOrderItems.id))
+      .leftJoin(menuItems, eq(kitchenTicketItems.menuItemId, menuItems.id))
       .where(eq(kitchenTicketItems.ticketId, id))
       .orderBy(asc(kitchenTicketItems.createdAt))
 
-    return ok({ ...ticket, ...addMeta(ticket), items })
+    return ok({ ...ticket, ...addMeta(ticket), items: items.map((i) => ({ ...i, allergens: (i.allergens ?? []) as string[], fireAt: i.fireAt ?? null })) })
   }
 
   private static async setTimestamps(db: DB, merchantId: string, id: string, status: KotStatus) {
@@ -372,6 +395,80 @@ export class KitchenTicketsService {
   }
 }
 
+/* ------------------------------ hold-and-fire ------------------------------ */
+
+export class HoldFireService {
+  /** Set (or clear with null) fireAt on a food-order line. Held lines hide from KDS until fireAt passes. */
+  static async setHold(db: DB, merchantId: string, orderItemId: string, fireAt: string | null, scope: OutletScope) {
+    const [line] = await db.select().from(foodOrderItems).where(and(eq(foodOrderItems.id, orderItemId), eq(foodOrderItems.merchantId, merchantId)))
+    if (!line) throw notFound('ORDER_ITEM_NOT_FOUND', 'Order line not found')
+    const [order] = await db.select().from(orders).where(and(eq(orders.id, line.orderId), eq(orders.merchantId, merchantId)))
+    if (!order) throw notFound('ORDER_NOT_FOUND', 'Order not found')
+    assertInOutletScope(scope, order.outletId)
+    let fire: Date | null = null
+    if (fireAt !== null && fireAt !== undefined) {
+      fire = new Date(fireAt)
+      if (Number.isNaN(fire.getTime())) throw badRequest('INVALID_FIRE_AT', 'fireAt must be an ISO datetime or null')
+    }
+    const [updated] = await db.update(foodOrderItems).set({ fireAt: fire }).where(eq(foodOrderItems.id, orderItemId)).returning()
+    return ok(updated)
+  }
+
+  static async fireNow(db: DB, merchantId: string, orderItemId: string, scope: OutletScope) {
+    return this.setHold(db, merchantId, orderItemId, null, scope)
+  }
+}
+
+/* ------------------------------ station metrics ------------------------------ */
+
+export class KitchenMetricsService {
+  /** Per-station performance: avg prep minutes (received→ready), delayed count, ready count. */
+  static async stationMetrics(db: DB, merchantId: string, query: { outletId?: string }, scope: OutletScope) {
+    const scopedIds = effectiveOutletIds(scope)
+    if (scopedIds === null) return ok([])
+    const conds = [eq(kitchenTickets.merchantId, merchantId), inArray(kitchenTickets.outletId, scopedIds)]
+    if (query.outletId) {
+      if (!scopedIds.includes(query.outletId)) throw outletScopeError('This outlet is outside your scope')
+      conds.push(eq(kitchenTickets.outletId, query.outletId))
+    }
+    const tickets = await db
+      .select({
+        stationId: kitchenTickets.stationId,
+        stationName: kitchenTickets.stationName,
+        status: kitchenTickets.status,
+        prepSlaMin: kitchenTickets.prepSlaMin,
+        receivedAt: kitchenTickets.receivedAt,
+        readyAt: kitchenTickets.readyAt
+      })
+      .from(kitchenTickets)
+      .where(and(...conds))
+    const byStation = new Map<string, { stationId: string; stationName: string; prepMins: number[]; delayed: number; open: number; ready: number }>()
+    for (const t of tickets) {
+      if (!byStation.has(t.stationId)) byStation.set(t.stationId, { stationId: t.stationId, stationName: t.stationName, prepMins: [], delayed: 0, open: 0, ready: 0 })
+      const agg = byStation.get(t.stationId)!
+      const open = !['READY', 'CANCELLED'].includes(t.status)
+      if (open) {
+        agg.open += 1
+        if (ageSec(new Date(t.receivedAt)) > t.prepSlaMin * 60) agg.delayed += 1
+      } else if (t.status === 'READY' && t.readyAt) {
+        agg.ready += 1
+        const mins = (new Date(t.readyAt).getTime() - new Date(t.receivedAt).getTime()) / 60000
+        if (Number.isFinite(mins) && mins >= 0) agg.prepMins.push(mins)
+        if (mins > t.prepSlaMin) agg.delayed += 1
+      }
+    }
+    const rows = [...byStation.values()].map((a) => ({
+      stationId: a.stationId,
+      stationName: a.stationName,
+      readyCount: a.ready,
+      openCount: a.open,
+      delayedCount: a.delayed,
+      avgPrepMin: a.prepMins.length ? Math.round((a.prepMins.reduce((x, y) => x + y, 0) / a.prepMins.length) * 10) / 10 : null
+    }))
+    return ok(rows)
+  }
+}
+
 /* ------------------------------ KDS board ------------------------------ */
 
 export class KdsBoardService {
@@ -414,13 +511,53 @@ export class KdsBoardService {
       .orderBy(desc(kitchenTickets.priority), asc(kitchenTickets.receivedAt))
 
     const ticketIds = tickets.map((t) => t.id)
+    // Enrich lines with hold/fire state + menu allergens/availability so the
+    // board can hide held lines and badge allergens without extra round-trips.
     const items = ticketIds.length
-      ? await db.select().from(kitchenTicketItems).where(inArray(kitchenTicketItems.ticketId, ticketIds)).orderBy(asc(kitchenTicketItems.createdAt))
+      ? await db
+        .select({
+          id: kitchenTicketItems.id,
+          ticketId: kitchenTicketItems.ticketId,
+          orderItemId: kitchenTicketItems.orderItemId,
+          menuItemId: kitchenTicketItems.menuItemId,
+          name: kitchenTicketItems.name,
+          modifiers: kitchenTicketItems.modifiers,
+          quantity: kitchenTicketItems.quantity,
+          status: kitchenTicketItems.status,
+          readyAt: kitchenTicketItems.readyAt,
+          createdAt: kitchenTicketItems.createdAt,
+          fireAt: foodOrderItems.fireAt,
+          allergens: menuItems.allergens,
+          menuAvailable: menuItems.available,
+          menuStatus: menuItems.status
+        })
+        .from(kitchenTicketItems)
+        .leftJoin(foodOrderItems, eq(kitchenTicketItems.orderItemId, foodOrderItems.id))
+        .leftJoin(menuItems, eq(kitchenTicketItems.menuItemId, menuItems.id))
+        .where(inArray(kitchenTicketItems.ticketId, ticketIds))
+        .orderBy(asc(kitchenTicketItems.createdAt))
       : []
-    const itemsByTicket = new Map<string, (typeof items)[number][]>()
+    const now = Date.now()
+    let heldCount = 0
+    let unavailableCount = 0
+    const itemsByTicket = new Map<string, typeof items>()
     for (const it of items) {
+      // Hold-and-fire: hidden from KDS until fireAt passes.
+      if (it.fireAt && new Date(it.fireAt).getTime() > now) {
+        heldCount += 1
+        continue
+      }
+      // Unavailable/archived menu items are excluded from the board.
+      if (it.menuItemId && (it.menuAvailable === false || (it.menuStatus && it.menuStatus !== 'active'))) {
+        unavailableCount += 1
+        continue
+      }
       if (!itemsByTicket.has(it.ticketId)) itemsByTicket.set(it.ticketId, [])
-      itemsByTicket.get(it.ticketId)!.push(it)
+      itemsByTicket.get(it.ticketId)!.push({
+        ...it,
+        allergens: (it.allergens ?? []) as string[],
+        fireAt: it.fireAt ?? null
+      })
     }
 
     const board = stations.map((s) => ({
@@ -432,6 +569,12 @@ export class KdsBoardService {
         .map((t) => ({ ...t, ...addMeta(t), items: itemsByTicket.get(t.id) ?? [] }))
     }))
 
-    return ok({ stations: board, delayedCount: tickets.filter((t) => addMeta(t).delayed).length })
+    return ok({
+      stations: board,
+      delayedCount: tickets.filter((t) => addMeta(t).delayed).length,
+      heldCount,
+      unavailableCount,
+      unavailableNotice: unavailableCount > 0 ? `${unavailableCount} unavailable item(s) hidden from the board` : null
+    })
   }
 }

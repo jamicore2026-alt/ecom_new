@@ -11,13 +11,20 @@ export interface DeliveryLocation {
 }
 
 export interface ShippingContext {
-  zones: Array<{ name: string; countries: string[]; rate: number; freeAbove?: number }>
+  zones: Array<{ name: string; countries: string[]; rate: number; freeAbove?: number; etaDays?: number }>
   rules?: ShippingRule[]
   freeAt: number
 }
 
+export interface ShippingQuote {
+  method: string
+  rate: number
+  /** Estimated delivery days for the matched rule/zone (when configured). */
+  etaDays?: number
+}
+
 /**
- * Resolve the delivery rate for a subtotal + location.
+ * Resolve the delivery rate for a subtotal + location + order weight.
  *
  * Priority (PDF-correction): PIN (exact or leading-prefix "*") → city → state →
  * country → default. When the merchant configured hierarchical rules, those
@@ -25,12 +32,17 @@ export interface ShippingContext {
  * set that matches nothing still falls back to zones so a partially populated
  * rule list can never silently block every order. Returns 0/flat when the store
  * has neither rules nor zones.
+ *
+ * Weight tiers: a rule carrying weightMin/weightMax only matches when the order
+ * weight (kg, summed from product weights, 0 when unknown) falls inside the
+ * bounds. ETA: the matched rule's (or zone's) etaDays is returned alongside.
  */
 export function computeShippingRate(
   ctx: ShippingContext,
   subtotal: number,
-  location?: DeliveryLocation
-): { method: string; rate: number } {
+  location?: DeliveryLocation,
+  weightKg = 0
+): ShippingQuote {
   const freeAt = ctx.freeAt ?? 0
   if (freeAt > 0 && subtotal >= freeAt) return { method: 'Free shipping', rate: 0 }
 
@@ -41,6 +53,17 @@ export function computeShippingRate(
   const postalCode = (location?.postalCode ?? '').trim()
 
   const rules = (ctx.rules ?? []).filter((r) => r.enabled)
+  /** A weight-tiered rule only matches orders inside its [min, max] bounds. */
+  const matchesWeight = (rule: ShippingRule) => {
+    if (rule.weightMin !== undefined && weightKg < rule.weightMin) return false
+    if (rule.weightMax !== undefined && weightKg > rule.weightMax) return false
+    return true
+  }
+  const quoteFor = (rule: ShippingRule): ShippingQuote => {
+    const quote: ShippingQuote = { method: rule.name, rate: Number(rule.rate) }
+    if (rule.etaDays !== undefined) quote.etaDays = rule.etaDays
+    return quote
+  }
   if (rules.length > 0) {
     const matchesPin = (rule: ShippingRule) => {
       if (rule.type !== 'pin' || !rule.postalCode) return false
@@ -57,15 +80,19 @@ export function computeShippingRate(
       return false
     }
     const rule =
-      rules.find(matchesPin) ??
-      rules.find((r) => r.type === 'city' && matchesArea(r)) ??
-      rules.find((r) => r.type === 'state' && matchesArea(r)) ??
-      rules.find((r) => r.type === 'country' && matchesArea(r)) ??
-      rules.find((r) => r.type === 'default') ??
+      rules.find((r) => matchesWeight(r) && matchesPin(r)) ??
+      rules.find((r) => r.type === 'city' && matchesWeight(r) && matchesArea(r)) ??
+      rules.find((r) => r.type === 'state' && matchesWeight(r) && matchesArea(r)) ??
+      rules.find((r) => r.type === 'country' && matchesWeight(r) && matchesArea(r)) ??
+      rules.find((r) => r.type === 'default' && matchesWeight(r)) ??
       null
     if (rule) {
-      if (rule.freeAbove && subtotal >= rule.freeAbove) return { method: rule.name, rate: 0 }
-      return { method: rule.name, rate: Number(rule.rate) }
+      if (rule.freeAbove && subtotal >= rule.freeAbove) {
+        const quote = quoteFor(rule)
+        quote.rate = 0
+        return quote
+      }
+      return quoteFor(rule)
     }
   }
 
@@ -79,8 +106,14 @@ export function computeShippingRate(
     const countryLabel = (location?.country ?? '').trim() || 'this country'
     throw badRequest('UNSUPPORTED_COUNTRY', `We don't ship to ${countryLabel}`)
   }
-  if (zone.freeAbove && subtotal >= zone.freeAbove) return { method: zone.name, rate: 0 }
-  return { method: zone.name, rate: Number(zone.rate) }
+  if (zone.freeAbove && subtotal >= zone.freeAbove) {
+    const quote: ShippingQuote = { method: zone.name, rate: 0 }
+    if (zone.etaDays !== undefined) quote.etaDays = zone.etaDays
+    return quote
+  }
+  const quote: ShippingQuote = { method: zone.name, rate: Number(zone.rate) }
+  if (zone.etaDays !== undefined) quote.etaDays = zone.etaDays
+  return quote
 }
 
 /**

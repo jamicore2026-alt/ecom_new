@@ -7,6 +7,8 @@ import {
   TableSectionsService,
   TablesService,
   TablesSessionService,
+  ReservationsService,
+  TurnTimeService,
   TableQrService
 } from './service'
 import {
@@ -16,6 +18,7 @@ import {
   tableSectionUpdateBody,
   tableCreateBody,
   tableUpdateBody,
+  tablePositionBody,
   tableStatusBody,
   sessionOpenBody,
   sessionMoveBody,
@@ -23,7 +26,14 @@ import {
   sessionSplitBody,
   sessionOrderAttachBody,
   sessionQuery,
-  qrUrlBody
+  qrUrlBody,
+  reservationCreateBody,
+  reservationUpdateBody,
+  reservationStatusBody,
+  reservationAssignBody,
+  reservationQuery,
+  reservationHistoryQuery,
+  turnTimeQuery
 } from './model'
 
 export const tablesModule = new Elysia({ prefix: '/api' })
@@ -53,6 +63,26 @@ export const tablesModule = new Elysia({ prefix: '/api' })
     params: tableParams,
     query: qrUrlBody,
     detail: { summary: 'Get a table QR token + URL' }
+  })
+  .get('/reservations/waitlist', async ({ query, auth, merchantContext }) => ReservationsService.waitlist(auth.db, auth.merchant.id, query, merchantContext), {
+    query: tableQuery,
+    detail: { summary: 'Waitlist (status=waitlist, FIFO)' }
+  })
+  .get('/reservations/history', async ({ query, auth, merchantContext }) => ReservationsService.history(auth.db, auth.merchant.id, query.phone, merchantContext), {
+    query: reservationHistoryQuery,
+    detail: { summary: 'Guest history by phone' }
+  })
+  .get('/reservations', async ({ query, auth, merchantContext }) => ReservationsService.list(auth.db, auth.merchant.id, query, merchantContext), {
+    query: reservationQuery,
+    detail: { summary: 'List reservations (outlet-scoped, day filter)' }
+  })
+  .get('/reservations/:id', async ({ params, auth, merchantContext }) => ReservationsService.get(auth.db, auth.merchant.id, params.id, merchantContext), {
+    params: tableParams,
+    detail: { summary: 'Get a reservation' }
+  })
+  .get('/tables/reports/turn-time', async ({ query, auth, merchantContext }) => TurnTimeService.report(auth.db, auth.merchant.id, query, merchantContext), {
+    query: turnTimeQuery,
+    detail: { summary: 'Turn-time report: avg/median open→close minutes per outlet/section' }
   })
 
   .use(outletGuard({ module: 'tables', permissions: ['tables.manage'] }))
@@ -117,10 +147,40 @@ export const tablesModule = new Elysia({ prefix: '/api' })
     return result
   }, { params: tableParams, body: sessionMergeBody })
   .post('/table-sessions/:id/split', async ({ params, body, auth, request, merchantContext }) => {
-    const result = await TablesSessionService.split(auth.db, auth.merchant.id, params.id, body.toTableId, body.guests, merchantContext)
-    await auditFromRequest(auth, request, { action: 'table_session.split', entityType: 'table_session', entityId: params.id, metadata: { toTableId: body.toTableId, guests: body.guests } })
+    const result = await TablesSessionService.split(auth.db, auth.merchant.id, params.id, body.toTableId, body.guests, merchantContext, body.orderItemIds)
+    await auditFromRequest(auth, request, { action: 'table_session.split', entityType: 'table_session', entityId: params.id, metadata: { toTableId: body.toTableId, guests: body.guests, orderItemIds: body.orderItemIds ?? [] } })
     return result
   }, { params: tableParams, body: sessionSplitBody })
+  .put('/tables/:id/position', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await TablesService.setPosition(auth.db, auth.merchant.id, params.id, body.posX, body.posY, merchantContext)
+    await auditFromRequest(auth, request, { action: 'table.position', entityType: 'table', entityId: params.id, metadata: { posX: body.posX, posY: body.posY } })
+    return result
+  }, { params: tableParams, body: tablePositionBody })
+  .post('/reservations', async ({ body, auth, request, merchantContext }) => {
+    const result = await ReservationsService.create(auth.db, auth.merchant.id, body, merchantContext)
+    await auditFromRequest(auth, request, { action: 'reservation.create', entityType: 'reservation', entityId: (result.data as { id: string }).id })
+    return result
+  }, { body: reservationCreateBody })
+  .put('/reservations/:id', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await ReservationsService.update(auth.db, auth.merchant.id, params.id, body, merchantContext)
+    await auditFromRequest(auth, request, { action: 'reservation.update', entityType: 'reservation', entityId: params.id })
+    return result
+  }, { params: tableParams, body: reservationUpdateBody })
+  .post('/reservations/:id/status', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await ReservationsService.setStatus(auth.db, auth.merchant.id, params.id, body.status, merchantContext)
+    await auditFromRequest(auth, request, { action: 'reservation.status', entityType: 'reservation', entityId: params.id, metadata: { status: body.status } })
+    return result
+  }, { params: tableParams, body: reservationStatusBody })
+  .post('/reservations/:id/assign', async ({ params, body, auth, request, merchantContext }) => {
+    const result = await ReservationsService.assignTable(auth.db, auth.merchant.id, params.id, body.tableId, merchantContext)
+    await auditFromRequest(auth, request, { action: 'reservation.assign', entityType: 'reservation', entityId: params.id, metadata: { tableId: body.tableId } })
+    return result
+  }, { params: tableParams, body: reservationAssignBody })
+  .delete('/reservations/:id', async ({ params, auth, request, merchantContext }) => {
+    const result = await ReservationsService.remove(auth.db, auth.merchant.id, params.id, merchantContext)
+    await auditFromRequest(auth, request, { action: 'reservation.delete', entityType: 'reservation', entityId: params.id })
+    return result
+  }, { params: tableParams })
   .post('/table-sessions/:id/orders', async ({ params, body, auth, request, merchantContext }) => {
     const result = await TablesSessionService.attachOrder(auth.db, auth.merchant.id, params.id, body.orderId, merchantContext)
     await auditFromRequest(auth, request, { action: 'table_session.attach_order', entityType: 'table_session', entityId: params.id, metadata: { orderId: body.orderId } })

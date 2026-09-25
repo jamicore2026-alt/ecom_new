@@ -38,9 +38,15 @@ export const tableUpdateBody = t.Partial(
     sectionId: t.Optional(t.String()),
     name: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
     code: t.Optional(t.String({ minLength: 1, maxLength: 30 })),
-    seats: t.Optional(t.Number({ minimum: 1, maximum: 99 }))
+    seats: t.Optional(t.Number({ minimum: 1, maximum: 99 })),
+    posX: t.Optional(t.Union([t.Number({ minimum: 0, maximum: 100 }), t.Null()])),
+    posY: t.Optional(t.Union([t.Number({ minimum: 0, maximum: 100 }), t.Null()]))
   })
 )
+export const tablePositionBody = t.Object({
+  posX: t.Union([t.Number({ minimum: 0, maximum: 100 }), t.Null()]),
+  posY: t.Union([t.Number({ minimum: 0, maximum: 100 }), t.Null()])
+})
 export const tableStatusBody = t.Object({
   status: t.Enum(tableStateEnum)
 })
@@ -54,8 +60,39 @@ export const sessionMoveBody = t.Object({ toTableId: t.String() })
 export const sessionMergeBody = t.Object({ sessionIds: t.Array(t.String(), { minItems: 1 }) })
 export const sessionSplitBody = t.Object({
   toTableId: t.String(),
-  guests: t.Number({ minimum: 1, maximum: 999 })
+  guests: t.Number({ minimum: 1, maximum: 999 }),
+  orderItemIds: t.Optional(t.Array(t.String(), { minItems: 1 }))
 })
+
+export const reservationCreateBody = t.Object({
+  outletId: t.String(),
+  tableId: t.Optional(t.String()),
+  guestName: t.String({ minLength: 1, maxLength: 120 }),
+  guestPhone: t.Optional(t.String({ maxLength: 30 })),
+  partySize: t.Optional(t.Number({ minimum: 1, maximum: 999 })),
+  reservedAt: t.String(),
+  status: t.Optional(t.String()),
+  notes: t.Optional(t.String({ maxLength: 2000 }))
+})
+export const reservationUpdateBody = t.Partial(
+  t.Object({
+    guestName: t.String({ minLength: 1, maxLength: 120 }),
+    guestPhone: t.String({ maxLength: 30 }),
+    partySize: t.Number({ minimum: 1, maximum: 999 }),
+    reservedAt: t.String(),
+    notes: t.String({ maxLength: 2000 })
+  })
+)
+export const reservationStatusBody = t.Object({ status: t.String() })
+export const reservationAssignBody = t.Object({ tableId: t.String() })
+export const reservationQuery = t.Object({
+  outletId: t.Optional(t.String()),
+  status: t.Optional(t.String()),
+  from: t.Optional(t.String()),
+  to: t.Optional(t.String())
+})
+export const reservationHistoryQuery = t.Object({ phone: t.String({ minLength: 1 }) })
+export const turnTimeQuery = t.Object({ outletId: t.Optional(t.String()) })
 export const sessionStatusBody = t.Object({
   status: t.Enum(sessionStatusEnum)
 })

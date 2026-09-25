@@ -44,6 +44,17 @@ export const shopperOrdersQuery = t.Object({
   limit: t.Optional(t.String())
 })
 
+export const shopperOrderParams = t.Object({
+  slug: t.String(),
+  orderId: t.String()
+})
+
+export const shopperReturnBody = t.Object({
+  orderItemId: t.String({ minLength: 1 }),
+  quantity: t.Integer({ minimum: 1 }),
+  reason: t.Optional(t.String())
+})
+
 export const forgotPasswordBody = t.Object({
   email: t.String({ format: 'email', maxLength: 255 })
 })

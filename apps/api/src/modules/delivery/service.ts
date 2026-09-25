@@ -20,6 +20,100 @@ import type { Address, DeliveryStatus, DeliveryZoneStatus } from '../../shared/t
 
 const TERMINAL_DELIVERY = ['DELIVERED', 'FAILED', 'CANCELLED'] as const
 
+/** Failure reason codes for failed deliveries (validated — no free-form status writes). */
+export const DELIVERY_FAIL_REASONS = ['no_answer', 'wrong_address', 'refused', 'cancelled', 'other'] as const
+export type DeliveryFailReason = (typeof DELIVERY_FAIL_REASONS)[number]
+export const isDeliveryFailReason = (s: string): s is DeliveryFailReason =>
+  (DELIVERY_FAIL_REASONS as readonly string[]).includes(s)
+
+export interface DeliveryPod {
+  note: string | null
+  photoUrl: string | null
+  signature: string | null
+}
+
+/* ---------------------------------------------------------------------------
+ * Notes envelope (no schema change).
+ *
+ * Proof-of-delivery, courier tracking links and failure reasons are all
+ * stored in the existing free-text `delivery_orders.notes` column using a
+ * small line-based convention, so no migration is needed:
+ *
+ *   Courier tracking: <url>
+ *   [POD] note: <text> | photo: <url> | signature: <text>   (only present parts)
+ *   [FAILED: <reason>] <note>
+ * ------------------------------------------------------------------------- */
+
+const TRACKING_PREFIX = 'Courier tracking:'
+const POD_PREFIX = '[POD]'
+const FAILED_RE = /^\[FAILED:\s*([a-z_]+)\]\s?(.*)$/
+
+const cleanPart = (v: string) => v.replace(/\s*\|\s*$/, '').replace(/\n/g, ' ').trim()
+
+export const extractTrackingUrl = (notes: string | null): string | null => {
+  if (!notes) return null
+  let found: string | null = null
+  for (const line of notes.split('\n')) {
+    const t = line.trim()
+    if (t.toLowerCase().startsWith(TRACKING_PREFIX.toLowerCase())) {
+      const url = t.slice(TRACKING_PREFIX.length).trim()
+      if (url) found = url
+    }
+  }
+  return found
+}
+
+export const extractPod = (notes: string | null): DeliveryPod | null => {
+  if (!notes) return null
+  const line = notes.split('\n').map((l) => l.trim()).find((l) => l.startsWith(POD_PREFIX))
+  if (!line) return null
+  const rest = line.slice(POD_PREFIX.length).trim()
+  const pod: DeliveryPod = { note: null, photoUrl: null, signature: null }
+  for (const part of rest.split(' | ')) {
+    const idx = part.indexOf(':')
+    if (idx < 0) continue
+    const key = part.slice(0, idx).trim().toLowerCase()
+    const val = cleanPart(part.slice(idx + 1).trim())
+    if (!val) continue
+    if (key === 'note') pod.note = val
+    else if (key === 'photo') pod.photoUrl = val
+    else if (key === 'signature') pod.signature = val
+  }
+  return pod.note || pod.photoUrl || pod.signature ? pod : null
+}
+
+export const extractFailure = (notes: string | null): { reason: string; note: string | null } | null => {
+  if (!notes) return null
+  let found: { reason: string; note: string | null } | null = null
+  for (const line of notes.split('\n')) {
+    const m = line.trim().match(FAILED_RE)
+    if (m) found = { reason: m[1], note: m[2]?.trim() ? m[2].trim() : null }
+  }
+  return found
+}
+
+/** Attach computed POD / tracking / failure extras parsed from `notes`. */
+export const withDeliveryExtras = <T extends { notes?: string | null }>(row: T) => ({
+  ...row,
+  trackingUrl: extractTrackingUrl(row.notes ?? null),
+  pod: extractPod(row.notes ?? null),
+  failReason: extractFailure(row.notes ?? null)?.reason ?? null,
+  failNote: extractFailure(row.notes ?? null)?.note ?? null
+})
+
+const upsertTrackingLine = (notes: string | null, url: string) => {
+  const kept = (notes ?? '').split('\n').filter((l) => !l.trim().toLowerCase().startsWith(TRACKING_PREFIX.toLowerCase()))
+  kept.push(`${TRACKING_PREFIX} ${url}`)
+  return kept.filter((l) => l.trim() !== '' || kept.length === 1).join('\n')
+}
+
+const appendNotesLine = (notes: string | null, line: string) =>
+  notes && notes.trim() ? `${notes.replace(/\s+$/, '')}\n${line}` : line
+
+const assertHttpUrl = (url: string, code = 'INVALID_URL') => {
+  if (url.length > 1024 || !/^https?:\/\/\S+/i.test(url)) throw badRequest(code, 'Must be an http(s) URL up to 1024 characters')
+}
+
 const activeDeliveryOnDriver = (driverId: string) =>
   and(eq(deliveryOrders.assignedDriverId, driverId), notInArray(deliveryOrders.status, [...TERMINAL_DELIVERY]))
 
@@ -354,6 +448,60 @@ export class DriversService {
     }).returning()
     return ok(loc)
   }
+
+  /**
+   * Live view: latest heartbeat per driver (written by `updateLocation`) with
+   * its age in seconds plus each driver's current active delivery, if any.
+   */
+  static async live(db: DB, merchantId: string, scope?: OutletScope) {
+    const conds = [eq(drivers.merchantId, merchantId)] as (SQL | undefined)[]
+    if (scope) {
+      const scopedIds = effectiveOutletIds(scope)
+      if (scopedIds === null) return ok([])
+      conds.push(or(inArray(drivers.assignedOutletId, scopedIds), isNull(drivers.assignedOutletId)))
+    }
+    const where = and(...conds)
+    const rows = await db
+      .select({
+        id: drivers.id,
+        userId: drivers.userId,
+        name: drivers.name,
+        phone: drivers.phone,
+        status: drivers.status,
+        assignedOutletId: drivers.assignedOutletId,
+        outletName: outlets.name
+      })
+      .from(drivers)
+      .leftJoin(outlets, eq(drivers.assignedOutletId, outlets.id))
+      .where(where)
+      .orderBy(asc(drivers.name))
+      .limit(200)
+    const items = await Promise.all(
+      rows.map(async (d) => {
+        const [loc] = await db
+          .select({ lat: driverLocations.lat, lng: driverLocations.lng, at: driverLocations.at })
+          .from(driverLocations)
+          .where(and(eq(driverLocations.merchantId, merchantId), eq(driverLocations.driverId, d.id)))
+          .orderBy(desc(driverLocations.at))
+          .limit(1)
+        const [active] = await db
+          .select({ id: deliveryOrders.id, orderNumber: orders.orderNumber, status: deliveryOrders.status })
+          .from(deliveryOrders)
+          .leftJoin(orders, eq(deliveryOrders.orderId, orders.id))
+          .where(and(eq(deliveryOrders.merchantId, merchantId), activeDeliveryOnDriver(d.id)))
+          .limit(1)
+        return {
+          ...d,
+          lat: loc?.lat ?? null,
+          lng: loc?.lng ?? null,
+          at: loc ? (loc.at as Date).toISOString() : null,
+          ageSec: loc ? Math.max(0, Math.floor((Date.now() - new Date(loc.at).getTime()) / 1000)) : null,
+          activeDelivery: active ?? null
+        }
+      })
+    )
+    return ok(items)
+  }
 }
 
 /* ------------------------------ delivery orders ------------------------------ */
@@ -492,7 +640,7 @@ export class DeliveryOrdersService {
       .orderBy(desc(deliveryOrders.createdAt))
       .limit(limit)
       .offset(offset)
-    return ok({ items: rows, meta: makeMeta(page, limit, total) })
+    return ok({ items: rows.map(withDeliveryExtras), meta: makeMeta(page, limit, total) })
   }
 
   static async get(db: DB, merchantId: string, id: string, scope: OutletScope) {
@@ -525,7 +673,7 @@ export class DeliveryOrdersService {
       .where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.merchantId, merchantId)))
     if (!joined) throw notFound('DELIVERY_NOT_FOUND', 'Delivery not found')
     assertInOutletScopeOrShared(scope, joined.outletId)
-    return ok(joined)
+    return ok(withDeliveryExtras(joined))
   }
 
   /** Eligible drivers for a delivery: ONLINE, correct outlet/zone, not suspended, acceptable workload. */
@@ -677,5 +825,104 @@ export class DeliveryOrdersService {
     const driver = await DriversService.findByUser(db, merchantId, userId)
     if (!driver) throw notFound('DRIVER_NOT_FOUND', 'No driver profile linked to this account')
     return this.list(db, merchantId, { driverId: driver.id })
+  }
+
+  /** Set/replace the courier tracking link (stored in the existing `notes` column). */
+  static async setTracking(db: DB, merchantId: string, id: string, trackingUrl: string, scope: OutletScope) {
+    const [delivery] = await db
+      .select()
+      .from(deliveryOrders)
+      .where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.merchantId, merchantId)))
+    if (!delivery) throw notFound('DELIVERY_NOT_FOUND', 'Delivery not found')
+    assertInOutletScopeOrShared(scope, delivery.outletId)
+    if ((TERMINAL_DELIVERY as readonly string[]).includes(delivery.status)) {
+      throw conflict('INVALID_TRANSITION', 'Tracking cannot be updated on a completed delivery')
+    }
+    assertHttpUrl(trackingUrl, 'INVALID_TRACKING_URL')
+    await db
+      .update(deliveryOrders)
+      .set({ notes: upsertTrackingLine(delivery.notes, trackingUrl.trim()) })
+      .where(eq(deliveryOrders.id, id))
+    return this.get(db, merchantId, id, scope)
+  }
+
+  /**
+   * Record proof-of-delivery (note + photo URL + signature, stored in the
+   * existing `notes` column) and complete the delivery. Requires ARRIVED.
+   */
+  static async recordPod(
+    db: DB,
+    merchantId: string,
+    id: string,
+    input: { note?: string; photoUrl?: string; signature?: string },
+    scope: OutletScope
+  ) {
+    const [delivery] = await db
+      .select()
+      .from(deliveryOrders)
+      .where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.merchantId, merchantId)))
+    if (!delivery) throw notFound('DELIVERY_NOT_FOUND', 'Delivery not found')
+    assertInOutletScopeOrShared(scope, delivery.outletId)
+    if (delivery.status !== 'ARRIVED') throw conflict('POD_NOT_ALLOWED', 'Proof of delivery can only be recorded on an arrived delivery')
+    const note = input.note?.trim() ? input.note.trim().slice(0, 1000) : null
+    const photoUrl = input.photoUrl?.trim() ? input.photoUrl.trim() : null
+    const signature = input.signature?.trim() ? input.signature.trim().slice(0, 255) : null
+    if (!note && !photoUrl && !signature) {
+      throw badRequest('POD_EMPTY', 'Provide at least a note, a photo URL or a signature')
+    }
+    if (photoUrl) assertHttpUrl(photoUrl, 'INVALID_PHOTO_URL')
+    const parts: string[] = []
+    if (note) parts.push(`note: ${note}`)
+    if (photoUrl) parts.push(`photo: ${photoUrl}`)
+    if (signature) parts.push(`signature: ${signature}`)
+    const podLine = `${POD_PREFIX} ${parts.join(' | ')}`
+    const timestamps = deliveryTimestampsFor('DELIVERED')
+    await db.transaction(async (tx) => {
+      await tx
+        .update(deliveryOrders)
+        .set({ status: 'DELIVERED', notes: appendNotesLine(delivery.notes, podLine), ...timestamps })
+        .where(eq(deliveryOrders.id, id))
+      if (delivery.assignedDriverId) {
+        await tx.update(drivers).set({ status: 'ONLINE' }).where(eq(drivers.id, delivery.assignedDriverId))
+      }
+    })
+    return this.get(db, merchantId, id, scope)
+  }
+
+  /**
+   * Mark a delivery as failed with a required reason code (+ note, required
+   * for `other`). The reason is stored in the existing `notes` column.
+   */
+  static async recordFailure(
+    db: DB,
+    merchantId: string,
+    id: string,
+    input: { reason: string; note?: string },
+    scope: OutletScope
+  ) {
+    const [delivery] = await db
+      .select()
+      .from(deliveryOrders)
+      .where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.merchantId, merchantId)))
+    if (!delivery) throw notFound('DELIVERY_NOT_FOUND', 'Delivery not found')
+    assertInOutletScopeOrShared(scope, delivery.outletId)
+    if (!isDeliveryFailReason(input.reason)) throw badRequest('INVALID_FAIL_REASON', 'Unknown failure reason')
+    if ((TERMINAL_DELIVERY as readonly string[]).includes(delivery.status)) {
+      throw conflict('INVALID_TRANSITION', 'Delivery is already completed')
+    }
+    assertDeliveryTransition(delivery.status, 'FAILED')
+    const note = input.note?.trim() ? input.note.trim().slice(0, 1000) : null
+    if (input.reason === 'other' && !note) throw badRequest('FAIL_NOTE_REQUIRED', 'A note is required when the reason is "other"')
+    const failLine = `[FAILED: ${input.reason}]${note ? ` ${note}` : ''}`
+    await db.transaction(async (tx) => {
+      await tx
+        .update(deliveryOrders)
+        .set({ status: 'FAILED', notes: appendNotesLine(delivery.notes, failLine) })
+        .where(eq(deliveryOrders.id, id))
+      if (delivery.assignedDriverId) {
+        await tx.update(drivers).set({ status: 'ONLINE' }).where(eq(drivers.id, delivery.assignedDriverId))
+      }
+    })
+    return this.get(db, merchantId, id, scope)
   }
 }

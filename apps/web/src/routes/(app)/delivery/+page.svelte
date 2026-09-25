@@ -9,7 +9,8 @@
 	import Modal from '$lib/components/Modal.svelte'
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte'
 	import { dateTime } from '$lib/format'
-	import type { DeliveryOrder, DeliveryStatus, DeliveryZone, Driver } from '$lib/types'
+	import type { DeliveryOrder, DeliveryStatus, DeliveryZone, Driver, DriverLive } from '$lib/types'
+	import { DELIVERY_FAIL_REASONS } from '$lib/types'
 
 	const canAssign = $derived(session.can('delivery.assign'))
 	const canManageZones = $derived(session.can('delivery.manage'))
@@ -34,13 +35,38 @@
 		SUSPENDED: 'bg-error/10 text-error ring-error'
 	}
 
-	let tab = $state<'deliveries' | 'drivers' | 'zones'>('deliveries')
+	let tab = $state<'deliveries' | 'live' | 'drivers' | 'zones'>('deliveries')
 
 	let deliveries = $state<DeliveryOrder[]>([])
 	let drivers = $state<Driver[]>([])
 	let zones = $state<DeliveryZone[]>([])
 	let outlets = $state<{ id: string; name: string }[]>([])
 	let loading = $state(true)
+
+	// Live driver locations (heartbeats) + per-driver active delivery.
+	let live = $state<DriverLive[]>([])
+	let liveLoading = $state(false)
+	let liveError = $state<string | null>(null)
+	let nowMs = $state(Date.now())
+
+	// courier tracking editor (inside the delivery modal)
+	let trackingUrl = $state('')
+	let savingTracking = $state(false)
+
+	// proof-of-delivery modal
+	let showPod = $state(false)
+	let podNote = $state('')
+	let podPhoto = $state('')
+	let podSignature = $state('')
+	let podUploading = $state(false)
+	let podPhotoInput: HTMLInputElement | null = $state(null)
+	let savingPod = $state(false)
+
+	// failed-delivery modal
+	let showFail = $state(false)
+	let failReason = $state<string>('no_answer')
+	let failNote = $state('')
+	let savingFail = $state(false)
 
 	let statusFilter = $state('')
 	let selected = $state<DeliveryOrder | null>(null)
@@ -108,12 +134,147 @@
 	const activeOrders = $derived((Array.isArray(deliveries) ? deliveries : []).filter((d) => !['DELIVERED', 'FAILED', 'CANCELLED'].includes(d.status)))
 	const pastOrders = $derived((Array.isArray(deliveries) ? deliveries : []).filter((d) => ['DELIVERED', 'FAILED', 'CANCELLED'].includes(d.status)))
 
+	const FAILABLE = ['ASSIGNED', 'ARRIVED_AT_PICKUP', 'PICKED_UP', 'IN_TRANSIT', 'ARRIVED']
+
+	/** Human age for a heartbeat timestamp (ticks every 5s via nowMs). */
+	function ageLabel(at: string | null, ageSec: number | null) {
+		if (!at) return 'never'
+		const secs = ageSec ?? Math.max(0, Math.floor((nowMs - new Date(at).getTime()) / 1000))
+		if (secs < 5) return 'just now'
+		if (secs < 60) return `${secs}s ago`
+		const mins = Math.floor(secs / 60)
+		if (mins < 60) return `${mins}m ago`
+		return `${Math.floor(mins / 60)}h ago`
+	}
+
+	async function loadLive() {
+		liveLoading = true
+		liveError = null
+		try {
+			const res = await api.get<{ success: boolean; data: DriverLive[] }>('/api/drivers/live')
+			live = res.data
+		} catch (e) {
+			liveError = (e as Error).message
+		} finally {
+			liveLoading = false
+		}
+	}
+
+	async function copyText(text: string, label: string) {
+		try {
+			await navigator.clipboard.writeText(text)
+			toast.success(`${label} copied`)
+		} catch {
+			toast.error('Copy failed — select the text manually')
+		}
+	}
+
+	async function saveTracking() {
+		if (!selected) return
+		if (!trackingUrl.trim()) return toast.error('Enter a courier tracking link')
+		savingTracking = true
+		try {
+			const res = await api.post<{ success: boolean; data: DeliveryOrder }>(
+				`/api/deliveries/${selected.id}/tracking`,
+				{ trackingUrl: trackingUrl.trim() }
+			)
+			selected = res.data
+			toast.success('Tracking link saved')
+			await loadAll()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			savingTracking = false
+		}
+	}
+
+	function openPod() {
+		podNote = ''
+		podPhoto = selected?.pod?.photoUrl ?? ''
+		podSignature = ''
+		showPod = true
+	}
+
+	async function uploadPodPhoto(event: Event) {
+		const input = event.currentTarget as HTMLInputElement
+		const files = input.files
+		if (!files || files.length === 0) return
+		podUploading = true
+		try {
+			const form = new FormData()
+			form.append('files', files[0])
+			const res = await api.upload<{ success: boolean; data: Array<{ url: string }> }>('/api/uploads', form)
+			if (res.data[0]?.url) {
+				podPhoto = res.data[0].url
+				toast.success('Photo uploaded')
+			}
+		} catch (e) {
+			toast.error(`Upload failed — paste a photo URL instead (${(e as Error).message})`)
+		} finally {
+			podUploading = false
+			input.value = ''
+		}
+	}
+
+	async function submitPod() {
+		if (!selected) return
+		if (!podNote.trim() && !podPhoto.trim() && !podSignature.trim()) {
+			return toast.error('Provide at least a note, a photo or a signature')
+		}
+		savingPod = true
+		try {
+			const res = await api.post<{ success: boolean; data: DeliveryOrder }>(`/api/deliveries/${selected.id}/pod`, {
+				note: podNote.trim() || undefined,
+				photoUrl: podPhoto.trim() || undefined,
+				signature: podSignature.trim() || undefined
+			})
+			toast.success('Delivery completed with proof')
+			showPod = false
+			selected = null
+			await loadAll()
+			await loadLive()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			savingPod = false
+		}
+	}
+
+	function openFail() {
+		failReason = 'no_answer'
+		failNote = ''
+		showFail = true
+	}
+
+	async function submitFail() {
+		if (!selected) return
+		if (!failReason) return toast.error('Pick a failure reason')
+		if (failReason === 'other' && !failNote.trim()) return toast.error('A note is required for "other"')
+		savingFail = true
+		try {
+			await api.post<{ success: boolean }>(`/api/deliveries/${selected.id}/fail`, {
+				reason: failReason,
+				note: failNote.trim() || undefined
+			})
+			toast.success('Delivery marked as failed')
+			showFail = false
+			selected = null
+			await loadAll()
+			await loadLive()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			savingFail = false
+		}
+	}
+
 	async function dispatch(delivery: DeliveryOrder) {
 		try {
 			await api.post<{ success: boolean }>(`/api/deliveries/${delivery.id}/dispatch`)
 			toast.success('Dispatch attempted')
 			selected = null
 			await loadAll()
+			await loadLive()
 		} catch (e) {
 			toast.error((e as Error).message)
 		}
@@ -125,6 +286,7 @@
 			toast.success('Assigned')
 			selected = null
 			await loadAll()
+			await loadLive()
 		} catch (e) {
 			toast.error((e as Error).message)
 		}
@@ -136,6 +298,7 @@
 			toast.success('Unassigned')
 			selected = null
 			await loadAll()
+			await loadLive()
 		} catch (e) {
 			toast.error((e as Error).message)
 		}
@@ -143,10 +306,11 @@
 
 	async function transition(delivery: DeliveryOrder, status: DeliveryStatus) {
 		try {
-			await api.post<{ success: boolean }>(`/api/deliveries/${delivery.id}/status`, { status })
+			const res = await api.post<{ success: boolean; data: DeliveryOrder }>(`/api/deliveries/${delivery.id}/status`, { status })
 			toast.success(`Delivery → ${status}`)
-			selected = null
+			selected = res.data
 			await loadAll()
+			await loadLive()
 		} catch (e) {
 			toast.error((e as Error).message)
 		}
@@ -311,7 +475,25 @@
 		}
 	}
 
-	onMount(loadAll)
+	onMount(() => {
+		void loadAll()
+		void loadLive()
+		const tick = window.setInterval(() => {
+			nowMs = Date.now()
+		}, 5000)
+		const refresh = window.setInterval(() => {
+			if (tab === 'live') void loadLive()
+		}, 15000)
+		return () => {
+			window.clearInterval(tick)
+			window.clearInterval(refresh)
+		}
+	})
+
+	// Keep the tracking editor in sync with the opened delivery.
+	$effect(() => {
+		trackingUrl = selected?.trackingUrl ?? ''
+	})
 </script>
 
 <svelte:head><title>Delivery — JamiCore</title></svelte:head>
@@ -328,13 +510,13 @@
 	</div>
 
 	<div class="flex gap-2 border-b border-outline-variant">
-		{#each (['deliveries', 'drivers', 'zones'] as const) as t (t)}
+		{#each (['deliveries', 'live', 'drivers', 'zones'] as const) as t (t)}
 			<button
 				type="button"
 				class="border-b-2 px-3 py-2 text-sm font-medium {tab === t ? 'border-primary text-primary' : 'border-transparent text-secondary hover:text-on-surface'}"
-				onclick={() => (tab = t)}
+				onclick={() => { tab = t; if (t === 'live') void loadLive() }}
 			>
-				{t === 'deliveries' ? 'Deliveries' : t === 'drivers' ? 'Drivers' : 'Zones'}
+				{t === 'deliveries' ? 'Deliveries' : t === 'live' ? 'Live' : t === 'drivers' ? 'Drivers' : 'Zones'}
 			</button>
 		{/each}
 	</div>
@@ -402,12 +584,62 @@
 								<tr class="border-t border-outline-variant">
 									<td class="py-2 font-mono-label text-mono-label font-medium text-on-surface">#{d.orderNumber}</td>
 									<td class="py-2 text-on-surface-variant">{d.driverName ?? '—'}</td>
-									<td class="py-2"><span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[d.status]}">{d.status}</span></td>
+									<td class="py-2">
+										<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[d.status]}">{d.status}</span>
+										{#if d.status === 'FAILED' && d.failReason}
+											<span class="ml-1 text-xs text-secondary">{d.failReason}{d.failNote ? ` — ${d.failNote}` : ''}</span>
+										{/if}
+										{#if d.status === 'DELIVERED' && d.pod}
+											<span class="ml-1 text-xs text-secondary" title={[d.pod.note, d.pod.signature].filter(Boolean).join(' · ')}>POD ✓</span>
+										{/if}
+									</td>
 									<td class="py-2 text-secondary">{d.deliveredAt ? dateTime(d.deliveredAt) : '—'}</td>
 								</tr>
 							{/each}
 						</tbody>
 					</table>
+				</div>
+			{/if}
+		</Card>
+	{:else if tab === 'live'}
+		<Card>
+			<div class="mb-3 flex items-center justify-between">
+				<h2 class="text-sm font-semibold text-on-surface">Live driver locations</h2>
+				<Button size="sm" variant="secondary" onclick={() => void loadLive()} loading={liveLoading}>Refresh</Button>
+			</div>
+			{#if liveError}
+				<p class="py-6 text-center text-sm text-error">{liveError}</p>
+			{:else if liveLoading && live.length === 0}
+				<p class="py-6 text-center text-sm text-secondary">Loading live locations…</p>
+			{:else if live.length === 0}
+				<p class="py-6 text-center text-sm text-secondary">No drivers yet.</p>
+			{:else}
+				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{#each live as drv (drv.id)}
+						<Card>
+							<div class="flex items-center justify-between gap-2">
+								<h3 class="font-semibold text-on-surface">{drv.name}</h3>
+								<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {DRIVER_TONE[drv.status]}">{drv.status}</span>
+							</div>
+							<div class="mt-2 space-y-1 text-xs text-secondary">
+								<p>
+									{#if drv.lat !== null && drv.lng !== null}
+										{drv.lat.toFixed(5)}, {drv.lng.toFixed(5)} · <span class="font-medium text-on-surface-variant">{ageLabel(drv.at, drv.ageSec)}</span>
+									{:else}
+										No location reported yet
+									{/if}
+								</p>
+								<p>
+									{#if drv.activeDelivery}
+										Active: <span class="font-mono-label text-mono-label font-medium text-on-surface">#{drv.activeDelivery.orderNumber}</span>
+										<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset {STATUS_TONE[drv.activeDelivery.status]}">{drv.activeDelivery.status}</span>
+									{:else}
+										No active delivery
+									{/if}
+								</p>
+							</div>
+						</Card>
+					{/each}
 				</div>
 			{/if}
 		</Card>
@@ -533,7 +765,47 @@
 				</div>
 			{/if}
 
-			{#if ['ASSIGNED', 'ARRIVED_AT_PICKUP', 'PICKED_UP', 'IN_TRANSIT', 'ARRIVED'].includes(selected.status)}
+			<div>
+				<span class="mb-1 block text-xs text-secondary">Courier tracking link</span>
+				{#if selected.trackingUrl}
+					<div class="mb-2 flex items-center gap-2 rounded border border-outline-variant bg-surface-container-low p-2.5 text-sm">
+						<a href={selected.trackingUrl} target="_blank" rel="noreferrer" class="min-w-0 flex-1 truncate text-primary underline">{selected.trackingUrl}</a>
+						<button
+							type="button"
+							class="shrink-0 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40"
+							onclick={() => copyText(selected!.trackingUrl!, 'Tracking link')}
+						>Copy</button>
+					</div>
+				{/if}
+				<div class="flex gap-2">
+					<input
+						class="field flex-1"
+						bind:value={trackingUrl}
+						placeholder="https://courier.example/track/…"
+						aria-label="Courier tracking link"
+					/>
+					<Button variant="secondary" onclick={saveTracking} loading={savingTracking} disabled={savingTracking}>Save</Button>
+				</div>
+			</div>
+
+			{#if selected.pod}
+				<div class="rounded border border-outline-variant bg-surface-container-low p-3 text-sm">
+					<span class="mb-1 block text-xs font-medium text-secondary">Proof of delivery</span>
+					{#if selected.pod.note}<p class="text-on-surface-variant">{selected.pod.note}</p>{/if}
+					{#if selected.pod.photoUrl}
+						<p><a href={selected.pod.photoUrl} target="_blank" rel="noreferrer" class="text-primary underline">Photo proof</a></p>
+					{/if}
+					{#if selected.pod.signature}<p class="text-xs text-secondary">Signed: {selected.pod.signature}</p>{/if}
+				</div>
+			{/if}
+			{#if selected.status === 'FAILED' && selected.failReason}
+				<div class="rounded border border-error/40 bg-error/5 p-3 text-sm">
+					<span class="mb-1 block text-xs font-medium text-error">Failed: {selected.failReason}</span>
+					{#if selected.failNote}<p class="text-on-surface-variant">{selected.failNote}</p>{/if}
+				</div>
+			{/if}
+
+			{#if FAILABLE.includes(selected.status)}
 				<div class="flex flex-wrap gap-2">
 					{#if selected.status === 'ASSIGNED'}
 						<Button onclick={() => transition(selected!, 'ARRIVED_AT_PICKUP')}>Arrived at pickup</Button>
@@ -548,9 +820,12 @@
 						<Button onclick={() => transition(selected!, 'ARRIVED')}>Arrived</Button>
 					{/if}
 					{#if selected.status === 'ARRIVED'}
-						<Button onclick={() => transition(selected!, 'DELIVERED')}>Mark delivered</Button>
+						<Button onclick={openPod}>Complete with POD</Button>
 					{/if}
-					<Button variant="secondary" onclick={() => unassign(selected!)}>Unassign</Button>
+					<Button variant="secondary" onclick={openFail}>Mark failed</Button>
+					{#if ['ASSIGNED', 'ARRIVED_AT_PICKUP', 'PICKED_UP', 'IN_TRANSIT', 'ARRIVED'].includes(selected.status)}
+						<Button variant="secondary" onclick={() => unassign(selected!)}>Unassign</Button>
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -691,6 +966,69 @@
 	onConfirm={removeDriver}
 	onCancel={() => (driverTarget = null)}
 />
+
+{#if showPod && selected}
+	<Modal open={true} title={`Proof of delivery #${selected.orderNumber}`} onClose={() => (showPod = false)} width="sm">
+		<div class="space-y-4">
+			<div>
+				<label for="pod-note" class="field-label">Delivery note</label>
+				<textarea id="pod-note" class="field" rows="2" bind:value={podNote} placeholder="e.g. Left at the front door"></textarea>
+			</div>
+			<div>
+				<span class="field-label" id="pod-photo-label">Photo proof</span>
+				<div class="flex gap-2" role="group" aria-labelledby="pod-photo-label">
+					<input
+						id="pod-photo"
+						class="field flex-1"
+						bind:value={podPhoto}
+						placeholder="https://… photo URL"
+						aria-label="Photo URL"
+					/>
+					<input
+						type="file"
+						accept="image/jpeg,image/png,image/webp,image/gif"
+						class="hidden"
+						bind:this={podPhotoInput}
+						onchange={uploadPodPhoto}
+					/>
+					<Button variant="secondary" onclick={() => podPhotoInput?.click()} loading={podUploading} disabled={podUploading}>Upload</Button>
+				</div>
+				{#if podPhoto}
+					<p class="mt-1 truncate text-xs text-secondary"><a href={podPhoto} target="_blank" rel="noreferrer" class="text-primary underline">{podPhoto}</a></p>
+				{/if}
+			</div>
+			<div>
+				<label for="pod-signature" class="field-label">Recipient signature (name)</label>
+				<input id="pod-signature" class="field" bind:value={podSignature} placeholder="e.g. Jane Doe" />
+			</div>
+			<div class="flex justify-end gap-2 pt-1">
+				<Button variant="secondary" onclick={() => (showPod = false)}>Cancel</Button>
+				<Button onclick={submitPod} loading={savingPod} disabled={savingPod}>Complete delivery</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if showFail && selected}
+	<Modal open={true} title={`Mark delivery #${selected.orderNumber} as failed`} onClose={() => (showFail = false)} width="sm">
+		<div class="space-y-4">
+			<div>
+				<label for="fail-reason" class="field-label">Reason (required)</label>
+				<select id="fail-reason" class="field" bind:value={failReason}>
+					{#each DELIVERY_FAIL_REASONS as r (r)}<option value={r}>{r}</option>{/each}
+				</select>
+			</div>
+			<div>
+				<label for="fail-note" class="field-label">Note{failReason === 'other' ? ' (required for "other")' : ''}</label>
+				<textarea id="fail-note" class="field" rows="2" bind:value={failNote} placeholder="e.g. Nobody answered after 3 attempts"></textarea>
+			</div>
+			<div class="flex justify-end gap-2 pt-1">
+				<Button variant="secondary" onclick={() => (showFail = false)}>Cancel</Button>
+				<Button variant="danger" onclick={submitFail} loading={savingFail} disabled={savingFail}>Mark failed</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
 
 <ConfirmDialog
 	open={zoneTarget !== null}

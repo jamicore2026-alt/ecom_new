@@ -477,6 +477,11 @@ export interface ShippingRule {
 	rate: number
 	freeAbove?: number
 	enabled: boolean
+	/** Weight-tier bounds (kg) — matched against the order weight. */
+	weightMin?: number
+	weightMax?: number
+	/** Estimated delivery days shown at checkout. */
+	etaDays?: number
 }
 
 export interface ShippingSettings {
@@ -720,6 +725,7 @@ export interface MenuItem {
 		id: string
 		name: string
 		sku: string
+		barcode?: string | null
 		price: number
 		image?: string | null
 		categoryId: string | null
@@ -795,6 +801,8 @@ export interface DiningTable {
 	outletId: string
 	sectionId: string | null
 	sectionName: string | null
+	posX: number | null
+	posY: number | null
 	qrToken: string
 	createdAt: string
 	openSession: OpenSession | null
@@ -846,10 +854,14 @@ export interface KitchenStation {
 }
 
 export interface KotItem {
+	id?: string
+	orderItemId: string | null
 	name: string
 	quantity: number
 	modifiers: { groupName: string; name: string; quantity: number }[]
 	status: KitchenItemStatus
+	allergens?: string[]
+	fireAt?: string | null
 }
 
 export interface KitchenTicket {
@@ -880,6 +892,43 @@ export interface KdsBoard {
 		tickets: KdsTicket[]
 	}>
 	delayedCount: number
+	heldCount?: number
+	unavailableCount?: number
+	unavailableNotice?: string | null
+}
+
+export interface StationMetric {
+	stationId: string
+	stationName: string
+	readyCount: number
+	openCount: number
+	delayedCount: number
+	avgPrepMin: number | null
+}
+
+export interface Reservation {
+	id: string
+	outletId: string
+	outletName?: string | null
+	tableId: string | null
+	tableName?: string | null
+	guestName: string
+	guestPhone: string | null
+	partySize: number
+	reservedAt: string
+	status: 'booked' | 'seated' | 'cancelled' | 'no-show' | 'waitlist' | string
+	notes: string | null
+	createdAt: string
+}
+
+export interface TurnTimeRow {
+	outletId: string | null
+	outletName: string | null
+	sectionId: string | null
+	sectionName: string | null
+	sessions: number
+	avgMin: number
+	medianMin: number
 }
 
 export interface KdsTicket {
@@ -903,11 +952,14 @@ export interface KdsTicket {
 
 export interface KdsItem {
 	id: string
+	orderItemId: string | null
 	name: string
 	modifiers: { groupName: string; name: string; quantity: number }[]
 	quantity: number
 	status: KitchenItemStatus
 	readyAt: string | null
+	allergens?: string[]
+	fireAt?: string | null
 }
 
 // ------------------------------ delivery ------------------------------
@@ -968,6 +1020,12 @@ export interface Driver {
 	updatedAt: string
 }
 
+export interface DeliveryPod {
+	note: string | null
+	photoUrl: string | null
+	signature: string | null
+}
+
 export interface DeliveryOrder {
 	id: string
 	orderId: string
@@ -987,9 +1045,27 @@ export interface DeliveryOrder {
 	deliveredAt: string | null
 	cancelledAt: string | null
 	notes: string | null
+	/** Courier tracking link parsed from `notes` (server-computed, may be absent). */
+	trackingUrl?: string | null
+	/** Proof-of-delivery parsed from `notes` (server-computed, may be absent). */
+	pod?: DeliveryPod | null
+	/** Failure reason code parsed from `notes` (server-computed, may be absent). */
+	failReason?: string | null
+	failNote?: string | null
 	createdAt: string
 	updatedAt: string
 }
+
+export interface DriverLive extends Driver {
+	lat: number | null
+	lng: number | null
+	at: string | null
+	ageSec: number | null
+	activeDelivery: { id: string; orderNumber: string; status: DeliveryStatus } | null
+}
+
+export const DELIVERY_FAIL_REASONS = ['no_answer', 'wrong_address', 'refused', 'cancelled', 'other'] as const
+export type DeliveryFailReason = (typeof DELIVERY_FAIL_REASONS)[number]
 
 export type WarehouseStatus = 'active' | 'maintenance' | 'inactive'
 
@@ -1257,7 +1333,7 @@ export interface LoyaltyReward {
 // ---- invoices ----
 
 export type InvoiceType = 'invoice' | 'credit_note'
-export type InvoiceStatus = 'issued'
+export type InvoiceStatus = 'draft' | 'issued' | 'paid' | 'void'
 
 export interface Invoice {
 	id: string

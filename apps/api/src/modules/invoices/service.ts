@@ -1,4 +1,4 @@
-import { and, count, desc, eq, like, sql } from 'drizzle-orm'
+import { and, count, desc, eq, ilike, like, or, sql } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import { invoiceSettings, invoices, orderItems, orders, storeSettings, customers } from '../../database/schema'
 import { ok } from '../../shared/response'
@@ -6,6 +6,16 @@ import { badRequest, conflict, notFound } from '../../shared/errors'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { assertOrderInBranchScope, branchOrderCondition } from '../../shared/outlet-scope'
 import { renderInvoicePdf } from './pdf'
+import { EmailsService } from '../emails/service'
+
+/** Invoice lifecycle: draft → issued → paid, or issued → void (unpaid only).
+ *  Credit notes follow the same states. */
+const INVOICE_TRANSITIONS: Record<string, string[]> = {
+  draft: ['issued'],
+  issued: ['paid', 'void'],
+  paid: [],
+  void: []
+}
 
 export class InvoicesService {
   /** Generate the next invoice number for a merchant (e.g. INV-0001, or the customized prefix). */
@@ -36,7 +46,8 @@ export class InvoicesService {
     return `${prefix}-${String(max + 1).padStart(4, '0')}`
   }
 
-  /** Create an invoice (or credit note) for an order. Idempotent per order+type. */
+  /** Create an invoice (or credit note) for an order. Idempotent per order+type.
+   *  New invoices start as `draft` — issue them explicitly (draft→issued). */
   static async create(
     db: DB,
     merchantId: string,
@@ -81,12 +92,13 @@ export class InvoicesService {
             orderId: order.id,
             invoiceNumber: number,
             invoiceType: type,
-            status: 'issued',
+            status: 'draft',
             subtotal: order.subtotal,
             discountTotal: order.discountTotal,
             shippingTotal: order.shippingTotal,
             taxTotal: order.taxTotal,
             total: order.total,
+            currency: order.currency,
             gstin: input.gstin ?? null,
             hsnCodes: items.reduce<Record<string, string>>((acc, i) => {
               if (i.sku) acc[i.sku] = i.sku
@@ -111,19 +123,31 @@ export class InvoicesService {
     db: DB,
     merchantId: string,
     branchIds: string[] | null,
-    query: { page?: string; limit?: string } = {}
+    query: { page?: string; limit?: string; search?: string; status?: string; type?: string } = {}
   ) {
     const { page, limit, offset } = parsePagination(query)
     const scopeCondition = branchOrderCondition(branchIds)
-    const where = and(
-      eq(invoices.merchantId, merchantId),
-      ...(scopeCondition ? [scopeCondition] : [])
-    )
+    const conditions = [eq(invoices.merchantId, merchantId)]
+    if (scopeCondition) conditions.push(scopeCondition)
+    if (query.status) conditions.push(eq(invoices.status, query.status))
+    if (query.type) conditions.push(eq(invoices.invoiceType, query.type))
+    if (query.search?.trim()) {
+      const s = `%${query.search.trim()}%`
+      conditions.push(
+        or(
+          ilike(invoices.invoiceNumber, s),
+          ilike(orders.orderNumber, s),
+          ilike(sql`coalesce(${customers.email},'')`, s)
+        )!
+      )
+    }
+    const where = and(...conditions)
     const [rows, totalRows] = await Promise.all([
       db
         .select()
         .from(invoices)
         .innerJoin(orders, eq(invoices.orderId, orders.id))
+        .leftJoin(customers, eq(orders.customerId, customers.id))
         .where(where)
         .orderBy(desc(invoices.invoiceDate))
         .limit(limit)
@@ -132,6 +156,7 @@ export class InvoicesService {
         .select({ total: count() })
         .from(invoices)
         .innerJoin(orders, eq(invoices.orderId, orders.id))
+        .leftJoin(customers, eq(orders.customerId, customers.id))
         .where(where)
     ])
     const total = totalRows[0]?.total ?? 0
@@ -163,6 +188,71 @@ export class InvoicesService {
     return ok({ items: rows })
   }
 
+  /** Move an invoice along its lifecycle (draft→issued→paid/void). */
+  private static async transition(
+    db: DB,
+    merchantId: string,
+    branchIds: string[] | null,
+    id: string,
+    to: 'issued' | 'paid' | 'void'
+  ) {
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .innerJoin(orders, eq(invoices.orderId, orders.id))
+      .where(and(eq(invoices.id, id), eq(invoices.merchantId, merchantId)))
+    if (!row) throw notFound('INVOICE_NOT_FOUND', 'Invoice not found')
+    assertOrderInBranchScope(branchIds, row.orders.outletId)
+
+    const from = row.invoices.status
+    if (!(INVOICE_TRANSITIONS[from] ?? []).includes(to)) {
+      throw badRequest('INVALID_TRANSITION', `Cannot move invoice from ${from} to ${to}`)
+    }
+    // Voiding is only meaningful while no money has moved: the invoice must be
+    // issued and the order itself unpaid.
+    if (to === 'void' && row.orders.paymentStatus !== 'unpaid') {
+      throw badRequest('INVOICE_VOID_BLOCKED', `Cannot void an invoice on a ${row.orders.paymentStatus} order`)
+    }
+
+    const [updated] = await db
+      .update(invoices)
+      .set({ status: to })
+      .where(and(eq(invoices.id, id), eq(invoices.merchantId, merchantId)))
+      .returning()
+    return ok(updated)
+  }
+
+  /** draft → issued. */
+  static async issue(db: DB, merchantId: string, branchIds: string[] | null, id: string) {
+    return this.transition(db, merchantId, branchIds, id, 'issued')
+  }
+
+  /** issued → paid. */
+  static async markPaid(db: DB, merchantId: string, branchIds: string[] | null, id: string) {
+    return this.transition(db, merchantId, branchIds, id, 'paid')
+  }
+
+  /** issued → void. Only on unpaid orders — paid money leaves via refunds. */
+  static async voidInvoice(db: DB, merchantId: string, branchIds: string[] | null, id: string) {
+    return this.transition(db, merchantId, branchIds, id, 'void')
+  }
+
+  /** Email the invoice PDF link to the order's customer via the mailer. */
+  static async send(db: DB, merchantId: string, branchIds: string[] | null, id: string) {
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .innerJoin(orders, eq(invoices.orderId, orders.id))
+      .where(and(eq(invoices.id, id), eq(invoices.merchantId, merchantId)))
+    if (!row) throw notFound('INVOICE_NOT_FOUND', 'Invoice not found')
+    assertOrderInBranchScope(branchIds, row.orders.outletId)
+    if (row.invoices.status === 'void') {
+      throw badRequest('INVOICE_VOID', 'Cannot send a void invoice')
+    }
+    await EmailsService.sendInvoice(db, merchantId, row.invoices.id)
+    return ok({ sent: true })
+  }
+
   /**
    * Build an on-demand PDF for an invoice (or credit note), honoring the
    * merchant's `invoice_settings` customization. Returns the raw PDF buffer
@@ -178,7 +268,7 @@ export class InvoicesService {
     assertOrderInBranchScope(branchIds, row.orders.outletId)
 
     const items = await db
-      .select({ name: orderItems.name, sku: orderItems.sku, price: orderItems.price, quantity: orderItems.quantity, total: orderItems.total })
+      .select({ name: orderItems.name, sku: orderItems.sku, price: orderItems.price, quantity: orderItems.quantity, total: orderItems.total, vatRate: orderItems.vatRate })
       .from(orderItems)
       .where(eq(orderItems.orderId, row.orders.id))
 

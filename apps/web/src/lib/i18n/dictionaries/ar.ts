@@ -251,6 +251,18 @@ export const ar: Record<string, string> = {
 	'pos.queuedSync': '{count} محفوظة — بانتظار المزامنة',
 	'pos.syncNow': 'مزامنة',
 	'pos.outboxSynced': 'تمت مزامنة {count} من المبيعات المحفوظة',
+	'pos.scanPlaceholder': 'امسح الباركود أو SKU ثم Enter…',
+	'pos.scan': 'مسح',
+	'pos.scanNotFound': 'لا يوجد عنصر مطابق لـ "{code}"',
+	'pos.scanMultiMatch': 'نتائج متعددة لـ "{code}" — تمت إضافة {name}',
+	'pos.park': 'تعليق',
+	'pos.parked': 'تم تعليق "{name}"',
+	'pos.parkedOrders': 'معلّقة ({count})',
+	'pos.parkedEmpty': 'لا توجد طلبات معلّقة.',
+	'pos.resume': 'استئناف',
+	'pos.resumeBlocked': 'امسح السلة الحالية أو علّقها قبل الاستئناف',
+	'pos.removeParked': 'حذف الطلب المعلّق',
+	'pos.parkNameFallback': 'تعليق {n}',
 
 	// Settings
 	'settings.title': 'الإعدادات',

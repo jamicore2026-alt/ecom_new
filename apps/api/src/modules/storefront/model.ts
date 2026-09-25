@@ -59,7 +59,11 @@ export const checkoutPreviewBody = t.Object({
   couponCode: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
   // Declared so the preview contract matches final checkout — the storefront
   // re-previews on country change to quote shipping/tax for the real destination.
-  shippingAddress: t.Optional(addressBody)
+  shippingAddress: t.Optional(addressBody),
+  /** Spend the shopper's store-credit balance (min(credit, total) as discount).
+   *  Preview needs the account email to look the balance up. */
+  useStoreCredit: t.Optional(t.Boolean()),
+  email: t.Optional(t.Union([t.String({ format: 'email', maxLength: 255 }), t.Literal('')]))
 })
 
 export const checkoutBody = t.Object({
@@ -79,7 +83,10 @@ export const checkoutBody = t.Object({
   // Client-generated key (e.g. crypto.randomUUID) so a double-submit/retry of
   // the same logical checkout can never create a second order. The
   // (merchant_id, idempotency_key) unique index is the hard guarantee.
-  idempotencyKey: t.Optional(t.String({ minLength: 8, maxLength: 80 }))
+  idempotencyKey: t.Optional(t.String({ minLength: 8, maxLength: 80 })),
+  /** Spend the shopper's store-credit balance: min(credit, total) is applied
+   *  as a discount (total reduced, balance decremented, usage in response). */
+  useStoreCredit: t.Optional(t.Boolean())
 })
 
 export const orderParams = t.Object({

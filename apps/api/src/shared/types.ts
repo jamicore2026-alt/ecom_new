@@ -230,7 +230,7 @@ export const DEFAULT_CHECKOUT_REQUIRED_FIELDS: CheckoutFieldRequirements = {
   phone: true,
   name: true,
   line1: true,
-  line2: true,
+  line2: false,
   city: true,
   state: true,
   postalCode: true,
@@ -254,6 +254,12 @@ export interface ShippingRule {
   rate: number
   freeAbove?: number
   enabled: boolean
+  /** Weight-tier bounds (kg). When either is set the rule only matches orders
+   *  whose total weight falls inside [weightMin, weightMax]. */
+  weightMin?: number
+  weightMax?: number
+  /** Estimated delivery days shown at checkout for this rule/method. */
+  etaDays?: number
 }
 
 export const COUPON_TYPES = ['percentage', 'fixed', 'free_shipping'] as const
@@ -265,9 +271,9 @@ export type PromotionType = (typeof PROMOTION_TYPES)[number]
 export const RETURN_STATUSES = ['pending', 'approved', 'rejected', 'restocked'] as const
 export type ReturnStatus = (typeof RETURN_STATUSES)[number]
 
-/** Only gateway/original refunds exist today — wallet/store-credit needs a
- *  credit ledger that is not implemented yet. Revisit when a wallet ships. */
-export const REFUND_METHODS = ['original'] as const
+/** Gateway/original refunds plus store-credit refunds, which credit
+ *  `customers.store_credit` (spendable at checkout via `useStoreCredit`). */
+export const REFUND_METHODS = ['original', 'store_credit'] as const
 export type RefundMethod = (typeof REFUND_METHODS)[number]
 
 export const REFUND_STATUSES = ['pending', 'completed'] as const

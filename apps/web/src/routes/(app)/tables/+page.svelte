@@ -8,7 +8,7 @@
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
 	import { dateTime } from '$lib/format'
-	import type { DiningTable, TableSection, TableSession } from '$lib/types'
+	import type { DiningTable, FoodOrder, Reservation, TableSection, TableSession, TurnTimeRow } from '$lib/types'
 
 	const canManage = $derived(session.can('tables.manage'))
 
@@ -51,6 +51,28 @@
 	let showSplit = $state(false)
 	let splitTable = $state('')
 	let splitGuests = $state('')
+	let splitLines = $state<{ id: string; name: string; quantity: number; orderId: string }[]>([])
+	let splitLineIds = $state<Set<string>>(new Set())
+
+	// reservations
+	let resDay = $state(new Date().toISOString().slice(0, 10))
+	let reservations = $state<Reservation[]>([])
+	let waitlist = $state<Reservation[]>([])
+	let guestPhone = $state('')
+	let guestHistory = $state<{ count: number; reservations: Reservation[] } | null>(null)
+	let showRes = $state(false)
+	let resName = $state('')
+	let resPhone = $state('')
+	let resParty = $state('2')
+	let resAt = $state('')
+	let resStatus = $state('booked')
+
+	// turn-time report
+	let turnTime = $state<TurnTimeRow[]>([])
+
+	// floor editor
+	let editFloor = $state(false)
+	let dragId = $state<string | null>(null)
 
 	async function load() {
 		loading = true
@@ -63,10 +85,94 @@
 			sections = s.data
 			tables = t.data
 			sessions = sv.data
+			await Promise.all([loadReservations(), loadTurnTime()])
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
 			loading = false
+		}
+	}
+
+	function dayRange(day: string) {
+		const from = new Date(`${day}T00:00:00`)
+		const to = new Date(`${day}T23:59:59.999`)
+		return { from: from.toISOString(), to: to.toISOString() }
+	}
+
+	async function loadReservations() {
+		try {
+			const { from, to } = dayRange(resDay)
+			const [day, wl] = await Promise.all([
+				api.get<{ success: boolean; data: Reservation[] }>(`/api/reservations?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+				api.get<{ success: boolean; data: Reservation[] }>('/api/reservations/waitlist')
+			])
+			reservations = day.data
+			waitlist = wl.data
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function loadTurnTime() {
+		try {
+			const r = await api.get<{ success: boolean; data: TurnTimeRow[] }>('/api/tables/reports/turn-time')
+			turnTime = r.data
+		} catch {
+			turnTime = []
+		}
+	}
+
+	async function searchGuest() {
+		if (!guestPhone.trim()) return
+		try {
+			const r = await api.get<{ success: boolean; data: { count: number; reservations: Reservation[] } }>(
+				`/api/reservations/history?phone=${encodeURIComponent(guestPhone.trim())}`
+			)
+			guestHistory = r.data
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function addReservation() {
+		if (!resName.trim() || !resAt) return toast.error('Enter a name and time')
+		try {
+			await api.post('/api/reservations', {
+				outletId: newOutlet || tables[0]?.outletId,
+				guestName: resName.trim(),
+				guestPhone: resPhone.trim() || undefined,
+				partySize: Number(resParty) || 2,
+				reservedAt: new Date(resAt).toISOString(),
+				status: resStatus
+			})
+			toast.success('Reservation saved')
+			showRes = false
+			resName = ''
+			resPhone = ''
+			await loadReservations()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function setResStatus(r: Reservation, status: string) {
+		try {
+			await api.post(`/api/reservations/${r.id}/status`, { status })
+			toast.success(`${r.guestName} → ${status}`)
+			await loadReservations()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function assignResTable(r: Reservation, tableId: string) {
+		if (!tableId) return
+		try {
+			await api.post(`/api/reservations/${r.id}/assign`, { tableId })
+			toast.success(`Table assigned to ${r.guestName}`)
+			await loadReservations()
+		} catch (e) {
+			toast.error((e as Error).message)
 		}
 	}
 
@@ -221,12 +327,54 @@
 		}
 	}
 
+	async function openSplit() {
+		splitTable = ''
+		splitGuests = ''
+		splitLineIds = new Set()
+		splitLines = []
+		showSplit = true
+		const sid = selected?.openSession?.id
+		if (!sid) return
+		try {
+			const detail = await api.get<{ success: boolean; data: TableSession }>(`/api/table-sessions/${sid}`)
+			const orders = detail.data.orders ?? []
+			const lines: typeof splitLines = []
+			for (const o of orders as { orderNumber: string }[]) {
+				// Resolve each attached order to its lines via food-orders lookup.
+				const found = await api
+					.get<{ success: boolean; data: { items: { id: string; name: string; quantity: number }[] } }>(
+						`/api/food-orders?search=${encodeURIComponent((o as { orderNumber: string }).orderNumber)}`
+					)
+					.catch(() => null)
+				const match = found?.data.items?.[0] as unknown as { id: string } | undefined
+				if (!match) continue
+				const full = await api.get<{ success: boolean; data: FoodOrder }>(`/api/food-orders/${match.id}`).catch(() => null)
+				for (const l of full?.data.items ?? []) lines.push({ id: l.id, name: `${l.quantity}× ${l.name}`, quantity: l.quantity, orderId: match.id })
+			}
+			splitLines = lines
+		} catch {
+			splitLines = []
+		}
+	}
+
+	function toggleSplitLine(id: string) {
+		const next = new Set(splitLineIds)
+		if (next.has(id)) next.delete(id)
+		else next.add(id)
+		splitLineIds = next
+	}
+
 	async function doSplit() {
 		const id = selected?.openSession?.id
 		if (!id || !splitTable) return
 		try {
-			const res = await api.post<{ success: boolean; data: { session: TableSession; splitInto: TableSession } }>(`/api/table-sessions/${id}/split`, { toTableId: splitTable, guests: Number(splitGuests) || 1 })
-			toast.success(`Split ${res.data.splitInto.guests} guests to ${res.data.splitInto.tableName ?? 'a new table'}`)
+			const body: Record<string, unknown> = { toTableId: splitTable, guests: Number(splitGuests) || 1 }
+			if (splitLineIds.size > 0) body.orderItemIds = [...splitLineIds]
+			const res = await api.post<{ success: boolean; data: { session: TableSession; splitInto: TableSession; movedLines: number } }>(`/api/table-sessions/${id}/split`, body)
+			toast.success(
+				`Split ${res.data.splitInto.guests} guests to ${res.data.splitInto.tableName ?? 'a new table'}` +
+					(res.data.movedLines > 0 ? ` (+${res.data.movedLines} order line(s))` : '')
+			)
 			showSplit = false
 			selected = null
 			await load()
@@ -234,6 +382,23 @@
 			toast.error((e as Error).message)
 		}
 	}
+
+	function floorDrop(e: DragEvent, container: HTMLElement) {
+		e.preventDefault()
+		if (!dragId) return
+		const rect = container.getBoundingClientRect()
+		const posX = Math.round(Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100)))
+		const posY = Math.round(Math.min(100, Math.max(0, ((e.clientY - rect.top) / rect.height) * 100)))
+		const id = dragId
+		dragId = null
+		tables = tables.map((t) => (t.id === id ? { ...t, posX, posY } : t))
+		api
+			.put(`/api/tables/${id}/position`, { posX, posY })
+			.then(() => toast.success('Table position saved'))
+			.catch((err) => toast.error((err as Error).message))
+	}
+
+	const positionedTables = $derived(tables.filter((t) => t.posX !== null && t.posX !== undefined && t.posY !== null && t.posY !== undefined))
 
 	async function setTableStatus(table: DiningTable, status: string) {
 		try {
@@ -260,6 +425,126 @@
 			<Button onclick={openCreate}><Icon name="table_restaurant" size="text-[18px]" /> Manage floor</Button>
 		{/if}
 	</div>
+
+	{#if turnTime.length > 0}
+		<Card>
+			<h2 class="mb-2 text-sm font-semibold text-on-surface">Turn time (open → close)</h2>
+			<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+				{#each turnTime as row (`${row.outletId}-${row.sectionId}`)}
+					<div class="rounded-lg bg-surface-container-low p-3 text-xs">
+						<div class="font-semibold text-on-surface">{row.outletName ?? 'Outlet'} · {row.sectionName ?? 'No section'}</div>
+						<div class="mt-1 text-secondary">avg <strong class="text-on-surface">{row.avgMin}m</strong> · median <strong class="text-on-surface">{row.medianMin}m</strong> · {row.sessions} session(s)</div>
+					</div>
+				{/each}
+			</div>
+		</Card>
+	{/if}
+
+	<Card>
+		<div class="mb-2 flex items-center justify-between">
+			<h2 class="text-sm font-semibold text-on-surface">Floor map</h2>
+			{#if canManage}
+				<Button size="sm" variant="secondary" onclick={() => (editFloor = !editFloor)}>{editFloor ? 'Done editing' : 'Edit floor'}</Button>
+			{/if}
+		</div>
+		{#if positionedTables.length === 0}
+			<p class="text-sm text-secondary">No positioned tables yet.{#if canManage && editFloor} Drag tables below onto the canvas; positions save on drop.{/if}</p>
+		{/if}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="relative min-h-64 overflow-hidden rounded-lg border border-outline-variant bg-surface-container-low {editFloor ? 'border-dashed' : ''}"
+			style="height: 320px"
+			ondragover={(e) => e.preventDefault()}
+			ondrop={(e) => floorDrop(e, e.currentTarget)}
+		>
+			{#each positionedTables as t (t.id)}
+				<div
+					class="absolute flex h-16 w-24 cursor-move flex-col items-center justify-center rounded-lg border text-xs font-medium {editFloor ? 'border-primary bg-primary/10 text-on-surface' : 'border-outline-variant bg-surface-container-lowest text-on-surface-variant'}"
+					style="left: calc({t.posX}% - 3rem); top: calc({t.posY}% - 2rem)"
+					draggable={editFloor && canManage}
+					ondragstart={() => (dragId = t.id)}
+					title={`${t.name} — ${t.status}`}
+				>
+					<span>{t.name}</span>
+					<span class="text-[10px] text-secondary">{t.status}</span>
+				</div>
+			{/each}
+			{#if editFloor && canManage}
+				<div class="absolute bottom-2 left-2 flex flex-wrap gap-1">
+					{#each tables.filter((x) => x.posX === null || x.posX === undefined) as t (t.id)}
+						<span class="cursor-grab rounded-full bg-surface-container-highest px-2 py-1 text-[11px] text-on-surface-variant" draggable="true" ondragstart={() => (dragId = t.id)}>{t.name}</span>
+					{/each}
+				</div>
+			{/if}
+		</div>
+		{#if editFloor}<p class="mt-1 text-xs text-secondary">Drag a table onto the canvas — its position (percent) is saved on drop.</p>{/if}
+	</Card>
+
+	<Card>
+		<div class="mb-3 flex flex-wrap items-center gap-2">
+			<h2 class="text-sm font-semibold text-on-surface">Reservations — day view</h2>
+			<input type="date" class="field ml-auto w-auto" bind:value={resDay} onchange={loadReservations} aria-label="Reservation day" />
+			{#if canManage}<Button size="sm" variant="secondary" onclick={() => { showRes = true; resAt = `${resDay}T19:00` }}>New booking</Button>{/if}
+		</div>
+		{#if reservations.length === 0}
+			<p class="py-4 text-center text-sm text-secondary">No reservations this day.</p>
+		{:else}
+			<ul class="space-y-2">
+				{#each reservations as r (r.id)}
+					<li class="flex flex-wrap items-center gap-2 rounded-lg bg-surface-container-low p-2.5 text-sm">
+						<span class="font-medium text-on-surface">{r.guestName}</span>
+						<span class="text-xs text-secondary">{r.partySize} guests · {dateTime(r.reservedAt)}{r.tableName ? ` · ${r.tableName}` : ''}</span>
+						<span class="inline-flex rounded-full bg-secondary/10 px-2 py-0.5 text-[10px] font-medium text-secondary ring-1 ring-inset ring-secondary">{r.status}</span>
+						{#if canManage}
+							<span class="ml-auto flex flex-wrap gap-1">
+								{#each ['booked', 'seated', 'cancelled', 'no-show'] as st (st)}
+									{#if st !== r.status}
+										<button type="button" class="rounded px-1.5 py-0.5 text-xs text-primary hover:bg-primary-fixed-dim/40" onclick={() => setResStatus(r, st)}>{st}</button>
+									{/if}
+								{/each}
+								<select class="field w-auto !py-1 text-xs" aria-label={`Assign table for ${r.guestName}`} onchange={(e) => assignResTable(r, e.currentTarget.value)} value={r.tableId ?? ''}>
+									<option value="">Assign table…</option>
+									{#each tables as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
+								</select>
+							</span>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		{/if}
+		<div class="mt-4 grid gap-4 md:grid-cols-2">
+			<div class="rounded-lg bg-surface-container-low p-3">
+				<h3 class="text-sm font-semibold text-on-surface">Waitlist ({waitlist.length})</h3>
+				{#if waitlist.length === 0}
+					<p class="mt-1 text-xs text-secondary">Waitlist is empty.</p>
+				{:else}
+					<ul class="mt-2 space-y-1.5 text-sm">
+						{#each waitlist as w (w.id)}
+							<li class="flex items-center justify-between gap-2">
+								<span class="text-on-surface-variant">{w.guestName} · {w.partySize}</span>
+								{#if canManage}<button type="button" class="rounded px-1.5 py-0.5 text-xs text-primary hover:bg-primary-fixed-dim/40" onclick={() => setResStatus(w, 'booked')}>Book</button>{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+			<div class="rounded-lg bg-surface-container-low p-3">
+				<h3 class="text-sm font-semibold text-on-surface">Guest search</h3>
+				<div class="mt-2 flex gap-2">
+					<input class="field flex-1" bind:value={guestPhone} placeholder="Phone number" aria-label="Guest phone" />
+					<Button size="sm" variant="secondary" onclick={searchGuest}>Search</Button>
+				</div>
+				{#if guestHistory}
+					<p class="mt-2 text-xs text-secondary">{guestHistory.count} past reservation(s) for this guest.</p>
+					<ul class="mt-1 max-h-32 space-y-1 overflow-y-auto text-xs text-on-surface-variant">
+						{#each guestHistory.reservations as g (g.id)}
+							<li>{g.guestName} · {dateTime(g.reservedAt)} · {g.status}</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+		</div>
+	</Card>
 
 	{#if loading}
 		<div class="py-10 text-center text-sm text-secondary">Loading floor…</div>
@@ -338,7 +623,7 @@
 						{#if canManage}
 							<div class="flex flex-wrap justify-end gap-2">
 								<Button size="sm" variant="secondary" onclick={() => { mergeTarget = ''; showMerge = true }}>Merge</Button>
-								<Button size="sm" variant="secondary" onclick={() => { splitTable = ''; splitGuests = ''; showSplit = true }}>Split</Button>
+								<Button size="sm" variant="secondary" onclick={() => { void openSplit() }}>Split</Button>
 								<Button size="sm" variant="danger" onclick={() => cancelSession(selected!.openSession!.id)}>Cancel</Button>
 								<Button size="sm" onclick={() => closeSession(selected!.openSession!.id)}>Close</Button>
 							</div>
@@ -415,7 +700,7 @@
 {#if showSplit && selected?.openSession && canManage}
 	<Modal open={true} title={`Split ${selected.name}`} onClose={() => (showSplit = false)}>
 		<div class="space-y-4">
-			<p class="text-sm text-secondary">Move some guests to a free table. A new session is opened there and this party keeps the rest.</p>
+			<p class="text-sm text-secondary">Move some guests to a free table. A new session is opened there and this party keeps the rest. Tick order lines to move them to the new session too.</p>
 			<div>
 				<label for="split-table" class="field-label">Destination table</label>
 				<select id="split-table" class="field" bind:value={splitTable}>
@@ -429,8 +714,60 @@
 				<label for="split-guests" class="field-label">Guests leaving</label>
 				<input id="split-guests" class="field" bind:value={splitGuests} type="number" min="1" max={(selected.openSession?.guests ?? 1) - 1} />
 			</div>
+			{#if splitLines.length > 0}
+				<div>
+					<span class="mb-1 block text-xs text-secondary">Order lines to move</span>
+					<ul class="max-h-40 space-y-1 overflow-y-auto rounded border border-outline-variant bg-surface-container-low p-2 text-sm">
+						{#each splitLines as l (l.id)}
+							<li>
+								<label class="flex cursor-pointer items-center gap-2 text-on-surface-variant">
+									<input type="checkbox" checked={splitLineIds.has(l.id)} onchange={() => toggleSplitLine(l.id)} />
+									<span>{l.name}</span>
+								</label>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
 			<div class="flex justify-end">
 				<Button disabled={!splitTable} onclick={doSplit}>Split</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if showRes && canManage}
+	<Modal open={true} title="New booking" onClose={() => (showRes = false)}>
+		<div class="space-y-3">
+			<div>
+				<label for="res-name" class="field-label">Guest name</label>
+				<input id="res-name" class="field" bind:value={resName} placeholder="e.g. Jane Doe" />
+			</div>
+			<div class="flex gap-2">
+				<div class="flex-1">
+					<label for="res-phone" class="field-label">Phone</label>
+					<input id="res-phone" class="field" bind:value={resPhone} placeholder="555-0100" />
+				</div>
+				<div class="w-24">
+					<label for="res-party" class="field-label">Party</label>
+					<input id="res-party" class="field" type="number" min="1" bind:value={resParty} />
+				</div>
+			</div>
+			<div class="flex gap-2">
+				<div class="flex-1">
+					<label for="res-at" class="field-label">Date & time</label>
+					<input id="res-at" class="field" type="datetime-local" bind:value={resAt} />
+				</div>
+				<div class="w-32">
+					<label for="res-status" class="field-label">Status</label>
+					<select id="res-status" class="field" bind:value={resStatus}>
+						<option value="booked">booked</option>
+						<option value="waitlist">waitlist</option>
+					</select>
+				</div>
+			</div>
+			<div class="flex justify-end">
+				<Button onclick={addReservation}>Save booking</Button>
 			</div>
 		</div>
 	</Modal>
