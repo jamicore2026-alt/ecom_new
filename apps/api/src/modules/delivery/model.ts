@@ -53,11 +53,24 @@ export const deliveryQuery = t.Object({
   limit: t.Optional(t.Number())
 })
 
+export const deliveryAddressSchema = t.Object({
+  name: t.Optional(t.String({ maxLength: 255 })),
+  line1: t.Optional(t.String({ maxLength: 500 })),
+  line2: t.Optional(t.String({ maxLength: 500 })),
+  city: t.Optional(t.String({ maxLength: 120 })),
+  state: t.Optional(t.String({ maxLength: 120 })),
+  postalCode: t.Optional(t.String({ maxLength: 30 })),
+  country: t.Optional(t.String({ maxLength: 2 })),
+  phone: t.Optional(t.String({ maxLength: 50 })),
+  lat: t.Optional(t.Number({ minimum: -90, maximum: 90 })),
+  lng: t.Optional(t.Number({ minimum: -180, maximum: 180 }))
+})
+
 export const deliveryCreateBody = t.Object({
   orderId: t.String(),
   outletId: t.Optional(t.String()),
   zoneId: t.Optional(t.String()),
-  address: t.Optional(t.Object({})),
+  address: t.Optional(deliveryAddressSchema),
   fee: t.Optional(t.Number({ minimum: 0 })),
   etaMin: t.Optional(t.Number({ minimum: 1 })),
   notes: t.Optional(t.String())

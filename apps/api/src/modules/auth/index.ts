@@ -126,6 +126,14 @@ const expireRefreshCookie = {
 export const authModule = new Elysia({ prefix: '/api/auth' })
   .use(accessJwt)
   .use(refreshJwt)
+  // Rate-limit note: /login, /refresh, /logout and /mfa/verify run PRE-AUTH,
+  // so no merchant id is known yet — they use the global IP + tenant-hint
+  // buckets in shared/rate-limit.ts (login 10/min, refresh/logout 60/min,
+  // password/MFA paths 20/min). Exact per-merchant buckets
+  // (tenantRateLimiter) apply only to post-auth routes where
+  // auth.merchant.id exists (content/theme/audit writes); wiring one here
+  // would key every anonymous caller into a single shared bucket and is
+  // deliberately skipped.
   .post(
     '/login',
     async ({ body, accessJwt, refreshJwt, cookie, request }) => {

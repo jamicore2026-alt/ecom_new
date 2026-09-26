@@ -31,6 +31,9 @@
 	let variants = $state<InventoryRow[]>([])
 	let fFrom = $state('')
 	let fTo = $state('')
+	let fReasonCode = $state('')
+	let fCarrier = $state('')
+	let fTracking = $state('')
 	// Quantity actually held by the selected source warehouse per variant.
 	let sourceStock = $state<Record<string, number>>({})
 	// Bulk line editor: every row is one product to move.
@@ -94,6 +97,9 @@
 		showCreate = true
 		fFrom = ''
 		fTo = ''
+		fReasonCode = ''
+		fCarrier = ''
+		fTracking = ''
 		lines = [{ key: sequence++, variantId: '', quantity: '1' }]
 		fAll = false
 		fDeferred = false
@@ -127,6 +133,11 @@
 		if (!fAll && items.length === 0) return toast.error('Select at least one item or enable "Move all stock"')
 		saving = true
 		try {
+			const shipping = {
+				...(fReasonCode.trim() ? { reasonCode: fReasonCode.trim() } : {}),
+				...(fCarrier.trim() ? { carrier: fCarrier.trim() } : {}),
+				...(fTracking.trim() ? { trackingNumber: fTracking.trim() } : {})
+			}
 			// Single-line fast path: one row → POST /api/transfers (instant or
 			// deferred) instead of the bulk endpoint.
 			if (!fAll && items.length === 1) {
@@ -135,13 +146,14 @@
 					toWarehouseId: fTo,
 					variantId: items[0].variantId,
 					quantity: items[0].quantity,
-					...(fDeferred ? { deferred: true } : {})
+					...(fDeferred ? { deferred: true } : {}),
+					...shipping
 				})
 				toast.success(fDeferred ? 'Deferred transfer created (in transit)' : 'Transfer created')
 			} else {
 				const payload = fAll
-					? { fromWarehouseId: fFrom, toWarehouseId: fTo, allStock: true }
-					: { fromWarehouseId: fFrom, toWarehouseId: fTo, items }
+					? { fromWarehouseId: fFrom, toWarehouseId: fTo, allStock: true, ...shipping }
+					: { fromWarehouseId: fFrom, toWarehouseId: fTo, items, ...shipping }
 				await api.post<{ success: boolean }>('/api/transfers/bulk', payload)
 				toast.success(fAll ? 'All stock transferred' : `Transfer created (${items.length} item${items.length === 1 ? '' : 's'})`)
 			}
@@ -379,6 +391,21 @@
 					</div>
 				</div>
 			{/if}
+
+			<div class="grid gap-3 sm:grid-cols-3">
+				<div>
+					<label for="tr-reason" class="field-label">Reason code</label>
+					<input id="tr-reason" class="field" bind:value={fReasonCode} placeholder="rebalance" maxlength="30" />
+				</div>
+				<div>
+					<label for="tr-carrier" class="field-label">Carrier</label>
+					<input id="tr-carrier" class="field" bind:value={fCarrier} placeholder="DHL, Aramex…" maxlength="100" />
+				</div>
+				<div>
+					<label for="tr-tracking" class="field-label">Tracking number</label>
+					<input id="tr-tracking" class="field" bind:value={fTracking} placeholder="AWB / tracking #" maxlength="255" />
+				</div>
+			</div>
 
 			<p class="text-xs text-secondary">
 				{sourceText && destText ? `Moving stock from ${sourceText} to ${destText}${fAll ? ' (entire stock)' : ''}.` : 'A transfer moves stock between two of your warehouses. Stock not yet allocated to the source is drawn from the global pool.'}

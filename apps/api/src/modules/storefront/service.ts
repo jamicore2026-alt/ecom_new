@@ -36,6 +36,7 @@ import { DEFAULT_CHECKOUT_REQUIRED_FIELDS } from '../../shared/types'
 import type { CheckoutFieldRequirements, ShippingRule } from '../../shared/types'
 import { DiscountsService } from '../discounts/service'
 import { EmailsService } from '../emails/service'
+import { InventoryService } from '../inventory/service'
 import { awardForOrder } from '../loyalty/engine'
 import { attributeOrder } from '../affiliates/service'
 import { CartsService } from '../carts/service'
@@ -1728,6 +1729,13 @@ export class StorefrontService {
       } catch (err) {
         log.warn('loyalty award failed', err)
       }
+    }
+    // Low-stock alerts for every tracked line just decremented. Post-commit
+    // and self-guarded (never throws) — the hook re-reads the current level,
+    // checks the product threshold, and throttles to one email per variant
+    // per day via an inventoryLogs marker row.
+    for (const item of summary.items.filter((i) => i.trackInventory)) {
+      await InventoryService.maybeAlertLowStock(db, store.merchant.id, item.variantId)
     }
     return placedOrder
   }

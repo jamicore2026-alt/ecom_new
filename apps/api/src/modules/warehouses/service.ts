@@ -259,12 +259,20 @@ export class WarehousesService {
       variantId: string
       quantity: number
       deferred?: boolean
+      reasonCode?: string
+      carrier?: string
+      trackingNumber?: string
     }
   ) {
     if (input.quantity <= 0) throw badRequest('INVALID_QUANTITY', 'Quantity must be positive')
 
     const { from, to } = await this.resolveWarehouses(db, merchantId, input.fromWarehouseId, input.toWarehouseId)
     const variant = await this.resolveTransferVariant(db, merchantId, input.variantId)
+    const shipping = {
+      reasonCode: input.reasonCode?.trim() || null,
+      carrier: input.carrier?.trim() || null,
+      trackingNumber: input.trackingNumber?.trim() || null
+    }
 
     if (input.deferred) {
       const [row] = await db
@@ -277,10 +285,11 @@ export class WarehousesService {
           toWarehouseId: to.id,
           variantId: variant.variantId,
           quantity: input.quantity,
-          status: 'in_transit'
+          status: 'in_transit',
+          ...shipping
         })
         .returning()
-      return ok({ transferred: false, deferred: true, id: row.id, status: 'in_transit', quantity: input.quantity, kind: 'manual' })
+      return ok({ transferred: false, deferred: true, id: row.id, status: 'in_transit', quantity: input.quantity, kind: 'manual', ...shipping })
     }
 
     await db.transaction(async (tx) => {
@@ -290,11 +299,12 @@ export class WarehousesService {
         toWarehouseId: to.id,
         quantity: input.quantity,
         kind: 'manual',
-        groupKey: null
+        groupKey: null,
+        ...shipping
       })
     })
 
-    return ok({ transferred: true, quantity: input.quantity, kind: 'manual' })
+    return ok({ transferred: true, quantity: input.quantity, kind: 'manual', ...shipping })
   }
 
   /** Complete a deferred (`in_transit`) transfer: asserts status then moves stock atomically. */
@@ -413,6 +423,9 @@ export class WarehousesService {
       toWarehouseId: string
       items?: Array<{ variantId: string; quantity: number }>
       allStock?: boolean
+      reasonCode?: string
+      carrier?: string
+      trackingNumber?: string
     }
   ) {
     const { from, to } = await this.resolveWarehouses(db, merchantId, input.fromWarehouseId, input.toWarehouseId)
@@ -438,6 +451,11 @@ export class WarehousesService {
     }
 
     const groupKey = randomUUID()
+    const shipping = {
+      reasonCode: input.reasonCode?.trim() || null,
+      carrier: input.carrier?.trim() || null,
+      trackingNumber: input.trackingNumber?.trim() || null
+    }
     await db.transaction(async (tx) => {
       // Lock rows in a deterministic order to avoid deadlocks between
       // concurrent bulk transfers touching overlapping line sets.
@@ -449,7 +467,8 @@ export class WarehousesService {
           toWarehouseId: to.id,
           quantity: line.quantity,
           kind: 'bulk',
-          groupKey
+          groupKey,
+          ...shipping
         })
       }
     })
@@ -607,6 +626,9 @@ export class WarehousesService {
       quantity: number
       kind: 'manual' | 'bulk'
       groupKey: string | null
+      reasonCode?: string | null
+      carrier?: string | null
+      trackingNumber?: string | null
     }
   ) {
     await this.moveStockTx(tx, merchantId, line)
@@ -622,6 +644,9 @@ export class WarehousesService {
       variantId: line.variant.variantId,
       quantity: line.quantity,
       status: 'completed',
+      reasonCode: line.reasonCode ?? null,
+      carrier: line.carrier ?? null,
+      trackingNumber: line.trackingNumber ?? null,
       completedAt: new Date()
     })
   }
@@ -770,6 +795,9 @@ export class WarehousesService {
         variantId: stockTransfers.variantId,
         quantity: stockTransfers.quantity,
         status: stockTransfers.status,
+        reasonCode: stockTransfers.reasonCode,
+        carrier: stockTransfers.carrier,
+        trackingNumber: stockTransfers.trackingNumber,
         createdAt: stockTransfers.createdAt,
         completedAt: stockTransfers.completedAt
       })
@@ -805,6 +833,9 @@ export class WarehousesService {
       variantId: string
       quantity: number
       status: string | null
+      reasonCode?: string | null
+      carrier?: string | null
+      trackingNumber?: string | null
       createdAt: Date
       completedAt: Date | null
     }>
@@ -856,6 +887,9 @@ export class WarehousesService {
         variantId: r.variantId,
         quantity: r.quantity,
         status: r.status,
+        reasonCode: r.reasonCode ?? null,
+        carrier: r.carrier ?? null,
+        trackingNumber: r.trackingNumber ?? null,
         createdAt: r.createdAt,
         completedAt: r.completedAt,
         sourceName: from?.name ?? null,

@@ -14,6 +14,17 @@ const log = createLogger('jobs')
 export const runJobWorker = async (): Promise<number> => {
   const delivered = await processWebhookDeliveries()
 
+  // Transactional-outbox drain (background_jobs type='webhook_dispatch'):
+  // fans durable outbox rows into webhook_deliveries. Failures are counted
+  // per job inside drainOutbox and never throw here.
+  try {
+    const { drainOutbox } = await import('./event-dispatch')
+    const drained = await drainOutbox(db)
+    if (drained > 0) log.info('drained webhook outbox', { drained })
+  } catch (e) {
+    log.error('webhook outbox drain failed', e)
+  }
+
   try {
     const { CampaignsService } = await import('../modules/campaigns/service')
     const sent = await CampaignsService.sendDueScheduled(db)
@@ -36,6 +47,18 @@ export const runJobWorker = async (): Promise<number> => {
     if (requested > 0) log.info('sent review requests', { requested })
   } catch (e) {
     log.error('review request worker failed', e)
+  }
+
+  // Audit retention sweep (default >365d). Runs best-effort per merchant;
+  // failures are logged loudly inside AuditService.purgeExpired and never
+  // throw here.
+  try {
+    const days = Number(process.env.AUDIT_RETENTION_DAYS ?? 365)
+    const { AuditService } = await import('../modules/audit-logs/service')
+    const purged = await AuditService.purgeExpired(db, days)
+    if (purged > 0) log.info('purged expired audit rows', { purged, days })
+  } catch (e) {
+    log.error('audit retention worker failed', e)
   }
 
   return delivered

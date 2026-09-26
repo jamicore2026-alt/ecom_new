@@ -12,6 +12,8 @@ const bomBody = t.Object({
   outputVariantId: t.String(),
   outputQuantity: t.Optional(t.Integer({ minimum: 1 })),
   notes: t.Optional(t.String()),
+  scrapPercent: t.Optional(t.Number({ minimum: 0, maximum: 100 })),
+  yieldPercent: t.Optional(t.Number({ exclusiveMinimum: 0, maximum: 100 })),
   items: t.Array(bomItemSchema, { minItems: 1 })
 })
 
@@ -19,7 +21,15 @@ const bomUpdateBody = t.Partial(t.Object({
   name: t.String({ minLength: 1, maxLength: 255 }),
   notes: t.Optional(t.String()),
   status: t.Optional(t.String({ maxLength: 20 })),
+  scrapPercent: t.Optional(t.Number({ minimum: 0, maximum: 100 })),
+  yieldPercent: t.Optional(t.Number({ exclusiveMinimum: 0, maximum: 100 })),
   items: t.Optional(t.Array(bomItemSchema, { minItems: 1 }))
+}))
+
+const bomReviseBody = t.Partial(t.Object({
+  notes: t.Optional(t.String()),
+  scrapPercent: t.Optional(t.Number({ minimum: 0, maximum: 100 })),
+  yieldPercent: t.Optional(t.Number({ exclusiveMinimum: 0, maximum: 100 }))
 }))
 
 const batchBody = t.Object({
@@ -55,6 +65,10 @@ export const productionModule = new Elysia({ prefix: '/api' })
   .put('/boms/:id', async ({ auth, params, body }) => ProductionService.updateBom(auth.db, auth.merchant.id, params.id, body), {
     params: idParam,
     body: bomUpdateBody
+  })
+  .post('/boms/:id/revise', async ({ auth, params, body }) => ProductionService.reviseBom(auth.db, auth.merchant.id, params.id, body), {
+    params: idParam,
+    body: bomReviseBody
   })
 
   .post('/production-orders', async ({ auth, body }) => ProductionService.createProductionOrder(auth.db, auth.merchant.id, body), {

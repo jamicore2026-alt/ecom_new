@@ -91,6 +91,35 @@ export const computeRetryDelayMs = (
 }
 
 /**
+ * ============================================================================
+ * CONSUMER VERIFICATION GUIDE (for integrators receiving our webhooks)
+ * ----------------------------------------------------------------------------
+ * Every delivery POST carries:
+ *   x-webhook-id:        unique delivery id (use as idempotency key)
+ *   x-webhook-event:     event name, e.g. "order.paid"
+ *   x-webhook-timestamp: unix milliseconds when the payload was signed
+ *   x-webhook-signature: "t=<timestamp>,s=<hex>" — hex HMAC-SHA256 of
+ *                        "<timestamp>.<JSON.stringify(payload)>" keyed with
+ *                        your endpoint secret.
+ *
+ * Verify (pseudocode):
+ *   1. Parse `t` and `s` from x-webhook-signature.
+ *   2. REJECT if |now - t| > 5 minutes (timestamp tolerance — blocks
+ *      captured-payload replay; legitimate clock skew stays well inside).
+ *   3. Recompute HMAC-SHA256("<t>.<raw request body>") with your secret and
+ *      compare with `s` using a timing-safe equal (crypto.timingSafeEqual).
+ *      During secret rotation BOTH the current and previous secrets verify —
+ *      accept either (see rotateSecret below), preferring current.
+ *   4. REPLAY protection: store seen x-webhook-id values (e.g. 24h TTL) and
+ *      drop duplicates — at-least-once delivery means retries/replays reuse
+ *      the same id with identical payload.
+ *   5. Return 2xx only after persisting; 5xx/408/429 are retried with
+ *      jittered exponential backoff (max 5 attempts, then dead-lettered).
+ *      Other 4xx are terminal (no retry) — fix your endpoint instead.
+ * ============================================================================
+ */
+
+/**
  * Dual-secret verification for consumers: accepts a signature produced with
  * either the current or the previous (rotating-out) secret. Timing-safe.
  */

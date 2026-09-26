@@ -90,9 +90,26 @@
 		}
 	})
 
+	// Launch-readiness checklist — mirrors the server gate (name, price>0,
+	// ≥1 image, description, category). Activating requires all five.
+	const readiness = $derived.by(() => {
+		const missing: string[] = []
+		if (!name.trim()) missing.push('name')
+		if (!(Number(price) > 0)) missing.push('price greater than 0')
+		if (!description.trim()) missing.push('description')
+		if (!category) missing.push('category')
+		if (images.length === 0) missing.push('at least one image')
+		return { ready: missing.length === 0, missing }
+	})
+
 	async function submit() {
 		saving = true
 		fieldErrors = {}
+		if (status === 'active' && !readiness.ready) {
+			saving = false
+			toast.error(`Not ready to launch. Missing: ${readiness.missing.join(', ')}. Save as draft instead.`)
+			return
+		}
 		try {
 			const body: Record<string, unknown> = {
 				name,
@@ -276,6 +293,11 @@
 					<option value="draft">Draft</option>
 					<option value="archived">Archived</option>
 				</select>
+				{#if status === 'active' && !readiness.ready}
+					<p class="mt-1 text-xs text-warning">Launch checklist incomplete — missing: {readiness.missing.join(', ')}. Save as draft or complete the missing fields.</p>
+				{:else if status === 'active'}
+					<p class="mt-1 text-xs text-success">Launch checklist complete — ready to go live.</p>
+				{/if}
 			</div>
 		</div>
 

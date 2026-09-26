@@ -16,6 +16,12 @@
 	let entityType = $state('')
 	let page = $state(1)
 
+	// Tamper-evidence chain status + retention controls.
+	let chainStatus = $state<{ ok: boolean; checked: number; total: number; brokenAt?: string } | null>(null)
+	let verifying = $state(false)
+	let purgeDays = $state('365')
+	let purging = $state(false)
+
 	async function load() {
 		loading = true
 		try {
@@ -53,6 +59,43 @@
 		applyFilters()
 	}
 
+	async function verifyChain() {
+		verifying = true
+		try {
+			const res = await api.get<{ success: boolean; data: { ok: boolean; checked: number; total: number; brokenAt?: string } }>(
+				'/api/audit-logs/verify'
+			)
+			chainStatus = res.data
+			if (res.data.ok) toast.success(`Audit chain verified — ${res.data.checked} entries intact`)
+			else toast.error(`Audit chain BROKEN at entry ${res.data.brokenAt}`)
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			verifying = false
+		}
+	}
+
+	async function purgeOld() {
+		const days = Number(purgeDays)
+		if (!Number.isFinite(days) || days < 1) {
+			toast.error('Enter a valid retention window in days')
+			return
+		}
+		if (!confirm(`Permanently delete audit events older than ${days} days? This cannot be undone.`)) return
+		purging = true
+		try {
+			const res = await api.post<{ success: boolean; data: { deleted: number } }>('/api/audit-logs/purge', {
+				olderThanDays: days
+			})
+			toast.success(`Purged ${res.data.deleted} audit events older than ${days} days`)
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			purging = false
+		}
+	}
+
 	const entityTypes = ['product', 'category', 'variant', 'order', 'inventory', 'review', 'coupon', 'promotion', 'staff', 'api_key', 'customer', 'auth']
 
 	const fmtAction = (a: string) =>
@@ -77,6 +120,50 @@
 		<h1 class="font-display text-display text-on-surface">Audit Log</h1>
 		<p class="mt-1 text-body-sm text-secondary">{meta.total} recorded events</p>
 	</div>
+
+	<Card>
+		<div class="flex flex-col gap-3 text-sm md:flex-row md:items-center">
+			<div class="flex-1">
+				<h2 class="font-semibold text-on-surface">Tamper-evidence & retention</h2>
+				<p class="mt-0.5 text-xs text-secondary">
+					Entries are hash-chained (sha256 over each row linked to the previous entry's hash). Audit events
+					are retained for 365 days; the nightly worker purges older entries automatically.
+				</p>
+				{#if chainStatus}
+					<p class="mt-1 text-xs font-medium {chainStatus.ok ? 'text-success' : 'text-error'}">
+						{chainStatus.ok
+							? `Chain intact — ${chainStatus.checked} of ${chainStatus.total} entries verified.`
+							: `Chain BROKEN at entry ${chainStatus.brokenAt} (${chainStatus.checked} entries verified before the break).`}
+					</p>
+				{/if}
+			</div>
+			<div class="flex flex-wrap items-center gap-2">
+				<button
+					type="button"
+					class="rounded border border-outline-variant px-3 py-2 text-xs font-medium text-on-surface transition-colors hover:bg-surface-container-low disabled:opacity-50"
+					onclick={verifyChain}
+					disabled={verifying}
+				>
+					{verifying ? 'Verifying…' : 'Verify chain'}
+				</button>
+				<input
+					class="field w-24"
+					bind:value={purgeDays}
+					inputmode="numeric"
+					aria-label="Retention window in days"
+					title="Delete events older than this many days"
+				/>
+				<button
+					type="button"
+					class="rounded border border-error/40 px-3 py-2 text-xs font-medium text-error transition-colors hover:bg-error/10 disabled:opacity-50"
+					onclick={purgeOld}
+					disabled={purging}
+				>
+					{purging ? 'Purging…' : 'Purge older than N days'}
+				</button>
+			</div>
+		</div>
+	</Card>
 
 	<div class="rounded border border-outline-variant bg-surface-container-lowest p-3">
 		<div class="flex flex-wrap items-center gap-2">

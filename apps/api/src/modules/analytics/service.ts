@@ -31,6 +31,15 @@ const parseRange = (from?: string, to?: string, days = 30) => {
 
 type AnalyticsInterval = 'day' | 'week' | 'month'
 
+/**
+ * Honest bucket caption format for to_char(): weekly buckets are anchored on
+ * the Monday 00:00 UTC that starts the ISO week, so a bare "YYYY-MM-DD"
+ * reads as a single day. Week grain is labelled "Week of YYYY-MM-DD";
+ * day/month grains keep their plain date formats.
+ */
+export const bucketFormatFor = (interval: AnalyticsInterval): string =>
+  interval === 'week' ? '"Week of "YYYY-MM-DD' : interval === 'month' ? 'YYYY-MM' : 'YYYY-MM-DD'
+
 interface Query {
   from?: string
   to?: string
@@ -74,10 +83,17 @@ export class AnalyticsService {
       )
 
     const truncExpr = intervalTruncExpressions[interval]
+    // Honest bucket labels: date_trunc('week') yields the Monday 00:00 UTC
+    // that starts the ISO week, so labelling it a bare "YYYY-MM-DD" misleads
+    // readers into seeing a single day. `date` keeps the machine-sortable
+    // bucket start (backward compatible for charts/CSV); `label` is the
+    // human-honest caption ("Week of 2026-09-21", month grain stays YYYY-MM).
+    const bucketFormat = bucketFormatFor(interval)
     const run = async (s: Date, e: Date) => {
       const buckets = await db
         .select({
           bucket: sql<string>`to_char(${truncExpr}, 'YYYY-MM-DD')`,
+          label: sql<string>`to_char(${truncExpr}, ${bucketFormat})`,
           revenue: sql<number>`coalesce(sum(${orders.total}), 0)`,
           ordersCount: sql<number>`count(*)`
         })
@@ -103,6 +119,7 @@ export class AnalyticsService {
       return {
         series: buckets.map((b) => ({
           date: b.bucket,
+          label: b.label,
           revenue: Number(b.revenue),
           orders: Number(b.ordersCount)
         })),

@@ -16,6 +16,69 @@ export interface CounterStore {
 
 const WINDOW_MS = 60_000
 
+/**
+ * Per-tenant rate limiting.
+ *
+ * The global `rateLimiter` hook runs in `onRequest`, i.e. BEFORE auth, so the
+ * merchant id is not yet resolved there. To still isolate tenants from each
+ * other (one merchant's burst must not eat another's budget, and one bad
+ * actor must not lock out a whole NAT'd IP), the bucket key carries a
+ * best-effort tenant hint in addition to the client IP:
+ *
+ *   1. `x-merchant-id` / `x-tenant-id` header when the caller supplies it
+ *      (first-party dashboard / mobile clients);
+ *   2. leftmost DNS label of the Host (subdomain-per-tenant storefronts,
+ *      e.g. `acme.example.com` → `acme`);
+ *   3. `merchantId` / `merchant_id` / `mid` claim of an unverified JWT payload
+ *      decode (Bearer token present but not yet verified — used ONLY as a
+ *      bucket label, never as authentication);
+ *   4. fallback: IP-only bucket (unchanged behaviour for anonymous traffic).
+ *
+ * Authenticated routes additionally get a SECOND, exact tenant bucket via
+ * `tenantRateLimiter` (registered after auth, where `auth.merchant.id` is
+ * known). Both buckets must allow the request.
+ *
+ * Sensitive routes (auth, password reset, checkout/pay, coupon validate)
+ * carry lower per-tenant budgets so credential-stuffing / card-testing
+ * against one merchant cannot hide inside global IP headroom.
+ */
+export const tenantHintFromRequest = (request: Request): string | null => {
+  const headerTenant =
+    request.headers.get('x-merchant-id')?.trim() || request.headers.get('x-tenant-id')?.trim() || null
+  if (headerTenant && /^[A-Za-z0-9_-]{1,64}$/.test(headerTenant)) return `t:${headerTenant}`
+
+  try {
+    const host = new URL(request.url).hostname
+    const parts = host.split('.')
+    // Subdomain-per-tenant: `acme.example.com` → tenant `acme`. Bare hosts
+    // (`localhost`, IPs, apex domains) yield no hint.
+    if (parts.length >= 3 && parts[0] && parts[0] !== 'www' && /^[a-z0-9-]{1,63}$/i.test(parts[0])) {
+      return `t:${parts[0].toLowerCase()}`
+    }
+  } catch {
+    /* ignore malformed URL — fall through to JWT sniffing */
+  }
+
+  const auth = request.headers.get('authorization') ?? ''
+  const match = /^Bearer\s+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\s*$/.exec(auth)
+  if (match) {
+    try {
+      const payload = JSON.parse(
+        Buffer.from(match[1].split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
+      ) as Record<string, unknown>
+      const mid = payload.merchantId ?? payload.merchant_id ?? payload.mid
+      if (typeof mid === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(mid)) return `t:${mid}`
+    } catch {
+      /* unverifiable payload — ignore, IP-only bucket applies */
+    }
+  }
+  return null
+}
+
+/** Build the onRequest bucket key: IP + tenant hint + pathname. */
+export const rateLimitKey = (ip: string, tenantHint: string | null, pathname: string): string =>
+  tenantHint ? `${ip}:${tenantHint}:${pathname}` : `${ip}:${pathname}`
+
 const RULES: Rule[] = [
   { test: (p) => p === '/api/platform/auth/login', max: 10 },
   { test: (p) => p.startsWith('/api/platform'), max: 120 },
@@ -24,7 +87,14 @@ const RULES: Rule[] = [
   { test: (p) => /^\/api\/store\/[^/]+\/auth\/(register|login|password)$/.test(p), max: 10 },
   { test: (p) => /^\/api\/store\/[^/]+\/auth\/(forgot-password|reset-password|resend-verification|verify-email)/.test(p), max: 10 },
   { test: (p) => p.startsWith('/api/auth'), max: 30 },
-  { test: (p, m) => m === 'GET' && /^\/api\/store\/[^/]+\/orders\/[^/]+$/.test(p), max: 10 },
+  // Sensitive per-tenant routes: tight budgets so abuse against one merchant
+  // (coupon brute-forcing, refund farming, secret rotation churn, password
+  // changes) cannot hide inside the global mutating-write budget below.
+  { test: (p) => p === '/api/coupons/validate', max: 60 },
+  { test: (p) => p.includes('/password') || p.includes('/mfa/'), max: 20 },
+  { test: (p) => p.includes('/refunds') || p.includes('/returns'), max: 120 },
+  { test: (p) => p.includes('/rotate') || p.includes('/rotate-secret'), max: 20 },
+  { test: (p) => p.includes('/webhook-endpoints') || p.includes('/webhook-deliveries'), max: 120 },  { test: (p, m) => m === 'GET' && /^\/api\/store\/[^/]+\/orders\/[^/]+$/.test(p), max: 10 },
   { test: (p) => p.endsWith('/checkout') || p.endsWith('/checkout/pay') || p.endsWith('/checkout/preview'), max: 30 },
   { test: (p) => p.endsWith('/orders') && p.includes('/checkout'), max: 30 },
   { test: (p) => p.endsWith('/sync'), max: 30 },
@@ -286,6 +356,30 @@ export const closeRateLimitStore = async () => {
   await store?.close?.()
 }
 
+/**
+ * Exact per-tenant limiter for authenticated routes. Register AFTER auth so
+ * `auth.merchant.id` is known — the bucket is `tenant:<merchantId>:<path>`,
+ * independent of IP, so one merchant's burst never affects another even when
+ * the pre-auth hint was absent. `max` should mirror (or tighten) the matching
+ * RULES entry for the route.
+ */
+export const tenantRateLimiter = (opts: { max: number; windowMs?: number }) => (app: Elysia) =>
+  app.onBeforeHandle(async ({ auth, request, set }: any) => {
+    if (process.env.NODE_ENV === 'test') return
+    const merchantId: string | undefined = auth?.merchant?.id
+    if (!merchantId) return
+    const { pathname } = new URL(request.url)
+    const key = `tenant:${merchantId}:${pathname}`
+    const result = await getRateLimitStore().incrementAndCheck(key, opts.windowMs ?? WINDOW_MS, opts.max)
+    if (!result.allowed) {
+      set.status = 429
+      return {
+        success: false,
+        error: { code: 'RATE_LIMITED', message: 'Too many requests for this store — slow down and try again shortly' }
+      }
+    }
+  })
+
 export const rateLimiter = (app: Elysia) =>
   app.onRequest(async ({ request, server, set }) => {
     if (process.env.NODE_ENV === 'test') return
@@ -300,7 +394,9 @@ export const rateLimiter = (app: Elysia) =>
     const socketIp = server?.requestIP(request)?.address ?? 'local'
     const forwarded = trustProxy ? (request.headers.get('x-forwarded-for') ?? '') : ''
     const ip = forwarded.split(',')[0].trim() || socketIp
-    const key = `${ip}:${pathname}`
+    // Per-tenant bucket: the same IP hitting two different merchants consumes
+    // two independent budgets (see tenantHintFromRequest docs above).
+    const key = rateLimitKey(ip, tenantHintFromRequest(request), pathname)
     const result = await getRateLimitStore().incrementAndCheck(key, WINDOW_MS, rule.max)
 
     if (!result.allowed) {

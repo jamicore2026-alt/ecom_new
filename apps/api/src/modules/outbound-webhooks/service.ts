@@ -186,6 +186,23 @@ export class OutboundWebhooksService {
    * current, and `secret_version` is bumped. Verification accepts both;
    * new deliveries are signed with the current secret only.
    * Returns the masked endpoint plus the new plaintext secret (show once).
+   *
+   * ROTATION RUNBOOK (operator + consumer notes):
+   *  1. Operator calls POST /api/webhook-endpoints/:id/rotate (optionally
+   *     with `{"secret": "<new>"}`; otherwise a 32-byte hex secret is
+   *     generated). Minimum 16 chars for caller-supplied secrets.
+   *  2. The previous secret is retained as `secret_prev` — consumers must
+   *     accept signatures from EITHER secret during the overlap window
+   *     (verifyWebhookSignature does this). Overlap of 24–48h is enough to
+   *     cover queued retries + in-flight deliveries.
+   *  3. Consumers switch their stored secret to the new value (shown once in
+   *     the rotate response — it is never readable again).
+   *  4. There is no second rotation step that clears `secret_prev` yet: the
+   *     next rotation overwrites it. Do NOT rotate twice in quick succession
+   *     or the intermediate secret's in-flight deliveries will fail verify.
+   *  5. Rotation also clears any circuit-breaker trip (enabled=true,
+   *     status=active) — verify the receiver is healthy first, or the
+   *     breaker will trip again after 20 consecutive terminal failures.
    */
   static rotateSecret = async (
     db: DB,

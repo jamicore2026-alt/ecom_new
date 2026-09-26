@@ -1,8 +1,10 @@
-import { and, asc, count, desc, eq, gte, ilike, inArray, lte, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, ne, sql } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import {
   categories,
   inventoryLogs,
+  orderItems,
+  orders,
   productImages,
   productOptions,
   productOptionValues,
@@ -92,6 +94,43 @@ export function isPublished(
   const at = new Date(product.publishAt as string)
   if (Number.isNaN(at.getTime())) return true
   return now >= at
+}
+
+/**
+ * Launch-readiness checklist for status → active. A product may always move
+ * to draft; activation requires a shoppable minimum: name, price > 0,
+ * at least one image, a non-empty description, and a category assignment.
+ */
+export interface LaunchCheck {
+  ready: boolean
+  missing: string[]
+}
+
+export function launchReadiness(product: {
+  name?: string | null
+  price?: number | string | null
+  description?: string | null
+  categoryId?: string | null
+  imageCount?: number
+}): LaunchCheck {
+  const missing: string[] = []
+  if (!product.name?.trim()) missing.push('name')
+  if (!(Number(product.price) > 0)) missing.push('price')
+  if (!product.description?.trim()) missing.push('description')
+  if (!product.categoryId) missing.push('category')
+  if (!(Number(product.imageCount ?? 0) > 0)) missing.push('image')
+  return { ready: missing.length === 0, missing }
+}
+
+function assertLaunchReady(check: LaunchCheck) {
+  if (!check.ready) {
+    throw badRequest('PRODUCT_NOT_READY', `Product is not ready to launch. Missing: ${check.missing.join(', ')}`)
+  }
+}
+
+/** Canonical dedupe key for an option combination (sorted entries). */
+export function variantComboKey(combo: Record<string, string>): string {
+  return JSON.stringify(Object.entries(combo ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
 }
 
 /**
@@ -326,6 +365,19 @@ export class ProductsService {
       if (!cat) throw badRequest('BAD_REQUEST', 'Category does not exist')
     }
 
+    // No launch gate on create: products may be born active (seed data and
+    // existing API callers rely on it). The gate lives on the status
+    // TRANSITION (update draft → active, bulk set_status → active) plus the
+    // readiness checklist endpoint and client-side validation.
+    if (input.variants?.length) {
+      // Batch-level duplicate check for brand-new products (no rows exist yet).
+      const skus = input.variants
+        .filter((v) => v.sku?.trim())
+        .map((v) => (v.sku as string).trim().toLowerCase())
+      const dup = skus.find((s, i) => skus.indexOf(s) !== i)
+      if (dup) throw badRequest('BAD_REQUEST', `Duplicate variant SKU "${dup}" within this product`)
+    }
+
     const slug = await this.uniqueSlug(db, merchantId, input.slug ?? input.name)
     const result = await db.transaction(async (tx) => {
       const [product] = await tx
@@ -467,6 +519,28 @@ export class ProductsService {
     }
     if (slug) values.slug = slug
 
+    // Launch gate: an explicit transition to active requires a shoppable
+    // minimum. Moving to draft (or editing anything else) always succeeds.
+    if (input.status === 'active' && product.status !== 'active') {
+      const imageCount =
+        input.images !== undefined
+          ? (input.images as Array<unknown>).length
+          : await db
+              .select({ id: productImages.id })
+              .from(productImages)
+              .where(eq(productImages.productId, id))
+              .then((rows) => rows.length)
+      assertLaunchReady(
+        launchReadiness({
+          name: (input.name as string | undefined) ?? product.name,
+          price: (input.price as number | undefined) ?? product.price,
+          description: (input.description as string | undefined) ?? product.description,
+          categoryId: (input.categoryId as string | null | undefined) ?? product.categoryId,
+          imageCount
+        })
+      )
+    }
+
     if (Object.keys(values).length === 0 && input.images === undefined) {
       const variants = await db
         .select()
@@ -557,6 +631,34 @@ export class ProductsService {
         const statusVal = input.value as string
         if (!['active', 'draft', 'archived'].includes(statusVal)) {
           throw badRequest('BAD_REQUEST', 'Invalid product status')
+        }
+        // Launch gate: bulk activation only passes products that are launch-ready.
+        if (statusVal === 'active') {
+          const candidates = await db
+            .select()
+            .from(products)
+            .where(and(eq(products.merchantId, merchantId), inArray(products.id, ids)))
+          const imageRows = ids.length
+            ? await db
+                .select({ productId: productImages.productId })
+                .from(productImages)
+                .where(inArray(productImages.productId, ids))
+            : []
+          const imageCountById = new Map<string, number>()
+          for (const row of imageRows) {
+            imageCountById.set(row.productId, (imageCountById.get(row.productId) ?? 0) + 1)
+          }
+          const blocked = candidates
+            .filter((p) => p.status !== 'active')
+            .map((p) => ({ id: p.id, check: launchReadiness({ ...p, imageCount: imageCountById.get(p.id) ?? 0 }) }))
+            .filter((r) => !r.check.ready)
+          if (blocked.length) {
+            const first = blocked[0]
+            throw badRequest(
+              'PRODUCT_NOT_READY',
+              `Product ${first.id} is not ready to launch. Missing: ${first.check.missing.join(', ')}`
+            )
+          }
         }
         await db.update(products).set({ status: statusVal }).where(where)
         break
@@ -819,6 +921,39 @@ export class ProductsService {
     return v
   }
 
+  /**
+   * Rejects duplicate non-empty variant SKUs within one product (case-insensitive).
+   * `excludeId` skips the row being updated.
+   */
+  private static async assertUniqueVariantSkus(
+    db: DB,
+    productId: string,
+    skus: Array<string | null | undefined>,
+    excludeId?: string
+  ) {
+    const wanted = skus
+      .filter((s): s is string => !!s?.trim())
+      .map((s) => s.trim().toLowerCase())
+    if (!wanted.length) return
+    const dupInBatch = wanted.find((s, i) => wanted.indexOf(s) !== i)
+    if (dupInBatch) {
+      throw badRequest('BAD_REQUEST', `Duplicate variant SKU "${dupInBatch}" within this product`)
+    }
+    const existing = await db
+      .select({ id: productVariants.id, sku: productVariants.sku })
+      .from(productVariants)
+      .where(eq(productVariants.productId, productId))
+    const taken = new Set(
+      existing
+        .filter((v) => v.sku?.trim() && v.id !== excludeId)
+        .map((v) => (v.sku as string).trim().toLowerCase())
+    )
+    const clash = wanted.find((s) => taken.has(s))
+    if (clash) {
+      throw badRequest('BAD_REQUEST', `Variant SKU "${clash}" is already used by another variant of this product`)
+    }
+  }
+
   static async listVariants(db: DB, merchantId: string, productId: string) {
     const product = await this.findProduct(db, merchantId, productId)
     if (!product) throw notFound('NOT_FOUND', 'Product not found')
@@ -1015,9 +1150,17 @@ export class ProductsService {
       .select()
       .from(productVariants)
       .where(eq(productVariants.productId, productId))
-    const have = new Set(existing.map((v) => JSON.stringify(v.optionValues ?? {})))
+    // Dedupe key: identical option combos (key order-insensitive) collapse to
+    // one row, and combos already present on the product are kept untouched.
+    const have = new Set(existing.map((v) => variantComboKey((v.optionValues ?? {}) as Record<string, string>)))
+    const seen = new Set<string>()
     const toInsert = combos
-      .filter((c) => !have.has(JSON.stringify(c)))
+      .filter((c) => {
+        const key = variantComboKey(c)
+        if (seen.has(key) || have.has(key)) return false
+        seen.add(key)
+        return true
+      })
       .map((c) => ({
         productId,
         sku: null,
@@ -1062,6 +1205,7 @@ export class ProductsService {
     if (!product) throw notFound('NOT_FOUND', 'Product not found')
     if ((input.inventory ?? 0) < 0) throw badRequest('BAD_REQUEST', 'Variant inventory cannot be negative')
     assertValidSalePrice(input.price ?? product.price, input.compareAtPrice)
+    await this.assertUniqueVariantSkus(db, productId, [input.sku])
     const [variant] = await db.transaction(async (tx) =>
       tx
         .insert(productVariants)
@@ -1106,6 +1250,9 @@ export class ProductsService {
       input.price ?? variant.price,
       input.compareAtPrice !== undefined ? input.compareAtPrice : variant.compareAtPrice
     )
+    if (input.sku !== undefined) {
+      await this.assertUniqueVariantSkus(db, variant.productId, [input.sku], variantId)
+    }
 
     const values: Partial<NewProductVariant> = {}
     if (input.sku !== undefined) values.sku = input.sku ?? null
@@ -1144,11 +1291,71 @@ export class ProductsService {
     return ok(updated)
   }
 
-  static async deleteVariant(db: DB, merchantId: string, variantId: string) {
+  /**
+   * Prune a variant. Blocked when the variant still holds sellable stock
+   * (inventory > 0) unless `force` is set, when it is the product's last
+   * variant, or when open (non-terminal) orders still reference it. Open
+   * carts are JSON blobs — only persisted orders are guarded here.
+   */
+  static async deleteVariant(
+    db: DB,
+    merchantId: string,
+    variantId: string,
+    opts?: { force?: boolean; productId?: string }
+  ) {
     const found = await this.findVariant(db, merchantId, variantId)
     if (!found) throw notFound('NOT_FOUND', 'Variant not found')
+    const { variant } = found
+    if (opts?.productId && variant.productId !== opts.productId) {
+      throw notFound('NOT_FOUND', 'Variant not found')
+    }
+    if (variant.inventory > 0 && !opts?.force) {
+      throw badRequest(
+        'VARIANT_HAS_STOCK',
+        `Variant still holds ${variant.inventory} unit(s). Clear its inventory or retry with force.`
+      )
+    }
+    const siblings = await db
+      .select({ id: productVariants.id })
+      .from(productVariants)
+      .where(eq(productVariants.productId, variant.productId))
+    if (siblings.length <= 1) {
+      throw badRequest('LAST_VARIANT', 'A product must keep at least one variant')
+    }
+    const [openUsage] = await db
+      .select({ id: orderItems.id })
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .where(
+        and(
+          eq(orderItems.variantId, variantId),
+          eq(orders.merchantId, merchantId),
+          ne(orders.status, 'cancelled'),
+          ne(orders.status, 'delivered'),
+          ne(orders.status, 'refunded')
+        )
+      )
+      .limit(1)
+    if (openUsage) {
+      throw badRequest('VARIANT_IN_OPEN_ORDERS', 'Variant is referenced by open orders and cannot be deleted')
+    }
     await db.delete(productVariants).where(eq(productVariants.id, variantId))
     return ok({ deleted: true })
+  }
+
+  /** Launch-readiness checklist for a product (images counted live). */
+  static async readiness(db: DB, merchantId: string, id: string) {
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(and(eq(products.id, id), eq(products.merchantId, merchantId)))
+    if (!product) throw notFound('NOT_FOUND', 'Product not found')
+    const images = await db
+      .select({ id: productImages.id })
+      .from(productImages)
+      .where(eq(productImages.productId, id))
+    const check = launchReadiness({ ...product, imageCount: images.length })
+    return ok({ productId: id, status: product.status, ...check })
   }
 
   /* ----------------------------- csv export ------------------------------ */
@@ -1219,11 +1426,38 @@ export class ProductsService {
     return toCsv(this.csvHeaders(), [sample])
   }
 
-  static async exportCsv(db: DB, merchantId: string): Promise<string> {
+  static async exportCsv(db: DB, merchantId: string, q: ProductQuery = {}): Promise<string> {
+    // Same filters as list() — an export is a full dump of the current view.
+    const exportConditions = [eq(products.merchantId, merchantId)]
+    const exportSearch = q.search?.trim()
+    if (exportSearch) {
+      const cond = productSearchCondition(exportSearch)
+      if (cond) exportConditions.push(cond)
+    }
+    if (q.status) exportConditions.push(eq(products.status, q.status))
+    if (q.categoryId) exportConditions.push(eq(products.categoryId, q.categoryId))
+    if (q.minPrice !== undefined && q.minPrice !== '') exportConditions.push(gte(products.price, Number(q.minPrice)))
+    if (q.maxPrice !== undefined && q.maxPrice !== '') exportConditions.push(lte(products.price, Number(q.maxPrice)))
+    if (q.lowStock === 'true' || q.lowStock === '1') {
+      const low = await db
+        .selectDistinct({ id: productVariants.productId })
+        .from(productVariants)
+        .innerJoin(products, eq(productVariants.productId, products.id))
+        .where(
+          and(
+            eq(products.merchantId, merchantId),
+            sql`${productVariants.inventory} <= ${products.lowStockThreshold}`
+          )
+        )
+      const lowIds = low.map((r) => r.id)
+      exportConditions.push(
+        lowIds.length ? inArray(products.id, lowIds) : sql`false`
+      )
+    }
     const productRows = await db
       .select()
       .from(products)
-      .where(eq(products.merchantId, merchantId))
+      .where(and(...exportConditions))
       .orderBy(asc(products.createdAt))
     const ids = productRows.map((p) => p.id)
     const variantRows = ids.length

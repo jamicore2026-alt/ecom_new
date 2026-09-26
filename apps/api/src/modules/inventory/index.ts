@@ -21,6 +21,9 @@ export const inventoryModule = new Elysia({ prefix: '/api' })
   .get('/inventory/history', async ({ query, auth }) =>
     InventoryService.history(auth.db, auth.merchant.id, query), { query: historyQuery }
   )
+  .get('/inventory/valuation', async ({ auth }) =>
+    InventoryService.valuation(auth.db, auth.merchant.id)
+  )
   .use(requirePermission('inventory.adjust', 'inventory.manage'))
   .post('/inventory/:variantId/adjust', async ({ params, body, auth, request }) => {
     const result = await InventoryService.adjust(auth.db, auth.merchant.id, params.variantId, body)

@@ -18,6 +18,14 @@ import { emit } from '../../shared/event-dispatch'
 
 type Tx = Parameters<Parameters<DB['transaction']>[0]>[0]
 
+/**
+ * FOLLOW-UP (skipped by design): BOM operation steps, per-step cost rollup
+ * and by-products need new routing tables (operations, step components,
+ * output splits) — no schema for them exists yet. When added, reviseBom
+ * must copy steps alongside items, and completeProduction must credit
+ * by-products and accumulate step costs into the output valuation.
+ */
+
 const PO_STATUS_TRANSITIONS: Record<string, string[]> = {
   planned: ['in_progress', 'cancelled'],
   in_progress: ['completed', 'cancelled'],
@@ -68,6 +76,10 @@ export class ProductionService {
         outputVariantId: billOfMaterials.outputVariantId,
         outputQuantity: billOfMaterials.outputQuantity,
         status: billOfMaterials.status,
+        revision: billOfMaterials.revision,
+        revisionOf: billOfMaterials.revisionOf,
+        scrapPercent: billOfMaterials.scrapPercent,
+        yieldPercent: billOfMaterials.yieldPercent,
         notes: billOfMaterials.notes,
         createdAt: billOfMaterials.createdAt,
         productName: products.name,
@@ -116,6 +128,28 @@ export class ProductionService {
     return ok({ ...bom, output, items })
   }
 
+  private static cleanScrapYield(input: { scrapPercent?: number; yieldPercent?: number }): {
+    scrapPercent?: number
+    yieldPercent?: number
+  } {
+    const patch: { scrapPercent?: number; yieldPercent?: number } = {}
+    if (input.scrapPercent !== undefined) {
+      const scrap = Number(input.scrapPercent)
+      if (!Number.isFinite(scrap) || scrap < 0 || scrap > 100) {
+        throw badRequest('INVALID_SCRAP', 'Scrap percent must be between 0 and 100')
+      }
+      patch.scrapPercent = scrap
+    }
+    if (input.yieldPercent !== undefined) {
+      const yieldPct = Number(input.yieldPercent)
+      if (!Number.isFinite(yieldPct) || yieldPct <= 0 || yieldPct > 100) {
+        throw badRequest('INVALID_YIELD', 'Yield percent must be between 0 (exclusive) and 100')
+      }
+      patch.yieldPercent = yieldPct
+    }
+    return patch
+  }
+
   static async createBom(
     db: DB,
     merchantId: string,
@@ -124,10 +158,13 @@ export class ProductionService {
       outputVariantId: string
       outputQuantity?: number
       notes?: string
+      scrapPercent?: number
+      yieldPercent?: number
       items: Array<{ variantId: string; quantity: number }>
     }
   ) {
     const cleaned = await this.validateBom(db, merchantId, input, input.outputVariantId)
+    const rates = this.cleanScrapYield(input)
     const [bom] = await db
       .insert(billOfMaterials)
       .values({
@@ -136,7 +173,8 @@ export class ProductionService {
         outputVariantId: input.outputVariantId,
         outputQuantity: input.outputQuantity ?? 1,
         notes: input.notes,
-        status: 'draft'
+        status: 'draft',
+        ...rates
       })
       .returning()
 
@@ -154,6 +192,8 @@ export class ProductionService {
       name?: string
       notes?: string
       status?: string
+      scrapPercent?: number
+      yieldPercent?: number
       items?: Array<{ variantId: string; quantity: number }>
     }
   ) {
@@ -162,7 +202,8 @@ export class ProductionService {
     const patch: Record<string, unknown> = {
       ...(input.name !== undefined && { name: input.name.trim() }),
       ...(input.notes !== undefined && { notes: input.notes }),
-      ...(input.status !== undefined && { status: input.status })
+      ...(input.status !== undefined && { status: input.status }),
+      ...this.cleanScrapYield(input)
     }
 
     if (input.items) {
@@ -182,6 +223,43 @@ export class ProductionService {
       .where(and(eq(billOfMaterials.id, id), eq(billOfMaterials.merchantId, merchantId)))
       .returning()
     return ok(updated)
+  }
+
+  /**
+   * Revise a BOM: copies the BOM row plus its items into a new draft with
+   * revision = max + 1 and revisionOf pointing at the source. The source row
+   * is untouched (history stays queryable). Only scrap/yield/notes may be
+   * overridden at revise time — components are edited on the draft afterwards.
+   */
+  static async reviseBom(
+    db: DB,
+    merchantId: string,
+    id: string,
+    input?: { notes?: string; scrapPercent?: number; yieldPercent?: number }
+  ) {
+    const bom = await assertBomInMerchant(db, merchantId, id)
+    const rates = this.cleanScrapYield(input ?? {})
+    const items = await db.select().from(bomItems).where(eq(bomItems.bomId, id))
+    if (!items.length) throw badRequest('EMPTY_BOM', 'This BOM has no components to revise')
+    const [copy] = await db
+      .insert(billOfMaterials)
+      .values({
+        merchantId,
+        name: bom.name,
+        outputVariantId: bom.outputVariantId,
+        outputQuantity: bom.outputQuantity,
+        status: 'draft',
+        revisionOf: bom.id,
+        revision: (bom.revision ?? 1) + 1,
+        scrapPercent: rates.scrapPercent ?? bom.scrapPercent,
+        yieldPercent: rates.yieldPercent ?? bom.yieldPercent,
+        notes: input?.notes ?? bom.notes
+      })
+      .returning()
+    await db.insert(bomItems).values(
+      items.map((it) => ({ bomId: copy.id, variantId: it.variantId, quantity: it.quantity }))
+    )
+    return ok({ ...copy, items: items.map((it) => ({ variantId: it.variantId, quantity: it.quantity })) })
   }
 
   /** Validates BOM items and returns them deduped/totaled per variant. */
@@ -369,10 +447,17 @@ export class ProductionService {
       warehouse = w
     }
 
-    const outputQty = bom.outputQuantity * order.quantity
+    // Scrap inflates component consumption (expected process loss, rounded up
+    // so fractional units still consume a whole unit); yield scales the output
+    // (rounded down, minimum 1 unit so a run never produces nothing).
+    const scrapRate = Number(bom.scrapPercent ?? 0) / 100
+    const yieldRate = Number(bom.yieldPercent ?? 100) / 100
+    const outputQty = Math.max(1, Math.floor(bom.outputQuantity * order.quantity * yieldRate))
     const consumed = new Map<string, number>()
     for (const it of items) {
-      consumed.set(it.variantId, (consumed.get(it.variantId) ?? 0) + it.quantity * order.quantity)
+      const base = it.quantity * order.quantity
+      const adjusted = scrapRate > 0 ? Math.ceil(base * (1 + scrapRate)) : base
+      consumed.set(it.variantId, (consumed.get(it.variantId) ?? 0) + adjusted)
     }
 
     const ids = [...consumed.keys(), bom.outputVariantId].sort()

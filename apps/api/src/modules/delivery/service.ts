@@ -450,6 +450,46 @@ export class DriversService {
   }
 
   /**
+   * Driver performance from existing delivery data (no ratings schema exists).
+   * completedCount = DELIVERED rows; avgHandleMin = mean createdAt→deliveredAt
+   * over delivered rows; onTimePct = share of delivered rows completed within
+   * their etaMin window. All nullable-safe when the driver has no history.
+   */
+  static async metrics(db: DB, merchantId: string, id: string) {
+    const [driver] = await db
+      .select({ id: drivers.id })
+      .from(drivers)
+      .where(and(eq(drivers.id, id), eq(drivers.merchantId, merchantId)))
+    if (!driver) throw notFound('DRIVER_NOT_FOUND', 'Driver not found')
+    const rows = await db
+      .select({
+        status: deliveryOrders.status,
+        etaMin: deliveryOrders.etaMin,
+        createdAt: deliveryOrders.createdAt,
+        deliveredAt: deliveryOrders.deliveredAt
+      })
+      .from(deliveryOrders)
+      .where(and(eq(deliveryOrders.merchantId, merchantId), eq(deliveryOrders.assignedDriverId, id)))
+    const completed = rows.filter((r) => r.status === 'DELIVERED')
+    const handleMins = completed
+      .map((r) => (r.deliveredAt && r.createdAt ? (new Date(r.deliveredAt).getTime() - new Date(r.createdAt).getTime()) / 60000 : null))
+      .filter((m): m is number => m !== null && Number.isFinite(m) && m >= 0)
+    const onTimeSamples = completed.filter((r) => r.deliveredAt && r.createdAt && r.etaMin !== null && r.etaMin !== undefined)
+    const onTime = onTimeSamples.filter(
+      (r) => new Date(r.deliveredAt!).getTime() - new Date(r.createdAt!).getTime() <= Number(r.etaMin) * 60000
+    ).length
+    return ok({
+      driverId: id,
+      totalAssigned: rows.length,
+      activeCount: rows.filter((r) => !(TERMINAL_DELIVERY as readonly string[]).includes(r.status)).length,
+      completedCount: completed.length,
+      failedCount: rows.filter((r) => r.status === 'FAILED').length,
+      avgHandleMin: handleMins.length ? Math.round((handleMins.reduce((a, b) => a + b, 0) / handleMins.length) * 10) / 10 : null,
+      onTimePct: onTimeSamples.length ? Math.round((onTime / onTimeSamples.length) * 100) : null
+    })
+  }
+
+  /**
    * Live view: latest heartbeat per driver (written by `updateLocation`) with
    * its age in seconds plus each driver's current active delivery, if any.
    */

@@ -45,10 +45,10 @@ describe('Shopper wishlist', () => {
 
     const reg = await call(
       '/api/store/jamicore-store/auth/register',
-      json({ email: SHOPPER, password: 'sup3rsecret', firstName: 'Wish', lastName: 'Ful' })
+      json({ email: SHOPPER, password: 'Sup3rsecret99', firstName: 'Wish', lastName: 'Ful' })
     )
     if (reg.status !== 200) throw new Error(`register failed: ${JSON.stringify(reg.body)}`)
-    const lg = await call('/api/store/jamicore-store/auth/login', json({ email: SHOPPER, password: 'sup3rsecret' }))
+    const lg = await call('/api/store/jamicore-store/auth/login', json({ email: SHOPPER, password: 'Sup3rsecret99' }))
     token = lg.body.data.token
   })
 

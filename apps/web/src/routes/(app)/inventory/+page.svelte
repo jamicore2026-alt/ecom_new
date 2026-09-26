@@ -29,6 +29,20 @@
 	let adjustReason = $state<'adjustment' | 'purchase' | 'return' | 'sale' | 'stocktake'>('adjustment')
 	let adjusting = $state(false)
 
+	let valuation = $state<{ skuCount: number; unitCount: number; totalValue: number } | null>(null)
+
+	async function loadValuation() {
+		try {
+			const res = await api.get<{
+				success: boolean
+				data: { skuCount: number; unitCount: number; totalValue: number }
+			}>('/api/inventory/valuation')
+			valuation = res.data
+		} catch {
+			valuation = null
+		}
+	}
+
 	const canWrite = () => session.can('inventory:write')
 
 	function params(extra: Record<string, string> = {}): Record<string, string> {
@@ -62,7 +76,10 @@
 		}
 	}
 
-	onMount(load)
+	onMount(() => {
+		load()
+		loadValuation()
+	})
 
 	function switchTab(t: Tab) {
 		tab = t
@@ -112,6 +129,16 @@
 			<p class="mt-1 text-body-sm text-secondary">{meta.total} variants</p>
 		</div>
 		<a href="/inventory/stocktake" class="inline-flex min-h-11 w-fit items-center gap-1.5 rounded border border-outline-variant px-3 text-sm font-medium text-primary hover:bg-primary-fixed-dim/40">Stocktake sessions</a>
+	</div>
+
+	<div class="grid gap-4 sm:grid-cols-3">
+		<Card>
+			<p class="text-sm text-secondary">Valuation (qty × product cost)</p>
+			<p class="mt-1 font-display text-2xl text-on-surface">{valuation ? currency(valuation.totalValue) : '…'}</p>
+			<p class="mt-1 text-xs text-secondary">
+				{valuation ? `${number(valuation.unitCount)} units across ${number(valuation.skuCount)} variants` : 'Loading…'}
+			</p>
+		</Card>
 	</div>
 
 	<div class="flex flex-wrap items-center justify-between gap-3">

@@ -32,13 +32,13 @@ export const productsModule = new Elysia({ prefix: '/api' })
   // registered before '/products/:id' so "export" is not captured as an id
   .get(
     '/products/export',
-    async ({ auth, set }) => {
-      const csv = await ProductsService.exportCsv(auth.db, auth.merchant.id)
+    async ({ auth, set, query }) => {
+      const csv = await ProductsService.exportCsv(auth.db, auth.merchant.id, query)
       set.headers['content-type'] = 'text/csv; charset=utf-8'
       set.headers['content-disposition'] = `attachment; filename="products-${auth.merchant.slug}-${new Date().toISOString().slice(0, 10)}.csv"`
       return csv
     },
-    { detail: { summary: 'Export products as CSV (one row per variant)' }, beforeHandle: needProductRead }
+    { query: productQuery, detail: { summary: 'Export products as CSV (one row per variant, same filters as list)' }, beforeHandle: needProductRead }
   )
   // registered before '/products/:id' so "import/template" is not captured as an id
   .get(
@@ -55,6 +55,10 @@ export const productsModule = new Elysia({ prefix: '/api' })
   })
   .get('/products/:id/variants', async ({ params, auth }) =>
     ProductsService.listVariants(auth.db, auth.merchant.id, params.id),
+    { beforeHandle: needProductRead }
+  )
+  .get('/products/:id/readiness', async ({ params, auth }) =>
+    ProductsService.readiness(auth.db, auth.merchant.id, params.id),
     { beforeHandle: needProductRead }
   )
   .get('/products/:id/options', async ({ params, auth }) =>
@@ -219,3 +223,16 @@ export const productsModule = new Elysia({ prefix: '/api' })
     })
     return result
   })
+  .delete('/products/:id/variants/:variantId', async ({ params, auth, request, query }) => {
+    const result = await ProductsService.deleteVariant(auth.db, auth.merchant.id, params.variantId, {
+      productId: params.id,
+      force: query?.force === '1' || query?.force === 'true'
+    })
+    await auditFromRequest(auth, request, {
+      action: 'variant.delete',
+      entityType: 'product',
+      entityId: params.id,
+      metadata: { variantId: params.variantId }
+    })
+    return result
+  }, { query: t.Object({ force: t.Optional(t.String()) }) })

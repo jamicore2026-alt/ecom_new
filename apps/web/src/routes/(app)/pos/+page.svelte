@@ -283,7 +283,9 @@
 		if (qty > 0) {
 			c.selected.delete(modId)
 		} else {
-			if (g.maxSelections > 0 && c.selected.size >= g.maxSelections) {
+			// Max counts selected quantities, not distinct modifiers.
+			const total = [...c.selected.values()].reduce((a, q) => a + q, 0)
+			if (g.maxSelections > 0 && total >= g.maxSelections) {
 				toast.error(t('pos.maxSelection', { count: String(g.maxSelections), name: g.name }))
 				return
 			}
@@ -294,10 +296,12 @@
 
 	function confirmModifiers() {
 		if (!openItem) return
-		// Enforce required / minimum selection limits.
+		// Enforce required / minimum selection limits against quantities. A
+		// required group with minSelections > 1 needs all of them, not just one.
 		for (const c of choice) {
-			const min = c.group.required ? 1 : c.group.minSelections || 0
-			if (c.selected.size < min) {
+			const total = [...c.selected.values()].reduce((a, q) => a + q, 0)
+			const min = Math.max(c.group.required ? 1 : 0, c.group.minSelections || 0)
+			if (total < min) {
 				toast.error(
 					t('pos.minSelection', {
 						min: String(min),
@@ -533,6 +537,16 @@
 			receiptPaid = order.paymentStatus === 'paid'
 			receiptPayments = taken
 			completing = false
+			// Refetch the authoritative order post-pay: the last pay response can
+			// be a stale snapshot (split-tender math, server totals). Fall back
+			// to it if the refetch fails (e.g. offline).
+			try {
+				const fresh = await api.get<{ success: boolean; data: FoodOrder }>(`/api/food-orders/${orderId}`)
+				receiptOrder = fresh.data
+				receiptPaid = fresh.data.paymentStatus === 'paid'
+			} catch {
+				// Keep the pre-refetch snapshot.
+			}
 			clearCart()
 		} catch (e) {
 			if (isOfflineError(e)) {

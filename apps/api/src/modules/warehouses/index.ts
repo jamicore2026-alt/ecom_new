@@ -19,12 +19,20 @@ const setInventoryBody = t.Object({
   quantity: t.Integer({ minimum: 0 })
 })
 
+const shippingFields = {
+  /** Reason code (damage, rebalance, replenishment…) + carrier/tracking for shipped legs. */
+  reasonCode: t.Optional(t.String({ maxLength: 30 })),
+  carrier: t.Optional(t.String({ maxLength: 100 })),
+  trackingNumber: t.Optional(t.String({ maxLength: 255 }))
+}
+
 const transferBody = t.Object({
   fromWarehouseId: t.String(),
   toWarehouseId: t.String(),
   variantId: t.String(),
   quantity: t.Integer({ minimum: 1 }),
-  deferred: t.Optional(t.Boolean())
+  deferred: t.Optional(t.Boolean()),
+  ...shippingFields
 })
 
 const bulkTransferBody = t.Object({
@@ -40,7 +48,8 @@ const bulkTransferBody = t.Object({
   ),
   /** Extra option (PDF-correction): move every product the source holds, each
    *  with its full quantity, plus the unallocated global pool. */
-  allStock: t.Optional(t.Boolean())
+  allStock: t.Optional(t.Boolean()),
+  ...shippingFields
 })
 
 export const warehousesModule = new Elysia({ prefix: '/api' })

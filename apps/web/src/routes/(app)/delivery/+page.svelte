@@ -71,6 +71,37 @@
 	let statusFilter = $state('')
 	let selected = $state<DeliveryOrder | null>(null)
 
+	// Display-only driver performance (GET /api/drivers/:id/metrics — read-only).
+	interface DriverMetrics {
+		driverId: string
+		totalAssigned: number
+		activeCount: number
+		completedCount: number
+		failedCount: number
+		avgHandleMin: number | null
+		onTimePct: number | null
+	}
+	let metricsByDriver = $state<Record<string, DriverMetrics>>({})
+	let metricsLoading = $state<string | null>(null)
+
+	async function loadDriverMetrics(driverId: string) {
+		if (metricsByDriver[driverId]) {
+			const next = { ...metricsByDriver }
+			delete next[driverId]
+			metricsByDriver = next
+			return
+		}
+		metricsLoading = driverId
+		try {
+			const res = await api.get<{ success: boolean; data: DriverMetrics }>(`/api/drivers/${driverId}/metrics`)
+			metricsByDriver = { ...metricsByDriver, [driverId]: res.data }
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			metricsLoading = null
+		}
+	}
+
 	let driverTarget = $state<Driver | null>(null)
 	let zoneTarget = $state<DeliveryZone | null>(null)
 
@@ -665,6 +696,28 @@
 								<p>{drv.vehicleType ?? '—'} · {drv.vehiclePlate ?? '—'}</p>
 								<p>Outlet: {drv.outletName ?? '—'}</p>
 							</div>
+							{#if metricsByDriver[drv.id]}
+								{@const m = metricsByDriver[drv.id]}
+								<div class="mt-2 grid grid-cols-3 gap-2 rounded border border-outline-variant bg-surface-container-low p-2.5 text-center">
+									<div>
+										<p class="text-sm font-semibold text-on-surface">{m.completedCount}</p>
+										<p class="text-[10px] uppercase tracking-wide text-secondary">Done</p>
+									</div>
+									<div>
+										<p class="text-sm font-semibold text-on-surface">{m.avgHandleMin !== null ? `${m.avgHandleMin}m` : '—'}</p>
+										<p class="text-[10px] uppercase tracking-wide text-secondary">Avg handle</p>
+									</div>
+									<div>
+										<p class="text-sm font-semibold text-on-surface">{m.onTimePct !== null ? `${m.onTimePct}%` : '—'}</p>
+										<p class="text-[10px] uppercase tracking-wide text-secondary">On-time</p>
+									</div>
+									<p class="col-span-3 text-[11px] text-secondary">{m.totalAssigned} assigned · {m.activeCount} active · {m.failedCount} failed</p>
+								</div>
+							{/if}
+							<div class="mt-3 flex flex-wrap gap-2">
+								<Button size="sm" variant="secondary" onclick={() => loadDriverMetrics(drv.id)} loading={metricsLoading === drv.id}>
+									{metricsByDriver[drv.id] ? 'Hide metrics' : 'View metrics'}
+								</Button>
 							{#if canManageDrivers}
 								<div class="mt-3 flex flex-wrap gap-2">
 									{#if drv.status === 'ONLINE' || drv.status === 'OFFLINE'}
@@ -676,6 +729,7 @@
 									<Button size="sm" variant="danger" onclick={() => (driverTarget = drv)}>Remove</Button>
 								</div>
 							{/if}
+							</div>
 						</Card>
 					{/each}
 				</div>

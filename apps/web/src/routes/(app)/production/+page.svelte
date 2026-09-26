@@ -21,6 +21,10 @@
 		outputVariantId: string
 		outputQuantity: number
 		status: string
+		revision: number
+		revisionOf: string | null
+		scrapPercent: number
+		yieldPercent: number
 		notes: string | null
 		createdAt: string
 		productName: string
@@ -45,6 +49,10 @@
 		outputVariantId: string
 		outputQuantity: number
 		status: string
+		revision: number
+		revisionOf: string | null
+		scrapPercent: number
+		yieldPercent: number
 		notes: string | null
 		createdAt: string
 		updatedAt: string
@@ -225,7 +233,10 @@
 	let bomOutputQty = $state('1')
 	let bomNotes = $state('')
 	let bomStatus = $state('draft')
+	let bomScrap = $state('0')
+	let bomYield = $state('100')
 	let bomRows = $state<CompRow[]>([])
+	let revising = $state('')
 
 	let bomDetailView = $state<BomDetail | null>(null)
 	let bomDetailLoading = $state(false)
@@ -267,6 +278,8 @@
 		bomOutputQty = '1'
 		bomNotes = ''
 		bomStatus = 'draft'
+		bomScrap = '0'
+		bomYield = '100'
 		bomRows = [{ productId: '', variantId: '', quantity: '1' }]
 		pickerProducts = []
 		pickerPage = 1
@@ -291,6 +304,8 @@
 			bomName = res.data.name
 			bomStatus = res.data.status
 			bomOutputQty = String(res.data.outputQuantity)
+			bomScrap = String(res.data.scrapPercent ?? 0)
+			bomYield = String(res.data.yieldPercent ?? 100)
 			bomNotes = res.data.notes ?? ''
 			bomOutputProductId = await ensureProduct(res.data.output.name)
 			bomOutputVariantId = res.data.outputVariantId
@@ -340,12 +355,24 @@
 			return
 		}
 		const items = validRows.map((r) => ({ variantId: r.variantId, quantity: Number(r.quantity) }))
+		const scrap = Number(bomScrap)
+		const yieldPct = Number(bomYield)
+		if (!(scrap >= 0 && scrap <= 100)) {
+			toast.error('Scrap percent must be between 0 and 100')
+			return
+		}
+		if (!(yieldPct > 0 && yieldPct <= 100)) {
+			toast.error('Yield percent must be between 0 (exclusive) and 100')
+			return
+		}
 		bomSaving = true
 		try {
 			if (bomModal === 'edit' && bomDetail) {
 				const patch: Record<string, unknown> = { name: bomName.trim() }
 				if (bomNotes.trim() !== (bomDetail.notes ?? '')) patch.notes = bomNotes.trim()
 				if (bomStatus !== bomDetail.status) patch.status = bomStatus
+				if (scrap !== Number(bomDetail.scrapPercent ?? 0)) patch.scrapPercent = scrap
+				if (yieldPct !== Number(bomDetail.yieldPercent ?? 100)) patch.yieldPercent = yieldPct
 				if (bomDetail.status === 'draft') patch.items = items
 				await api.put<{ success: boolean }>(`/api/boms/${bomDetail.id}`, patch)
 				toast.success('BOM updated')
@@ -355,6 +382,8 @@
 					outputVariantId: bomOutputVariantId,
 					outputQuantity: outputQty,
 					...(bomNotes.trim() ? { notes: bomNotes.trim() } : {}),
+					scrapPercent: scrap,
+					yieldPercent: yieldPct,
 					items
 				})
 				toast.success('BOM created')
@@ -375,6 +404,23 @@
 			loadBoms()
 		} catch (e) {
 			toast.error((e as Error).message)
+		}
+	}
+
+	async function reviseBom(b: BomListItem) {
+		if (!confirm(`Create a new draft revision of "${b.name}" (rev ${(b.revision ?? 1) + 1})?`)) return
+		revising = b.id
+		try {
+			const res = await api.post<{ success: boolean; data: { id: string; revision: number } }>(
+				`/api/boms/${b.id}/revise`,
+				{}
+			)
+			toast.success(`Revision ${res.data.revision} created as draft`)
+			loadBoms()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			revising = ''
 		}
 	}
 
@@ -614,8 +660,10 @@
 						<thead>
 							<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
 								<th class="px-table-cell-x py-table-cell-y font-semibold">Name</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">Rev</th>
 								<th class="px-table-cell-x py-table-cell-y font-semibold">Output</th>
 								<th class="px-table-cell-x py-table-cell-y font-semibold">Output qty</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">Scrap / Yield</th>
 								<th class="px-table-cell-x py-table-cell-y font-semibold">Components</th>
 								<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
 								<th class="px-table-cell-x py-table-cell-y font-semibold">Created</th>
@@ -629,18 +677,25 @@
 								<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
 									<td class="px-table-cell-x py-table-cell-y">
 										<button class="rounded font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant" onclick={() => openBomDetail(b)}>{b.name}</button>
+										{#if b.revisionOf}
+											<div class="text-xs text-outline">rev of #{String(b.revisionOf).slice(0, 8).toUpperCase()}</div>
+										{/if}
 									</td>
+									<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">r{b.revision ?? 1}</td>
 									<td class="px-table-cell-x py-table-cell-y">
 										<div class="font-medium text-on-surface">{b.productName}</div>
 										<div class="text-xs text-secondary">{optText(b.optionValues)} · {b.sku ?? '—'}</div>
 									</td>
 									<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{number(b.outputQuantity)}</td>
+									<td class="px-table-cell-x py-table-cell-y text-xs text-on-surface-variant">{Number(b.scrapPercent ?? 0)}% / {Number(b.yieldPercent ?? 100)}%</td>
 									<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{number(b.componentCount)}</td>
 									<td class="px-table-cell-x py-table-cell-y"><Badge label={b.status} /></td>
 									<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTime(b.createdAt)}</td>
 									{#if canManage()}
 										<td class="px-table-cell-x py-table-cell-y text-right whitespace-nowrap">
 											<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditBom(b)}>Edit</button>
+											<span class="mx-1 text-outline">|</span>
+											<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40 disabled:opacity-50" disabled={revising === b.id} onclick={() => reviseBom(b)}>Revise</button>
 											<span class="mx-1 text-outline">|</span>
 											{#if b.status === 'active'}
 												<button class="rounded p-1.5 text-xs font-medium text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => setBomStatus(b, 'inactive')}>Set inactive</button>
@@ -851,12 +906,21 @@
 							</div>
 						</div>
 					{/if}
-					<div class="mt-3 grid gap-3 sm:grid-cols-2">
+					<div class="mt-3 grid gap-3 sm:grid-cols-3">
 						<div>
 							<label class="field-label" for="bom-out-qty">Output quantity</label>
 							<input id="bom-out-qty" type="number" min="1" step="1" class="field" bind:value={bomOutputQty} disabled={bomModal === 'edit'} />
 						</div>
+						<div>
+							<label class="field-label" for="bom-scrap">Scrap % (extra consumption)</label>
+							<input id="bom-scrap" type="number" min="0" max="100" step="0.1" class="field" bind:value={bomScrap} />
+						</div>
+						<div>
+							<label class="field-label" for="bom-yield">Yield % (output multiplier)</label>
+							<input id="bom-yield" type="number" min="0.1" max="100" step="0.1" class="field" bind:value={bomYield} />
+						</div>
 					</div>
+					<p class="mt-1 text-xs text-secondary">Completion consumes components × (1 + scrap%) rounded up, and produces output × yield% rounded down (min 1).</p>
 				</div>
 			</div>
 
@@ -940,10 +1004,11 @@
 				<div class="flex items-center gap-2">
 					<h4 class="text-sm font-semibold text-on-surface">Output</h4>
 					<Badge label={bomDetailView.status} />
+					<span class="text-xs text-secondary">rev {bomDetailView.revision ?? 1}</span>
 				</div>
 				<p class="mt-2 text-sm text-on-surface">{bomDetailView.output.name}</p>
 				<p class="text-xs text-secondary">{optText(bomDetailView.output.optionValues)} · {bomDetailView.output.sku ?? '—'}</p>
-				<p class="mt-1 text-xs text-secondary">Quantity per run: <span class="font-mono-label text-mono-label text-on-surface">{number(bomDetailView.outputQuantity)}</span></p>
+				<p class="mt-1 text-xs text-secondary">Quantity per run: <span class="font-mono-label text-mono-label text-on-surface">{number(bomDetailView.outputQuantity)}</span> · Scrap {Number(bomDetailView.scrapPercent ?? 0)}% · Yield {Number(bomDetailView.yieldPercent ?? 100)}%</p>
 				{#if bomDetailView.notes}
 					<p class="mt-1 text-xs text-secondary">{bomDetailView.notes}</p>
 				{/if}

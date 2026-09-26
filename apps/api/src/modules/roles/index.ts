@@ -19,6 +19,13 @@ export const rolesModule = new Elysia({ prefix: '/api' })
   .get('/roles', async ({ auth }) => RolesService.list(auth.db, auth.merchant.id), {
     beforeHandle: needStaffRead
   })
+  // Single-role read: same staff.read enumeration guard as the list — a
+  // support / read-only staffer can inspect a role definition but cannot
+  // mutate it (writes stay behind the staff.manage outletGuard below).
+  .get('/roles/:roleId', async ({ auth, params }) => RolesService.get(auth.db, auth.merchant.id, params.roleId), {
+    params: roleParams,
+    beforeHandle: needStaffRead
+  })
   .use(outletGuard({ permissions: ['staff.manage'] }))
   .post('/roles', async ({ body, auth, request }) => {
     const result = await RolesService.create(auth.db, auth.merchant.id, body)

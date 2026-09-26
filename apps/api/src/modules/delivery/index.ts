@@ -45,6 +45,10 @@ export const deliveryModule = new Elysia({ prefix: '/api' })
     params: deliveryParams,
     detail: { summary: 'Get a driver' }
   })
+  .get('/drivers/:id/metrics', async ({ params, auth }) => DriversService.metrics(auth.db, auth.merchant.id, params.id), {
+    params: deliveryParams,
+    detail: { summary: 'Driver performance from delivery history (completed count, avg handle time, on-time %)' }
+  })
   .get('/deliveries', async ({ query, auth, merchantContext }) => DeliveryOrdersService.list(auth.db, auth.merchant.id, query, merchantContext), {
     query: deliveryQuery,
     detail: { summary: 'List delivery orders' }

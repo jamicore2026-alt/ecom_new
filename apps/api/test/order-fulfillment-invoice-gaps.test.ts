@@ -414,7 +414,7 @@ describe('orders/fulfillment/invoice gaps (API)', () => {
 
     const reg = await call(
       '/api/store/jamicore-store/auth/register',
-      json({ email: shopperEmail, password: 'selfserve-123', orderNumber: ownOrderNumber })
+      json({ email: shopperEmail, password: 'Selfserve-12345', orderNumber: ownOrderNumber })
     )
     expect(reg.status).toBe(200)
     shopperToken = reg.body.data.token

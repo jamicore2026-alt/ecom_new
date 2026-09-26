@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, isNull, notInArray, or } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, inArray, isNull, notInArray, or } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import {
   kitchenStations,
@@ -238,7 +238,7 @@ export class KitchenTicketsService {
       conds.push(eq(kitchenTickets.status, query.status))
     }
     if (query.orderId) conds.push(eq(kitchenTickets.orderId, query.orderId))
-    if (query.search) conds.push(eq(kitchenTickets.orderNumber, query.search.trim()))
+    if (query.search) conds.push(ilike(kitchenTickets.orderNumber, `%${query.search.trim()}%`))
 
     const where = and(...conds)
     const [{ value: total }] = await db.select({ value: count() }).from(kitchenTickets).where(where)

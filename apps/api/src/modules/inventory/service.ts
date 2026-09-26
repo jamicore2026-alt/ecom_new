@@ -1,10 +1,21 @@
 import { and, count, desc, eq, gte, gt, ilike, lte, or, sql } from 'drizzle-orm'
 import type { DB } from '../../database/client'
-import { categories, inventoryLogs, products, productVariants } from '../../database/schema'
+import {
+  categories,
+  inventoryLogs,
+  merchants,
+  notificationSettings,
+  products,
+  productVariants
+} from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
 import { emit } from '../../shared/event-dispatch'
 import { badRequest, notFound } from '../../shared/errors'
+import { getMailer, renderEmail } from '../../shared/mailer'
+import { createLogger } from '../../shared/logger'
+
+const log = createLogger('inventory')
 
 const variantWithProduct = {
   id: productVariants.id,
@@ -145,6 +156,143 @@ export class InventoryService {
     return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
   }
 
+  /**
+   * Inventory valuation: every variant valued at its parent product's cost
+   * (productVariants carry no cost column — product cost is the fallback, 0
+   * when unset). Returns line-level rows plus merchant totals.
+   */
+  static async valuation(db: DB, merchantId: string) {
+    const rows = await db
+      .select({
+        variantId: productVariants.id,
+        productId: products.id,
+        productName: products.name,
+        productSku: products.sku,
+        sku: productVariants.sku,
+        optionValues: productVariants.optionValues,
+        inventory: productVariants.inventory,
+        unitCost: products.cost
+      })
+      .from(productVariants)
+      .innerJoin(products, eq(productVariants.productId, products.id))
+      .where(eq(products.merchantId, merchantId))
+      .orderBy(desc(products.name))
+
+    const items = rows.map((r) => {
+      const unitCost = Number(r.unitCost ?? 0)
+      return { ...r, unitCost, lineValue: r.inventory * unitCost }
+    })
+    const unitCount = items.reduce((sum, i) => sum + i.inventory, 0)
+    const totalValue = items.reduce((sum, i) => sum + i.lineValue, 0)
+    return ok({ items, skuCount: items.length, unitCount, totalValue })
+  }
+
+  /**
+   * Low-stock alert hook. Call AFTER a decrement commits (checkout sale,
+   * manual adjust, production consumption): when the new level is at or
+   * below the product's threshold (or zero), emails the merchant owner once
+   * per variant per day. Throttle marker is an `inventoryLogs` row with
+   * reason 'low_stock_alert' (change 0) — no extra table, no in-memory
+   * state. Never throws: alerts must not break the sale that triggered them.
+   */
+  static async maybeAlertLowStock(
+    db: DB,
+    merchantId: string,
+    variantId: string,
+    afterValue?: number
+  ): Promise<void> {
+    try {
+      const [row] = await db
+        .select({
+          inventory: productVariants.inventory,
+          unlimited: productVariants.unlimited,
+          sku: productVariants.sku,
+          optionValues: productVariants.optionValues,
+          productName: products.name,
+          threshold: products.lowStockThreshold,
+          trackInventory: products.trackInventory
+        })
+        .from(productVariants)
+        .innerJoin(products, eq(productVariants.productId, products.id))
+        .where(and(eq(productVariants.id, variantId), eq(products.merchantId, merchantId)))
+      if (!row || row.unlimited) return
+      const level = afterValue ?? row.inventory
+      if (level > row.threshold) return
+
+      const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      const [recent] = await db
+        .select({ id: inventoryLogs.id })
+        .from(inventoryLogs)
+        .where(
+          and(
+            eq(inventoryLogs.merchantId, merchantId),
+            eq(inventoryLogs.variantId, variantId),
+            eq(inventoryLogs.reason, 'low_stock_alert'),
+            gte(inventoryLogs.createdAt, dayAgo)
+          )
+        )
+        .limit(1)
+      if (recent) return
+
+      const [identity] = await db
+        .select({
+          email: merchants.email,
+          merchantName: merchants.name,
+          fromEmail: notificationSettings.fromEmail,
+          fromName: notificationSettings.fromName,
+          enabled: notificationSettings.enabled
+        })
+        .from(merchants)
+        .leftJoin(notificationSettings, eq(notificationSettings.merchantId, merchants.id))
+        .where(eq(merchants.id, merchantId))
+      if (!identity || identity.enabled === false) return
+      const to = identity.email
+      if (!to) return
+      const storeName = identity.fromName ?? identity.merchantName
+      const fromEmail = identity.fromEmail ?? process.env.MAIL_FROM_FALLBACK ?? 'onboarding@resend.dev'
+
+      const variantLabel = row.sku ?? 'No SKU'
+      const options = Object.entries((row.optionValues ?? {}) as Record<string, string>)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ')
+      await getMailer().send({
+        from: `${storeName} <${fromEmail}>`,
+        to,
+        subject:
+          level === 0
+            ? `Out of stock: ${row.productName} (${variantLabel})`
+            : `Low stock: ${row.productName} (${variantLabel}) — ${level} left`,
+        html: renderEmail({
+          title: level === 0 ? 'Variant out of stock' : 'Variant running low',
+          intro:
+            level === 0
+              ? `${row.productName} is now out of stock. Restock it to keep selling.`
+              : `${row.productName} dropped to ${level} units (threshold ${row.threshold}). Consider restocking.`,
+          storeName,
+          lines: [
+            { label: 'Product', value: row.productName },
+            ...(options ? [{ label: 'Options', value: options }] : []),
+            { label: 'Variant SKU', value: variantLabel },
+            { label: 'Stock on hand', value: String(level) },
+            { label: 'Threshold', value: String(row.threshold) }
+          ]
+        })
+      })
+
+      await db.insert(inventoryLogs).values({
+        merchantId,
+        variantId,
+        change: 0,
+        beforeValue: level,
+        afterValue: level,
+        reason: 'low_stock_alert',
+        reference: 'auto'
+      })
+    } catch (e) {
+      log.error('low-stock alert failed', e)
+    }
+  }
+
   static async adjust(db: DB, merchantId: string, variantId: string, input: { change: number; reason: string }) {
     if (input.change === 0) throw badRequest('BAD_REQUEST', 'Change must be non-zero')
 
@@ -194,6 +342,9 @@ export class InventoryService {
       afterValue: result.updated.inventory,
       reason: input.reason
     })
+    if (input.change < 0) {
+      await this.maybeAlertLowStock(db, merchantId, variantId, result.updated.inventory)
+    }
     return ok({ variant: result.updated, log: result.log })
   }
 }

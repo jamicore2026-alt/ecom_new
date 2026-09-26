@@ -198,6 +198,26 @@
 			</Card>
 		</div>
 
+		{#if transfer.reasonCode || transfer.carrier || transfer.trackingNumber}
+			<Card>
+				<div class="mb-3 flex items-center justify-between">
+					<h2 class="text-sm font-semibold text-on-surface">Shipping</h2>
+					<Icon name="local_shipping" size="text-[18px]" class="text-primary" />
+				</div>
+				<dl class="space-y-2 text-sm">
+					{#if transfer.reasonCode}
+						<div class="flex justify-between"><dt class="text-secondary">Reason</dt><dd class="font-medium">{transfer.reasonCode}</dd></div>
+					{/if}
+					{#if transfer.carrier}
+						<div class="flex justify-between"><dt class="text-secondary">Carrier</dt><dd class="font-medium">{transfer.carrier}</dd></div>
+					{/if}
+					{#if transfer.trackingNumber}
+						<div class="flex justify-between"><dt class="text-secondary">Tracking</dt><dd class="font-mono text-xs">{transfer.trackingNumber}</dd></div>
+					{/if}
+				</dl>
+			</Card>
+		{/if}
+
 		<Card>
 			<div class="mb-3 flex items-center justify-between">
 				<h2 class="text-sm font-semibold text-on-surface">Timeline</h2>

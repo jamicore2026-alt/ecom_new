@@ -776,7 +776,11 @@
 {#if showQr && qr}
 	<Modal open={true} title="Table QR" onClose={() => (showQr = false)} width="sm">
 		<div class="space-y-3 text-center">
-			<div class="mx-auto flex h-40 w-40 items-center justify-center rounded-lg bg-surface-container-low text-4xl text-on-surface-variant" aria-hidden="true">▦</div>
+			{#if qr.image}
+				<div class="mx-auto h-40 w-40 overflow-hidden rounded-lg bg-white p-2 [&>svg]:h-full [&>svg]:w-full" role="img" aria-label={`QR code for ${qr.url}`}>{@html qr.image}</div>
+			{:else}
+				<div class="mx-auto flex h-40 w-40 items-center justify-center rounded-lg bg-surface-container-low text-4xl text-on-surface-variant" aria-hidden="true">▦</div>
+			{/if}
 			<p class="break-all text-xs text-secondary">{qr.url}</p>
 			<p class="text-xs text-outline">Scan to open the public table menu — no account or private data required.</p>
 		</div>

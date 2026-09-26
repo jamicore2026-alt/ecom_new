@@ -1066,6 +1066,9 @@ export const auditLogs = pgTable(
     entityId: varchar('entity_id', { length: 30 }),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     ipAddress: varchar('ip_address', { length: 64 }),
+    /** Tamper-evidence: sha256(prev_hash | canonical row) chain per merchant. */
+    prevHash: varchar('prev_hash', { length: 64 }),
+    rowHash: varchar('row_hash', { length: 64 }),
     createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [
@@ -1811,6 +1814,10 @@ export const stockTransfers = pgTable(
       .references(() => productVariants.id, { onDelete: 'cascade' }),
     quantity: integer('quantity').notNull(),
     status: varchar('status', { length: 20 }).notNull().default('pending'),
+    /** Reason code (damage, rebalance, replenishment…) + carrier/tracking for shipped legs. */
+    reasonCode: varchar('reason_code', { length: 30 }),
+    carrier: varchar('carrier', { length: 100 }),
+    trackingNumber: varchar('tracking_number', { length: 255 }),
     createdAt: tstz('created_at').defaultNow().notNull(),
     completedAt: tstz('completed_at')
   },
@@ -1949,6 +1956,12 @@ export const billOfMaterials = pgTable(
     // Units of the finished good produced by one run of this BOM.
     outputQuantity: integer('output_quantity').notNull().default(1),
     status: varchar('status', { length: 20 }).notNull().default('draft'),
+    /** Revision chain: revised BOMs point at their predecessor. */
+    revisionOf: varchar('revision_of', { length: 30 }),
+    revision: integer('revision').notNull().default(1),
+    /** Expected scrap % and yield % applied at production completion. */
+    scrapPercent: money('scrap_percent').notNull().default(0),
+    yieldPercent: money('yield_percent').notNull().default(100),
     notes: text('notes'),
     createdAt: tstz('created_at').defaultNow().notNull(),
     updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
@@ -2335,6 +2348,107 @@ export const themeConfigs = pgTable('theme_configs', {
   config: jsonb('config').notNull().default({}),
   updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })
+
+/** Versioned theme releases (preview + rollback). */
+export const themeVersions = pgTable('theme_versions', {
+  id: id('id').primaryKey(),
+  merchantId: varchar('merchant_id', { length: 30 })
+    .notNull()
+    .references(() => merchants.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  config: jsonb('config').notNull().default({}),
+  note: varchar('note', { length: 255 }),
+  createdBy: varchar('created_by', { length: 30 }).references(() => users.id, {
+    onDelete: 'set null'
+  }),
+  createdAt: tstz('created_at').defaultNow().notNull()
+},
+(t) => [
+  uniqueIndex('theme_versions_merchant_version_idx').on(t.merchantId, t.version),
+  index('theme_versions_merchant_idx').on(t.merchantId)
+])
+
+/** Product bundles/kits: a sellable bundle of variants with quantities. */
+export const productBundles = pgTable(
+  'product_bundles',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    name: varchar('name', { length: 255 }).notNull(),
+    nameAr: varchar('name_ar', { length: 255 }),
+    price: money('price').notNull().default(0),
+    compareAtPrice: money('compare_at_price'),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    createdAt: tstz('created_at').defaultNow().notNull(),
+    updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
+  },
+  (t) => [index('product_bundles_merchant_idx').on(t.merchantId)]
+)
+
+export const productBundleItems = pgTable(
+  'product_bundle_items',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    bundleId: varchar('bundle_id', { length: 30 })
+      .notNull()
+      .references(() => productBundles.id, { onDelete: 'cascade' }),
+    variantId: varchar('variant_id', { length: 30 })
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    quantity: integer('quantity').notNull().default(1),
+    createdAt: tstz('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('bundle_items_bundle_variant_idx').on(t.bundleId, t.variantId),
+    index('bundle_items_bundle_idx').on(t.bundleId)
+  ]
+)
+
+/** Related/accessory/upsell links between products. */
+export const productRelations = pgTable(
+  'product_relations',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    productId: varchar('product_id', { length: 30 })
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    relatedProductId: varchar('related_product_id', { length: 30 })
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    relationType: varchar('relation_type', { length: 20 }).notNull().default('related'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: tstz('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('product_relations_unique_idx').on(t.productId, t.relatedProductId, t.relationType),
+    index('product_relations_product_idx').on(t.productId)
+  ]
+)
+
+/** Content version history (rollback for pages). */
+export const contentVersions = pgTable(
+  'content_versions',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    contentId: varchar('content_id', { length: 30 })
+      .notNull()
+      .references(() => contentPages.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    content: text('content').notNull().default(''),
+    createdBy: varchar('created_by', { length: 30 }).references(() => users.id, {
+      onDelete: 'set null'
+    }),
+    createdAt: tstz('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('content_versions_content_version_idx').on(t.contentId, t.version),
+    index('content_versions_content_idx').on(t.contentId)
+  ]
+)
 
 export const codRules = pgTable('cod_rules', {
   merchantId: varchar('merchant_id', { length: 30 })

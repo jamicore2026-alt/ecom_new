@@ -1389,6 +1389,9 @@ export interface StockTransfer {
 	variantId: string
 	quantity: number
 	status: TransferStatus | string | null
+	reasonCode: string | null
+	carrier: string | null
+	trackingNumber: string | null
 	createdAt: string
 	completedAt: string | null
 	sourceName: string | null

@@ -159,16 +159,38 @@
 		}
 	}
 
-	async function deleteVariant(v: ProductVariant) {
-		if (!confirm('Delete this variant?')) return
+	async function deleteVariant(v: ProductVariant, force = false) {
+		if (v.inventory > 0 && !force) {
+			if (!confirm(`This variant still holds ${v.inventory} unit(s). Delete anyway (force)?`)) return
+			force = true
+		}
+		else if (!confirm('Delete this variant?')) return
 		try {
-			await api.delete<{ success: boolean }>(`/api/variants/${v.id}`)
+			const suffix = force ? '?force=true' : ''
+			await api.delete<{ success: boolean }>(`/api/products/${id}/variants/${v.id}${suffix}`)
 			toast.success('Variant deleted')
 			load()
 		} catch (e) {
 			toast.error((e as Error).message)
 		}
 	}
+
+	let readiness = $state<{ ready: boolean; missing: string[] } | null>(null)
+
+	async function loadReadiness() {
+		try {
+			const res = await api.get<{ success: boolean; data: { ready: boolean; missing: string[] } }>(
+				`/api/products/${id}/readiness`
+			)
+			readiness = { ready: res.data.ready, missing: res.data.missing ?? [] }
+		} catch {
+			readiness = null
+		}
+	}
+
+	$effect(() => {
+		if (product) loadReadiness()
+	})
 
 	function openOptionsEditor() {
 		optionDrafts = options.map((o) => ({
@@ -331,6 +353,21 @@
 						<div class="flex justify-between"><dt class="text-secondary">Slug</dt><dd class="font-mono text-xs text-on-surface-variant">{product.slug}</dd></div>
 						<div class="flex justify-between"><dt class="text-secondary">Created</dt><dd class="text-on-surface-variant">{dateTimeFull(product.createdAt)}</dd></div>
 					</dl>
+				</Card>
+
+				<Card title="Launch readiness">
+					{#if !readiness}
+						<p class="text-sm text-secondary">Checking…</p>
+					{:else if readiness.ready}
+						<p class="text-sm font-medium text-success">Ready to launch — all checks pass.</p>
+					{:else}
+						<p class="text-sm text-secondary">Blocked from going active — missing:</p>
+						<ul class="mt-1 list-inside list-disc text-sm text-warning">
+							{#each readiness.missing as m (m)}
+								<li>{m}</li>
+							{/each}
+						</ul>
+					{/if}
 				</Card>
 
 				{#if product.description}

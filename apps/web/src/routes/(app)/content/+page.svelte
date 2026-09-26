@@ -33,6 +33,22 @@
 	let showView = $state(false)
 	let viewing = $state<ContentPage | null>(null)
 
+	interface ContentVersion {
+		id: string
+		version: number
+		title: string
+		content: string
+		createdBy: string | null
+		createdAt: string
+	}
+
+	let showHistory = $state(false)
+	let historyPage = $state<ContentPage | null>(null)
+	let versions = $state<ContentVersion[]>([])
+	let versionsLoading = $state(false)
+	let selectedVersion = $state<number | null>(null)
+	let rollingBack = $state(false)
+
 	let formTitle = $state('')
 	let formSlug = $state('')
 	let formContent = $state('')
@@ -147,6 +163,43 @@
 		}
 	}
 
+	async function openHistory(page: ContentPage) {
+		historyPage = page
+		selectedVersion = null
+		showHistory = true
+		versionsLoading = true
+		try {
+			const res = await api.get<{ success: boolean; data: { items: ContentVersion[] } }>(
+				`/api/content/${page.id}/versions`
+			)
+			versions = res.data.items
+		} catch (e) {
+			toast.error((e as Error).message)
+			versions = []
+		} finally {
+			versionsLoading = false
+		}
+	}
+
+	async function rollbackVersion() {
+		if (!historyPage || selectedVersion === null) {
+			toast.error('Pick a version to restore')
+			return
+		}
+		if (!confirm(`Restore version ${selectedVersion} as a new update? The current content is snapshotted first, so this can be undone.`)) return
+		rollingBack = true
+		try {
+			await api.post(`/api/content/${historyPage.id}/rollback/${selectedVersion}`, {})
+			toast.success(`Rolled back to version ${selectedVersion}`)
+			showHistory = false
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			rollingBack = false
+		}
+	}
+
 </script>
 
 <svelte:head>
@@ -188,6 +241,7 @@
 							{#if canManage()}
 								<button class="rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => openView(page)} aria-label="View page"><Icon name="visibility" size="text-[18px]" /></button>
 								<button class="rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => openEdit(page)} aria-label="Edit page"><Icon name="edit" size="text-[18px]" /></button>
+								<button class="rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => openHistory(page)} aria-label="Version history"><Icon name="history" size="text-[18px]" /></button>
 								<button class="rounded p-1.5 text-secondary hover:bg-error/10 hover:text-error" onclick={() => deletePage(page)} aria-label="Delete page"><Icon name="delete" size="text-[18px]" /></button>
 							{/if}
 						</div>
@@ -266,6 +320,46 @@
 			<div class="flex justify-end">
 				<Button variant="secondary" size="sm" onclick={() => (showView = false)}>Close</Button>
 			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if showHistory && historyPage}
+	<Modal title={`Version history — ${historyPage.title}`} open={true} onClose={() => (showHistory = false)} width="sm">
+		<div class="space-y-4">
+			<p class="text-xs text-secondary">Every save snapshots the previous content. Restoring a version saves it as a new update — the current content is snapshotted first, so rollback is undoable.</p>
+			{#if versionsLoading}
+				<div class="space-y-2">
+					{#each Array(3) as _}
+						<div class="h-10 animate-pulse rounded bg-surface-container"></div>
+					{/each}
+				</div>
+			{:else if versions.length === 0}
+				<p class="py-4 text-center text-sm text-secondary">No versions yet — edit the page to create the first snapshot.</p>
+			{:else}
+				<div>
+					<label class="field-label" for="content-version">Version</label>
+					<select id="content-version" class="field" bind:value={selectedVersion}>
+						<option value={null}>Select a version…</option>
+						{#each versions as v (v.id)}
+							<option value={v.version}>v{v.version} — {v.title} · {dateTime(v.createdAt)}</option>
+						{/each}
+					</select>
+				</div>
+				{#if selectedVersion !== null}
+					{@const preview = versions.find((v) => v.version === selectedVersion)}
+					{#if preview}
+						<div class="rounded border border-outline-variant bg-surface-container-low p-3">
+							<p class="text-xs font-semibold text-on-surface">{preview.title}</p>
+							<p class="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap text-xs text-on-surface-variant">{preview.content?.slice(0, 500) || 'Empty content.'}{preview.content && preview.content.length > 500 ? '…' : ''}</p>
+						</div>
+					{/if}
+				{/if}
+				<div class="flex justify-end gap-2">
+					<Button variant="secondary" size="sm" onclick={() => (showHistory = false)}>Close</Button>
+					<Button size="sm" onclick={rollbackVersion} loading={rollingBack} disabled={selectedVersion === null}>Restore version</Button>
+				</div>
+			{/if}
 		</div>
 	</Modal>
 {/if}

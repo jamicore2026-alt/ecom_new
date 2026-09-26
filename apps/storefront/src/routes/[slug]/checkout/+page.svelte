@@ -382,6 +382,30 @@ shippingAddress: {
 <div class="mx-auto max-w-6xl px-4 py-10">
 	<h1 class="text-3xl font-bold text-neutral-900">{t('checkout.title')}</h1>
 
+	<!-- Progress stepper: cart → details → pay → done. Details + pay both happen
+		on this page; "done" is the order-confirmation page after placing. -->
+	<ol class="mt-4 flex items-center gap-1 text-xs font-medium sm:gap-2 sm:text-sm" aria-label="Checkout progress">
+		<li class="flex items-center gap-1.5 text-green-700">
+			<span class="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 text-[11px] font-bold">✓</span>
+			<span class="hidden sm:inline">Cart</span>
+		</li>
+		<li class="h-px w-4 flex-1 bg-neutral-200 sm:w-8 sm:flex-none" aria-hidden="true"></li>
+		<li class="flex items-center gap-1.5 text-brand-700" aria-current="step">
+			<span class="flex h-6 w-6 items-center justify-center rounded-full bg-brand-600 text-[11px] font-bold text-white">2</span>
+			<span class="hidden sm:inline">Details</span>
+		</li>
+		<li class="h-px w-4 flex-1 bg-neutral-200 sm:w-8 sm:flex-none" aria-hidden="true"></li>
+		<li class="flex items-center gap-1.5 text-neutral-400">
+			<span class="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-100 text-[11px] font-bold">3</span>
+			<span class="hidden sm:inline">Pay</span>
+		</li>
+		<li class="h-px w-4 flex-1 bg-neutral-200 sm:w-8 sm:flex-none" aria-hidden="true"></li>
+		<li class="flex items-center gap-1.5 text-neutral-400">
+			<span class="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-100 text-[11px] font-bold">4</span>
+			<span class="hidden sm:inline">Done</span>
+		</li>
+	</ol>
+
 	{#if cart.items.length === 0}
 		<div class="mt-10 flex flex-col items-center gap-4 rounded-2xl border border-neutral-200 bg-white px-6 py-16 text-center">
 			<p class="text-lg font-medium text-neutral-700">{t('cart.empty')}</p>
@@ -421,9 +445,12 @@ shippingAddress: {
 					</div>
 				</section>
 
-				<section class="rounded-2xl border border-neutral-200 bg-white p-6">
-					<h2 class="text-lg font-semibold text-neutral-900">{t('checkout.address')}</h2>
-					{#if account.signedIn && (savedAddresses.length > 0 || addressesLoading)}
+			<section class="rounded-2xl border border-neutral-200 bg-white p-6">
+				<h2 class="text-lg font-semibold text-neutral-900">{t('checkout.address')}</h2>
+				<!-- No external address-autocomplete provider is wired (no third-party
+					API by design); signed-in shoppers get the saved-address selector
+					below, which covers the same one-click-fill need. -->
+				{#if account.signedIn && (savedAddresses.length > 0 || addressesLoading)}
 						<div class="mt-4">
 							<label class="text-sm font-medium text-neutral-700" for="savedAddress">{t('accountAddrs.title')}</label>
 							<select
@@ -679,7 +706,11 @@ shippingAddress: {
 							{#if summary}
 								{summary.shippingTotal === 0 ? t('order.free') : money(summary.shippingTotal, store.merchant.currency)}
 								{#if summary.shipping.etaDays != null}
-									<span class="text-xs text-neutral-400"> · {summary.shipping.etaDays}d</span>
+									<span class="block text-xs font-normal text-neutral-500">
+										{summary.shipping.method} · Est. delivery in {summary.shipping.etaDays} {summary.shipping.etaDays === 1 ? 'day' : 'days'}
+									</span>
+								{:else if summary.shipping.method}
+									<span class="block text-xs font-normal text-neutral-500">{summary.shipping.method}</span>
 								{/if}
 							{:else}
 								<span class="text-neutral-400">{t('checkout.calculatedAtCheckout')}</span>
@@ -714,15 +745,22 @@ shippingAddress: {
 				>
 					{placing ? t('common.loading') : selectedIsProvider ? t('checkout.payWith', { provider: onlineProviders.find((p) => p.id === paymentMethod)?.label ?? t('checkout.provider') }) : t('checkout.placeOrder')}
 				</button>
-				{#if !selectedIsProvider}
-					<p class="mt-3 text-center text-xs text-neutral-400">
-						{t('checkout.codNote')}
-					</p>
-				{:else}
-					<p class="mt-3 text-center text-xs text-neutral-400">
-						{t('checkout.redirectNote')}
-					</p>
-				{/if}
+			{#if !selectedIsProvider}
+				<p class="mt-3 text-center text-xs text-neutral-400">
+					{t('checkout.codNote')}
+				</p>
+			{:else}
+				<p class="mt-3 text-center text-xs text-neutral-400">
+					{t('checkout.redirectNote')}
+				</p>
+			{/if}
+			<!-- Trust badges: secure-checkout note + accepted methods. -->
+			<div class="mt-4 flex flex-col items-center gap-1.5 rounded-xl bg-neutral-50 px-4 py-3 text-center">
+				<p class="text-xs font-semibold text-neutral-700">🔒 Secure checkout — your details stay protected</p>
+				<p class="text-[11px] text-neutral-500">
+					Accepted: {[...onlineProviders.map((p) => p.label), ...paymentMethods.map((m) => m.label)].filter(Boolean).join(' · ') || '—'}
+				</p>
+			</div>
 			</aside>
 		</div>
 	{/if}

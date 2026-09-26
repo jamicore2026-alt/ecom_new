@@ -28,6 +28,19 @@
 	let saving = $state(false)
 	let loading = $state(true)
 
+	interface ThemeVersion {
+		id: string
+		version: number
+		config: Record<string, unknown>
+		note: string | null
+		createdBy: string | null
+		createdAt: string
+	}
+
+	let themeVersions = $state<ThemeVersion[]>([])
+	let versionsLoading = $state(false)
+	let rollingBack = $state<number | null>(null)
+
 	const canManage = () => session.can('settings.manage')
 
 	function safeStringify(obj: unknown): string {
@@ -74,7 +87,38 @@
 		}
 	}
 
-	onMount(load)
+	onMount(() => {
+		void load()
+		void loadVersions()
+	})
+
+	async function loadVersions() {
+		if (!canManage()) return
+		versionsLoading = true
+		try {
+			const res = await api.get<{ success: boolean; data: { items: ThemeVersion[] } }>('/api/theme/versions')
+			themeVersions = res.data.items
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			versionsLoading = false
+		}
+	}
+
+	async function rollbackTheme(version: number) {
+		if (!confirm(`Restore theme version ${version}? The current theme is snapshotted first, so this can be undone.`)) return
+		rollingBack = version
+		try {
+			await api.post(`/api/theme/rollback/${version}`, {})
+			toast.success(`Theme restored to version ${version}`)
+			await load()
+			await loadVersions()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			rollingBack = null
+		}
+	}
 
 	function resetToDefaults() {
 		primaryColor = DEFAULTS.primaryColor
@@ -111,6 +155,7 @@
 			}
 			await api.put<{ success: boolean }>('/api/theme', body)
 			toast.success('Theme saved')
+			await loadVersions()
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -225,5 +270,38 @@
 			<Button type="submit" loading={saving}>Save</Button>
 		</div>
 	</form>
+
+	<Card title="Version history" headingLevel="h2">
+		{#if versionsLoading}
+			<div class="space-y-2">
+				{#each Array(3) as _}
+					<div class="h-10 animate-pulse rounded bg-surface-container"></div>
+				{/each}
+			</div>
+		{:else if themeVersions.length === 0}
+			<p class="py-4 text-center text-sm text-secondary">No versions yet — saving the theme creates the first snapshot of the previous design.</p>
+		{:else}
+			<p class="mb-3 text-xs text-secondary">Every save snapshots the previous theme. Restoring a version saves it as a new update, so rollback is undoable.</p>
+			<ul class="divide-y divide-outline-variant/60">
+				{#each themeVersions as v (v.id)}
+					{@const cfg = (v.config ?? {}) as Record<string, unknown>}
+					<li class="flex items-center justify-between gap-3 py-2.5">
+						<div class="flex min-w-0 items-center gap-3">
+							<span class="inline-flex shrink-0 items-center rounded-full bg-primary-fixed-dim/30 px-2.5 py-0.5 text-xs font-medium text-on-primary-fixed-variant">v{v.version}</span>
+							<div class="flex items-center gap-1.5">
+								{#each [cfg.primaryColor, cfg.secondaryColor, cfg.accentColor].filter((c) => typeof c === 'string') as c (c)}
+									<span class="h-5 w-5 rounded border border-outline-variant" style="background-color: {c}" title={String(c)}></span>
+								{/each}
+							</div>
+							<div class="min-w-0">
+								<p class="truncate text-xs text-on-surface-variant">{v.note ?? 'Theme snapshot'}</p>
+							</div>
+						</div>
+						<Button size="sm" variant="secondary" onclick={() => rollbackTheme(v.version)} loading={rollingBack === v.version} disabled={rollingBack !== null}>Restore</Button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</Card>
 	{/if}
 </div>

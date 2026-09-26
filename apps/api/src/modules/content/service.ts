@@ -1,6 +1,6 @@
-import { and, desc, eq, lte } from 'drizzle-orm'
+import { and, desc, eq, lte, max } from 'drizzle-orm'
 import type { DB } from '../../database/client'
-import { contentPages } from '../../database/schema'
+import { contentPages, contentVersions } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, notFound } from '../../shared/errors'
 import { createLogger } from '../../shared/logger'
@@ -74,9 +74,10 @@ export class ContentService {
     db: DB,
     merchantId: string,
     id: string,
-    input: { title?: string; slug?: string; content?: string; status?: string; publishedAt?: string | null; metaTitle?: string; metaDescription?: string }
+    input: { title?: string; slug?: string; content?: string; status?: string; publishedAt?: string | null; metaTitle?: string; metaDescription?: string },
+    actorUserId?: string | null
   ) {
-    await this.get(db, merchantId, id)
+    const current = (await this.get(db, merchantId, id)).data as unknown as Record<string, unknown>
     if (input.status && !(STATUSES as readonly string[]).includes(input.status)) {
       throw badRequest('INVALID_STATUS', 'Status must be draft, scheduled, published or archived')
     }
@@ -105,6 +106,24 @@ export class ContentService {
       })
       .where(and(eq(contentPages.id, id), eq(contentPages.merchantId, merchantId)))
       .returning()
+    // Snapshot the pre-update state as a new version (version+1). Best-effort:
+    // a version-write failure must not break the content update itself.
+    try {
+      const [peak] = await db
+        .select({ peak: max(contentVersions.version) })
+        .from(contentVersions)
+        .where(eq(contentVersions.contentId, id))
+      await db.insert(contentVersions).values({
+        merchantId,
+        contentId: id,
+        version: Number(peak?.peak ?? 0) + 1,
+        title: String(current.title ?? ''),
+        content: String(current.content ?? ''),
+        createdBy: actorUserId ?? null
+      })
+    } catch (e) {
+      log.error('content version snapshot failed', { pageId: id, error: e })
+    }
     return ok(row)
   }
 
@@ -138,5 +157,48 @@ export class ContentService {
       .delete(contentPages)
       .where(and(eq(contentPages.id, id), eq(contentPages.merchantId, merchantId)))
     return ok({ deleted: true })
+  }
+
+  /** Version history for a page (ascending version order). */
+  static async listVersions(db: DB, merchantId: string, id: string) {
+    await this.get(db, merchantId, id)
+    const rows = await db
+      .select()
+      .from(contentVersions)
+      .where(and(eq(contentVersions.contentId, id), eq(contentVersions.merchantId, merchantId)))
+      .orderBy(desc(contentVersions.version))
+    return ok({ items: rows })
+  }
+
+  /**
+   * Rollback: restore a historic version's title/content as a NEW page update
+   * (which itself snapshots the pre-rollback state first, so rollback is
+   * undoable). Slug/status/meta are intentionally left untouched.
+   */
+  static async rollback(
+    db: DB,
+    merchantId: string,
+    id: string,
+    version: number,
+    actorUserId?: string | null
+  ) {
+    const [snapshot] = await db
+      .select()
+      .from(contentVersions)
+      .where(
+        and(
+          eq(contentVersions.contentId, id),
+          eq(contentVersions.merchantId, merchantId),
+          eq(contentVersions.version, version)
+        )
+      )
+    if (!snapshot) throw notFound('VERSION_NOT_FOUND', 'Content version not found')
+    return this.update(
+      db,
+      merchantId,
+      id,
+      { title: snapshot.title, content: snapshot.content ?? '' },
+      actorUserId
+    )
   }
 }

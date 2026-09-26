@@ -86,7 +86,16 @@
 	async function exportCsv() {
 		exporting = true
 		try {
-			await api.download('/api/products/export', `products-${new Date().toISOString().slice(0, 10)}.csv`)
+			// Same filters as the list view — the export is a dump of the current view.
+			const qs = new URLSearchParams()
+			if (search) qs.set('search', search)
+			if (status) qs.set('status', status)
+			if (categoryId) qs.set('categoryId', categoryId)
+			if (minPrice) qs.set('minPrice', minPrice)
+			if (maxPrice) qs.set('maxPrice', maxPrice)
+			if (lowStockOnly) qs.set('lowStock', 'true')
+			const suffix = qs.toString() ? `?${qs.toString()}` : ''
+			await api.download(`/api/products/export${suffix}`, `products-${new Date().toISOString().slice(0, 10)}.csv`)
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
