@@ -47,8 +47,40 @@ describe('roles authoritative via users.role_id (P2-3)', () => {
 
   beforeAll(async () => {
     admin = await loginAs('admin@jamicore.com')
+    // Never depend on seeded order state (other suites mutate it): fall back
+    // to placing a fresh pending order when none is listed.
     const list = await call('/api/orders', { headers: admin })
-    orderId = list.body.data.items.find((o: { status: string }) => o.status === 'pending').id
+    const pending = list.body.data.items.find((o: { status: string }) => o.status === 'pending')
+    if (pending) {
+      orderId = pending.id
+    } else {
+      const products = await call('/api/store/jamicore-store/products?limit=100')
+      const product = products.body.data.items.find((i: any) => (i.stock ?? 0) >= 5)
+      expect(product).toBeDefined()
+      const detail = await call(`/api/store/jamicore-store/products/${product.slug}`)
+      const variant = detail.body.data.variants.find((v: any) => (v.inventory ?? 0) >= 1) ?? detail.body.data.variants[0]
+      const placed = await call('/api/store/jamicore-store/checkout', {
+        method: 'POST',
+        headers: jh,
+        body: JSON.stringify({
+          items: [{ productId: product.id, variantId: variant.id, quantity: 1 }],
+          email: `role-spec-${stamp}@example.com`,
+          shippingAddress: {
+            name: 'Role Spec',
+            line1: '1 Test St',
+            line2: 'Apt 1',
+            city: 'Kuwait City',
+            state: 'KW',
+            postalCode: '12345',
+            country: 'KW',
+            phone: '+96500000000'
+          },
+          paymentMethod: 'cod'
+        })
+      })
+      expect(placed.status).toBe(200)
+      orderId = placed.body.data.id
+    }
     specRole.id = await createSpecRole()
   })
 
@@ -79,7 +111,7 @@ describe('roles authoritative via users.role_id (P2-3)', () => {
       body: JSON.stringify({
         name: 'Role Staff',
         email,
-        password: 'password123',
+        password: 'Staffpass-1234',
         role: 'staff',
         roleId,
         permissions
@@ -87,7 +119,7 @@ describe('roles authoritative via users.role_id (P2-3)', () => {
     })
     expect(res.status).toBe(200)
     createdEmails.push(email)
-    return { email, auth: await loginAs(email) }
+    return { email, auth: await loginAs(email, 'Staffpass-1234') }
   }
 
   const patchOrderStatus = (auth: Record<string, string>) =>
@@ -163,7 +195,7 @@ describe('roles authoritative via users.role_id (P2-3)', () => {
       body: JSON.stringify({
         name: 'Bogus Role',
         email: `bogus-role-${stamp}@jamicore.com`,
-        password: 'password123',
+        password: 'Staffpass-1234',
         role: 'staff',
         roleId: 'nonexistent-role-id' 
       })
@@ -185,7 +217,7 @@ describe('roles authoritative via users.role_id (P2-3)', () => {
       body: JSON.stringify({
         name: 'Me Role',
         email,
-        password: 'password123',
+        password: 'Staffpass-1234',
         role: 'staff',
         roleId: meRoleId,
         permissions: ['settings.read']
@@ -193,7 +225,7 @@ describe('roles authoritative via users.role_id (P2-3)', () => {
     })
     createdEmails.push(email)
 
-    const me = await call('/api/auth/me', { headers: await loginAs(email) })
+    const me = await call('/api/auth/me', { headers: await loginAs(email, 'Staffpass-1234') })
     expect(me.status).toBe(200)
     expect(me.body.data.user.roleId).toBe(meRoleId)
     expect(me.body.data.user.effectivePermissions).toContain('orders.read')

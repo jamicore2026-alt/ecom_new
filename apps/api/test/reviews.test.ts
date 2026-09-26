@@ -66,7 +66,7 @@ describe('Product reviews', () => {
           '/api/store/jamicore-store/auth/register',
           json({
             email,
-            password: 'sup3rsecret',
+            password: 'Sup3rsecret99',
             firstName: email === PLAIN ? 'Plain' : 'Rev',
             lastName: 'Shopper',
             // Guest accounts require order-number proof to attach credentials.
@@ -75,8 +75,8 @@ describe('Product reviews', () => {
         )
         expect(reg.status).toBe(200)
       }
-      const rLogin = await call('/api/store/jamicore-store/auth/login', json({ email: REVIEWER, password: 'sup3rsecret' }))
-      const pLogin = await call('/api/store/jamicore-store/auth/login', json({ email: PLAIN, password: 'sup3rsecret' }))
+      const rLogin = await call('/api/store/jamicore-store/auth/login', json({ email: REVIEWER, password: 'Sup3rsecret99' }))
+      const pLogin = await call('/api/store/jamicore-store/auth/login', json({ email: PLAIN, password: 'Sup3rsecret99' }))
       reviewerToken = rLogin.body.data.token
       plainToken = pLogin.body.data.token
     },

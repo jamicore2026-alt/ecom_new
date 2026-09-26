@@ -66,7 +66,7 @@ describe('restaurant-era outlet reads default-deny (delivery + menu)', () => {
       body: JSON.stringify({
         name: 'DL Scope',
         email,
-        password: 'scope-pass-123456',
+        password: 'Scope-pass-123456',
         role: 'staff',
         permissions: ['orders.read', 'orders.create', 'delivery.read', 'delivery.manage', 'delivery.assign', 'drivers.read', 'drivers.manage', 'menu.read', 'menu.manage']
       })
@@ -79,7 +79,7 @@ describe('restaurant-era outlet reads default-deny (delivery + menu)', () => {
       body: JSON.stringify({ outletIds: [branchOutletId] })
     })
     expect(assigned.status).toBe(200)
-    scopeB = await loginAs(email, 'scope-pass-123456')
+    scopeB = await loginAs(email, 'Scope-pass-123456')
 
     const menu = await call('/api/menu', { headers: admin })
     menuItemId = menu.body.data.items.find((i: { available: boolean; status: string }) => i.available && i.status === 'active').id

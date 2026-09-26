@@ -28,7 +28,24 @@ describe('Kitchen gaps: hold/fire, metrics, unavailable exclusion', () => {
     const outlets = await call('/api/outlets', { headers: admin })
     resOutletId = outlets.body.data.find((o: { code: string }) => o.code === 'MAIN').id
     const menu = await call('/api/menu', { headers: admin })
-    menuItemId = menu.body.data.items.find((i: { available: boolean; status: string }) => i.available && i.status === 'active').id
+    const existing = menu.body.data.items.find((i: { available: boolean; status: string }) => i.available && i.status === 'active')
+    if (existing) {
+      menuItemId = existing.id
+    } else {
+      // Other suites may have deactivated every seeded item: create our own.
+      const stamp = Date.now()
+      const prod = await call('/api/products', {
+        method: 'POST', headers: { ...admin, ...jsonHeaders },
+        body: JSON.stringify({ sku: `KG-${stamp}`, name: 'Kitchen Gap Item', price: 9, status: 'active' })
+      })
+      expect(prod.status).toBe(200)
+      const created = await call('/api/menu', {
+        method: 'POST', headers: { ...admin, ...jsonHeaders },
+        body: JSON.stringify({ productId: prod.body.data.id })
+      })
+      expect(created.status).toBe(200)
+      menuItemId = created.body.data.id
+    }
   }, 20000)
 
   it('hold sets fireAt, KDS hides the held line, fire-now clears it', async () => {

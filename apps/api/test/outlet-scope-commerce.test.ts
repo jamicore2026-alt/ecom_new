@@ -86,7 +86,7 @@ describe('commerce order-derived outlet isolation (invoices/fulfillments/analyti
       body: JSON.stringify({
         name: 'Outlet L Staff',
         email: 'outlet-commerce-l@jamicore.com',
-        password: 'scope-pass-123456',
+        password: 'Scope-pass-123456',
         role: 'staff',
         permissions: ['orders.read', 'orders.create', 'orders.update', 'orders.cancel', 'reports.read']
       })
@@ -101,7 +101,7 @@ describe('commerce order-derived outlet isolation (invoices/fulfillments/analyti
     })
     expect(assigned.status).toBe(200)
 
-    scopeB = await loginAs('outlet-commerce-l@jamicore.com', 'scope-pass-123456')
+    scopeB = await loginAs('outlet-commerce-l@jamicore.com', 'Scope-pass-123456')
 
     const menu = await call('/api/menu', { headers: admin })
     menuItemId = menu.body.data.items.find((i: { available: boolean; status: string }) => i.available && i.status === 'active').id
@@ -386,20 +386,20 @@ describe('commerce order-derived outlet isolation (invoices/fulfillments/analyti
     const mStaff = await call('/api/settings/staff', {
       method: 'POST',
       headers: { ...admin, ...jh },
-      body: JSON.stringify({ name: 'MERCHANT Scope', email: mEmail, password: 'scope-pass-123456', role: 'staff', roleId: merchantRoleId })
+      body: JSON.stringify({ name: 'MERCHANT Scope', email: mEmail, password: 'Scope-pass-123456', role: 'staff', roleId: merchantRoleId })
     })
     expect(mStaff.status).toBe(200)
     // no user_outlets assignment — MERCHANT scope must still be merchant-wide
-    const mAuth = await loginAs(mEmail, 'scope-pass-123456')
+    const mAuth = await loginAs(mEmail, 'Scope-pass-123456')
 
     const oEmail = `scope-o-${stamp}@jamicore.com`
     const oStaff = await call('/api/settings/staff', {
       method: 'POST',
       headers: { ...admin, ...jh },
-      body: JSON.stringify({ name: 'OUTLET Scope', email: oEmail, password: 'scope-pass-123456', role: 'staff', roleId: outletRoleId })
+      body: JSON.stringify({ name: 'OUTLET Scope', email: oEmail, password: 'Scope-pass-123456', role: 'staff', roleId: outletRoleId })
     })
     expect(oStaff.status).toBe(200)
-    const oAuth = await loginAs(oEmail, 'scope-pass-123456')
+    const oAuth = await loginAs(oEmail, 'Scope-pass-123456')
 
     const mList = await call('/api/orders', { headers: mAuth })
     expect(mList.status).toBe(200)
