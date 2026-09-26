@@ -831,6 +831,8 @@ export class StorefrontService {
         rating: reviews.rating,
         title: reviews.title,
         body: reviews.body,
+        images: reviews.images,
+        helpfulCount: reviews.helpfulCount,
         createdAt: reviews.createdAt
       })
       .from(reviews)
@@ -865,6 +867,8 @@ export class StorefrontService {
         rating: r.rating,
         title: r.title,
         body: r.body,
+        images: r.images ?? [],
+        helpfulCount: r.helpfulCount ?? 0,
         createdAt: r.createdAt,
         verifiedPurchase: r.customerId ? verifiedIds.has(r.customerId) : false
       })),
@@ -1111,30 +1115,11 @@ export class StorefrontService {
       freeShipping: boolean
     } | null = null
     let discountTotal = 0
-    if (body.couponCode?.trim()) {
-      // `db` here is the tenant connection threaded through buildSummary — the
-      // discounted rows (coupons) are merchant-scoped and must not fall back
-      // to the BYPASSRLS admin singleton.
-      const { data } = await DiscountsService.validateCoupon(db, 
-        store.merchant.id,
-        body.couponCode,
-        subtotal,
-        currency
-      )
-      coupon = {
-        code: body.couponCode.trim().toUpperCase(),
-        type: data.coupon.type,
-        value: number(data.coupon.value),
-        discount: data.discount,
-        freeShipping: data.freeShipping
-      }
-      discountTotal = roundForCurrency(data.discount, currency)
-    }
 
     // Server-side promotion resolution (P0-05) — the best active promotion is
     // applied automatically, before coupons, and never trusts client totals.
     // (`db` = the tenant connection threaded through buildSummary.)
-    const promo = await DiscountsService.resolvePromotion(db, 
+    const promo = await DiscountsService.resolvePromotion(db,
       store.merchant.id,
       currency,
       items.map((l) => ({
@@ -1147,6 +1132,46 @@ export class StorefrontService {
     let promotionDiscount = 0
     if (promo && promo.discount > 0) {
       promotionDiscount = promo.discount
+    }
+
+    if (body.couponCode?.trim()) {
+      // `db` here is the tenant connection threaded through buildSummary — the
+      // discounted rows (coupons) are merchant-scoped and must not fall back
+      // to the BYPASSRLS admin singleton.
+      const { data } = await DiscountsService.validateCoupon(db,
+        store.merchant.id,
+        body.couponCode,
+        subtotal,
+        currency,
+        {
+          customerEmail: body.email?.trim() || null,
+          lines: items.map((l) => ({
+            productId: l.productId,
+            categoryId: l.categoryId,
+            price: l.price,
+            quantity: l.quantity
+          })),
+          promotionDiscount
+        }
+      )
+      // stackable=false coupons cannot combine with a promotion — keep the
+      // winning side (higher discount; ties prefer a positive coupon priority).
+      if (data.stackWinner === 'promotion') {
+        promotionDiscount = promo?.discount ?? 0
+      } else {
+        coupon = {
+          code: body.couponCode.trim().toUpperCase(),
+          type: data.coupon.type,
+          value: number(data.coupon.value),
+          discount: data.discount,
+          freeShipping: data.freeShipping
+        }
+        discountTotal = roundForCurrency(data.discount, currency)
+        if (data.stackWinner === 'coupon') promotionDiscount = 0
+      }
+    }
+
+    if (promotionDiscount > 0) {
       discountTotal = roundForCurrency(
         Math.min(promotionDiscount + discountTotal, subtotal), // combined discounts can never invert the cart
         currency
@@ -1206,13 +1231,16 @@ export class StorefrontService {
       }
     }
 
+    // A non-stackable coupon winner suppresses the promotion entirely —
+    // the promotion must neither discount nor consume quota for this order.
+    const promotionWon = promotionDiscount > 0 && promo
     return {
       store,
       items,
       subtotal,
       discountTotal,
       promotionDiscount,
-      promotion: promo ? { id: promo.promotion.id, name: promo.promotion.name } : null,
+      promotion: promotionWon ? { id: promo.promotion.id, name: promo.promotion.name } : null,
       shipping,
       taxTotal,
       total,
@@ -1519,6 +1547,19 @@ export class StorefrontService {
           .returning({ id: coupons.id })
         if (claimed.length === 0) {
           throw badRequest('COUPON_USAGE_LIMIT', 'Coupon usage limit reached')
+        }
+        // Per-customer redemption ledger (enforces perCustomerLimit on the next
+        // validate). Best-effort: never fails the order when the insert races.
+        try {
+          await DiscountsService.recordRedemption(tx, {
+            merchantId: store.merchant.id,
+            couponId: claimed[0].id,
+            customerId,
+            customerEmail: email || null,
+            orderId: order.id
+          })
+        } catch (e) {
+          log.error('coupon redemption ledger write failed', e)
         }
       }
 

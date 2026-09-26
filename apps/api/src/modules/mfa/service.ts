@@ -12,6 +12,16 @@ export const MFA_TOKEN_TTL_SECONDS = 5 * 60
 export const BACKUP_CODE_COUNT = 10
 export const TOTP_WINDOW = 1
 
+/**
+ * Session lifetime bounds (task 5):
+ *  - ABSOLUTE: a refresh chain dies 30d after the session row was created,
+ *    no matter how active it is (bounds token-issued tracking).
+ *  - IDLE: a session unseen for 7d (== refresh TTL) is dead; the next
+ *    refresh forces a fresh login.
+ */
+export const SESSION_ABSOLUTE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+export const SESSION_IDLE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
 const b64url = (buf: Buffer) =>
   buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 const unb64url = (s: string) =>
@@ -263,13 +273,24 @@ export const recordSession = async (input: SessionRecord) => {
   return jtiHash
 }
 
-/** Refresh must reject revoked or expired sessions before rotating tokens. */
+/** Refresh must reject revoked, expired, absolutely-aged-out, or idle sessions
+ *  before rotating tokens. Lifetime breaches revoke the row so the inventory
+ *  reflects why the chain died. */
 export const assertSessionUsable = async (jti: string) => {
   const jtiHash = hashToken(jti)
   const [row] = await db.select().from(sessions).where(eq(sessions.jtiHash, jtiHash))
   if (!row) return { row: null, jtiHash }
-  if (row.revokedAt || row.expiresAt.getTime() <= Date.now()) {
+  const now = Date.now()
+  if (row.revokedAt || row.expiresAt.getTime() <= now) {
     throw unauthorized('Session has been revoked')
+  }
+  if (row.createdAt.getTime() + SESSION_ABSOLUTE_TTL_MS <= now) {
+    await revokeSessionRow(jtiHash, row.expiresAt, row.userId)
+    throw unauthorized('Session has expired — please sign in again')
+  }
+  if (row.lastSeenAt.getTime() + SESSION_IDLE_TTL_MS <= now) {
+    await revokeSessionRow(jtiHash, row.expiresAt, row.userId)
+    throw unauthorized('Session timed out from inactivity — please sign in again')
   }
   return { row, jtiHash }
 }

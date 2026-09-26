@@ -1,8 +1,9 @@
-import { and, eq, gte, inArray, lte } from 'drizzle-orm'
+import { and, eq, gte, inArray, lte, ne } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import { merchants, orderItems, orders, products, refunds } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { PAID_PAYMENT_STATUSES } from '../../shared/revenue'
+import { branchOrderCondition } from '../../shared/outlet-scope'
 import { roundForCurrency } from '../../shared/currency'
 
 export class ProfitService {
@@ -10,12 +11,13 @@ export class ProfitService {
    *  in a range. Partially/fully refunded orders stay in revenue and are netted
    *  by their completed refunds (a fully refunded order nets to zero instead of
    *  vanishing from the report). COGS follows the original items. */
-  static async report(db: DB, merchantId: string, range: { from?: Date; to?: Date }) {
+  static async report(db: DB, merchantId: string, range: { from?: Date; to?: Date }, branchIds: string[] | null = null) {
     const [merchant] = await db
       .select({ currency: merchants.currency })
       .from(merchants)
       .where(eq(merchants.id, merchantId))
     const currency = merchant?.currency ?? 'USD'
+    const scope = branchOrderCondition(branchIds)
 
     const conditions: any[] = [
       eq(orders.merchantId, merchantId),
@@ -23,6 +25,7 @@ export class ProfitService {
     ]
     if (range.from) conditions.push(gte(orders.createdAt, range.from))
     if (range.to) conditions.push(lte(orders.createdAt, range.to))
+    if (scope) conditions.push(scope)
 
     const ords = await db
       .select({ id: orders.id })
@@ -45,11 +48,13 @@ export class ProfitService {
       const refundRows = await db
         .select({ orderId: refunds.orderId, amount: refunds.amount })
         .from(refunds)
+        .innerJoin(orders, eq(refunds.orderId, orders.id))
         .where(
           and(
             eq(refunds.merchantId, merchantId),
             eq(refunds.status, 'completed'),
-            inArray(refunds.orderId, orderIds)
+            inArray(refunds.orderId, orderIds),
+            ...(scope ? [scope] : [])
           )
         )
       for (const r of refundRows) revenue -= Number(r.amount)

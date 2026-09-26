@@ -8,6 +8,7 @@ import { resolveMerchantContext } from '../../shared/merchant-context'
 import { isOperational } from '../../shared/merchant-lifecycle'
 import { normalizePermissions } from '../../shared/types'
 import { loginAttempts } from './login-attempts'
+import { AuditService } from '../audit-logs/service'
 import type { Merchant, Role, User } from '../../database/schema'
 
 /** Burn a bcrypt round for unknown emails so timing doesn't leak account existence. */
@@ -48,6 +49,28 @@ const publicMerchant = (merchant: Merchant) => ({
   status: merchant.status
 })
 
+/**
+ * Best-effort audit for failed logins and lockouts. Needs a merchant to
+ * attribute the row — unknown-email attempts without a merchantSlug carry no
+ * merchant context, so those are deliberately skipped (documented; the
+ * rate-limiter still counts them).
+ */
+const auditFailedLogin = async (
+  email: string,
+  merchantId: string | undefined,
+  action: 'auth.login.failed' | 'auth.login.locked'
+): Promise<void> => {
+  if (!merchantId) return
+  await AuditService.log(db, {
+    merchantId,
+    actorUserId: null,
+    actorName: email,
+    action,
+    entityType: 'auth',
+    metadata: { email }
+  })
+}
+
 export class AuthService {
   static async login(input: { email: string; password: string; merchantSlug?: string }) {
     const email = input.email.trim().toLowerCase()
@@ -57,6 +80,7 @@ export class AuthService {
     // the locked path so the lock itself does not become an account oracle.
     if (await loginAttempts.get(email)) {
       await alwaysCompare(input.password)
+      await auditFailedLogin(email, input.merchantSlug ? (await this.merchantIdForSlug(input.merchantSlug)) : undefined, 'auth.login.locked')
       throw unauthorized('Invalid email or password')
     }
 
@@ -82,6 +106,7 @@ export class AuthService {
     if (matches.length === 0) {
       await alwaysCompare(input.password)
       await loginAttempts.increment(email)
+      await auditFailedLogin(email, undefined, 'auth.login.failed')
       throw unauthorized('Invalid email or password')
     }
 
@@ -108,7 +133,13 @@ export class AuthService {
     }
 
     await loginAttempts.increment(email)
+    await auditFailedLogin(email, matches[0]?.merchantId, 'auth.login.failed')
     throw unauthorized('Invalid email or password')
+  }
+
+  private static async merchantIdForSlug(slug: string): Promise<string | undefined> {
+    const [merchant] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, slug))
+    return merchant?.id
   }
 
   private static async validateLogin(
@@ -123,6 +154,7 @@ export class AuthService {
 
     if (!user || !passwordMatches) {
       await loginAttempts.increment(email)
+      await auditFailedLogin(email, merchant?.id ?? user?.merchantId, 'auth.login.failed')
       throw unauthorized('Invalid email or password')
     }
     if (user.status !== 'active') {

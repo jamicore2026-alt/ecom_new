@@ -75,6 +75,52 @@
 		}
 	}
 
+	// bulk selection
+	let selected = $state<Set<string>>(new Set())
+	let bulkBusy = $state(false)
+
+	function toggleSelect(id: string) {
+		const next = new Set(selected)
+		if (next.has(id)) next.delete(id)
+		else next.add(id)
+		selected = next
+	}
+
+	async function bulkModerate(next: 'approved' | 'rejected' | 'pending') {
+		if (selected.size === 0) return
+		bulkBusy = true
+		try {
+			await api.post('/api/reviews/bulk-moderate', { ids: [...selected], status: next })
+			toast.success(`${selected.size} review(s) → ${next}`)
+			selected = new Set()
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			bulkBusy = false
+		}
+	}
+
+	// merchant replies (thread doubles as Q&A)
+	let replyDrafts = $state<Record<string, string>>({})
+	let replyBusy = $state<string | null>(null)
+
+	async function sendReply(review: Review) {
+		const body = (replyDrafts[review.id] ?? '').trim()
+		if (!body) return
+		replyBusy = review.id
+		try {
+			await api.post(`/api/reviews/${review.id}/replies`, { body })
+			toast.success('Reply posted')
+			replyDrafts = { ...replyDrafts, [review.id]: '' }
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			replyBusy = null
+		}
+	}
+
 	const stars = (value: number) => '★★★★★'.slice(0, value) + '☆☆☆☆☆'.slice(0, 5 - value)
 </script>
 
@@ -105,12 +151,18 @@
 	<Card padded={false}>
 		<div class="flex flex-wrap items-center gap-2 px-5 py-3">
 			<span class="text-sm text-secondary">Filter by rating</span>
-			<select class="field w-auto" bind:value={rating} onchange={applyFilters}>
+			<select class="field w-auto" bind:value={rating} onchange={applyFilters} aria-label="Filter by rating">
 				<option value="">All ratings</option>
 				{#each [5, 4, 3, 2, 1] as r (r)}
 					<option value={String(r)}>{r} star{r === 1 ? '' : 's'}</option>
 				{/each}
 			</select>
+			{#if selected.size > 0}
+				<span class="ml-2 text-sm text-secondary">{selected.size} selected</span>
+				<Button variant="primary" size="sm" loading={bulkBusy} onclick={() => bulkModerate('approved')}>Approve</Button>
+				<Button variant="secondary" size="sm" loading={bulkBusy} onclick={() => bulkModerate('rejected')}>Reject</Button>
+				<Button variant="ghost" size="sm" loading={bulkBusy} onclick={() => bulkModerate('pending')}>Reset</Button>
+			{/if}
 		</div>
 	</Card>
 
@@ -131,11 +183,15 @@
 				{#each items as review (review.id)}
 					<li class="px-5 py-4 transition-colors hover:bg-surface-container-low">
 						<div class="flex flex-wrap items-start gap-x-6 gap-y-2">
+							<input type="checkbox" class="field-check mt-1" checked={selected.has(review.id)} onchange={() => toggleSelect(review.id)} aria-label="Select review" />
 							<div class="min-w-0 flex-1">
 								<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 									<span class="text-sm font-semibold text-warning" aria-hidden="true">{stars(review.rating)}</span>
 									<span class="text-xs font-medium uppercase tracking-wide text-outline">{review.rating}/5</span>
 									<Badge label={review.status} />
+									{#if (review.helpfulCount ?? 0) > 0}
+										<span class="text-xs text-secondary">👍 {review.helpfulCount}</span>
+									{/if}
 									<span class="text-xs text-secondary">{dateTime(review.createdAt)}</span>
 								</div>
 								<p class="mt-1.5 text-sm font-medium text-on-surface">
@@ -144,6 +200,28 @@
 								{#if review.body}
 									<p class="mt-1 max-w-3xl whitespace-pre-line text-sm text-on-surface-variant">{review.body}</p>
 								{/if}
+								{#if review.images?.length}
+									<div class="mt-2 flex flex-wrap gap-2">
+										{#each review.images as img (img)}
+											<a href={img} target="_blank" rel="noreferrer"><img src={img} alt="" class="h-16 w-16 rounded border border-outline-variant object-cover" loading="lazy" /></a>
+										{/each}
+									</div>
+								{/if}
+								{#if review.replies?.length}
+									<ul class="mt-2 max-w-3xl space-y-1.5 rounded border border-outline-variant bg-surface-container-low p-2.5">
+										{#each review.replies as reply (reply.id)}
+											<li class="text-sm">
+												<p class="font-medium text-primary">Merchant reply</p>
+												<p class="whitespace-pre-line text-on-surface-variant">{reply.body}</p>
+												<p class="mt-0.5 text-xs text-secondary">{dateTime(reply.createdAt)}</p>
+											</li>
+										{/each}
+									</ul>
+								{/if}
+								<div class="mt-2 flex max-w-3xl items-center gap-2">
+									<input class="field" placeholder="Write a merchant reply (also answers Q&A)…" bind:value={replyDrafts[review.id]} aria-label="Merchant reply" />
+									<Button variant="secondary" size="sm" loading={replyBusy === review.id} onclick={() => sendReply(review)}>Reply</Button>
+								</div>
 							</div>
 							<div class="w-full sm:w-52">
 								<a href="/products/{review.productId}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">

@@ -10,12 +10,13 @@
 	import { currency, dateTime, number } from '$lib/format'
 	import type { Segment, SegmentDefinition } from '$lib/types'
 
-	type Field = 'minSpent' | 'minOrders'
+	type Field = 'minSpent' | 'minOrders' | 'recencyDays' | 'tags'
 	type Operator = 'gt' | 'gte'
 
 	let segments = $state<Segment[]>([])
 	let loading = $state(true)
 	let saving = $state(false)
+	let refreshing = $state<string | null>(null)
 
 	let showModal = $state(false)
 	let editing = $state<Segment | null>(null)
@@ -42,10 +43,16 @@
 	function definitionFromRules(): SegmentDefinition {
 		const def: SegmentDefinition = {}
 		for (const r of rules) {
+			if (r.field === 'tags') {
+				const tags = r.value.split(',').map((s) => s.trim()).filter(Boolean)
+				if (tags.length) def.tags = tags
+				continue
+			}
 			const v = Number(r.value)
 			if (!Number.isFinite(v)) continue
 			if (r.field === 'minSpent') def.minSpent = Math.round(v * 100) / 100
-			else def.minOrders = Math.round(v)
+			else if (r.field === 'minOrders') def.minOrders = Math.round(v)
+			else if (r.field === 'recencyDays') def.recencyDays = Math.max(1, Math.round(v))
 		}
 		return def
 	}
@@ -78,6 +85,8 @@
 		rules = []
 		if (s.definition.minSpent != null) rules.push({ field: 'minSpent', op: 'gte', value: String(s.definition.minSpent) })
 		if (s.definition.minOrders != null) rules.push({ field: 'minOrders', op: 'gte', value: String(s.definition.minOrders) })
+		if (s.definition.recencyDays != null) rules.push({ field: 'recencyDays', op: 'gte', value: String(s.definition.recencyDays) })
+		if (s.definition.tags?.length) rules.push({ field: 'tags', op: 'gte', value: s.definition.tags.join(', ') })
 		if (rules.length === 0) rules.push({ field: 'minSpent', op: 'gte', value: '' })
 		previewCount = s.customerCount
 		showModal = true
@@ -118,10 +127,27 @@
 		}
 	}
 
+	async function refresh(s: Segment) {
+		refreshing = s.id
+		try {
+			const res = await api.post<{ success: boolean; data: { segments: Array<{ id: string; customerCount: number }> } }>(`/api/segments/${s.id}/refresh`, {})
+			const row = res.data.segments.find((r) => r.id === s.id)
+			if (row) s.customerCount = row.customerCount
+			toast.success(`Refreshed: ${row?.customerCount ?? s.customerCount} members`)
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			refreshing = null
+		}
+	}
+
 	function ruleSummary(s: Segment) {
 		const parts: string[] = []
 		if (s.definition.minSpent != null) parts.push(`spent ≥ ${currency(s.definition.minSpent)}`)
 		if (s.definition.minOrders != null) parts.push(`${s.definition.minOrders}+ orders`)
+		if (s.definition.recencyDays != null) parts.push(`active ≤ ${s.definition.recencyDays}d ago`)
+		if (s.definition.tags?.length) parts.push(`tags: ${s.definition.tags.join(', ')}`)
 		return parts.length ? parts.join(' · ') : 'No conditions'
 	}
 </script>
@@ -165,6 +191,7 @@
 						</div>
 						{#if canWrite()}
 							<div class="flex shrink-0 items-center gap-1">
+								<button class="rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => refresh(s)} aria-label="Refresh member count" disabled={refreshing === s.id}><Icon name="refresh" size="text-[18px]" /></button>
 								<button class="rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => openEdit(s)} aria-label="Edit segment"><Icon name="edit" size="text-[18px]" /></button>
 								<button class="rounded p-1.5 text-secondary hover:bg-error/10 hover:text-error" onclick={() => remove(s)} aria-label="Delete segment"><Icon name="delete" size="text-[18px]" /></button>
 							</div>
@@ -193,14 +220,20 @@
 				<div class="space-y-2">
 					{#each rules as r, i (i)}
 						<div class="flex flex-wrap items-center gap-2 rounded border border-outline-variant bg-surface-container-lowest p-3">
-							<select class="field w-auto" bind:value={rules[i].field}>
+							<select class="field w-auto" bind:value={rules[i].field} aria-label="Condition field">
 								<option value="minSpent">Total spent</option>
 								<option value="minOrders">Order count</option>
+								<option value="recencyDays">Last order within (days)</option>
+								<option value="tags">Has tag(s)</option>
 							</select>
-							<select class="field w-auto" bind:value={rules[i].op}>
-								<option value="gte">is at least</option>
-							</select>
-							<input class="field w-28" bind:value={rules[i].value} placeholder={rules[i].field === 'minSpent' ? '500.00' : '3'} type="number" step={rules[i].field === 'minSpent' ? '0.01' : '1'} min="0" />
+							{#if rules[i].field === 'tags'}
+								<input class="field min-w-40 flex-1" bind:value={rules[i].value} placeholder="VIP, wholesale" aria-label="Tags (comma-separated)" />
+							{:else}
+								<select class="field w-auto" bind:value={rules[i].op} aria-label="Condition operator">
+									<option value="gte">is at least</option>
+								</select>
+								<input class="field w-28" bind:value={rules[i].value} placeholder={rules[i].field === 'minSpent' ? '500.00' : rules[i].field === 'recencyDays' ? '30' : '3'} type="number" step={rules[i].field === 'minSpent' ? '0.01' : '1'} min="0" aria-label="Condition value" />
+							{/if}
 							<button class="ml-auto rounded p-1.5 text-secondary hover:bg-error/10 hover:text-error" onclick={() => { rules = rules.filter((_, j) => j !== i) }} aria-label="Remove condition"><Icon name="close" size="text-[18px]" /></button>
 						</div>
 					{/each}

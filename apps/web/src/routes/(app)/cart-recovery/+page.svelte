@@ -4,19 +4,39 @@
 	import { toast } from '$lib/toast.svelte'
 	import Card from '$lib/components/Card.svelte'
 	import Badge from '$lib/components/Badge.svelte'
+	import Button from '$lib/components/Button.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import Modal from '$lib/components/Modal.svelte'
-	import { dateTime, dateTimeFull } from '$lib/format'
+	import { currency, dateTime, dateTimeFull, number } from '$lib/format'
 	import type { CustomerDetail } from '$lib/types'
+
+	interface CartItemLine {
+		name: string
+		price: number
+		quantity: number
+	}
 
 	interface CartRow {
 		id: string
 		customerId: string | null
 		itemCount: number
+		quantity?: number
+		subtotal?: number
+		items?: CartItemLine[]
 		status: string
 		abandonedAt: string | null
+		recoverySentAt?: string | null
+		recoveredOrderId?: string | null
 		lastActivityAt: string
 		createdAt: string
+	}
+
+	interface RecoveryReport {
+		recoveredOrders: number
+		recoveredRevenue: number
+		abandonedCarts: number
+		emailedCarts: number
+		conversionRate: number
 	}
 
 	const CART_LIMIT = 50
@@ -27,6 +47,8 @@
 	let loading = $state(true)
 	let customerById = $state<Record<string, CustomerDetail | null>>({})
 	let selected = $state<CartRow | null>(null)
+	let report = $state<RecoveryReport | null>(null)
+	let sweeping = $state(false)
 
 	const hasNext = $derived(carts.length === CART_LIMIT)
 
@@ -62,7 +84,28 @@
 		}
 	}
 
-	onMount(load)
+	onMount(async () => {
+		await load()
+		try {
+			const res = await api.get<{ success: boolean; data: RecoveryReport }>('/api/carts/recovery-report')
+			report = res.data
+		} catch {
+			/* non-fatal */
+		}
+	})
+
+	async function sweep() {
+		sweeping = true
+		try {
+			const res = await api.post<{ success: boolean; data: { touched: number } }>('/api/carts/sweep', {})
+			toast.success(`Sweep sent ${res.data.touched} recovery email(s)`)
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			sweeping = false
+		}
+	}
 
 	function applyFilters() {
 		page = 1
@@ -100,14 +143,42 @@
 	<div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 		<div>
 			<h1 class="font-display text-display text-on-surface">Cart Recovery</h1>
-			<p class="mt-1 text-body-sm text-secondary">These are checkout carts that were started but not converted to orders.</p>
+			<p class="mt-1 text-body-sm text-secondary">Two-touch recovery: reminder after 24h, 10% single-use incentive after 48h. Opted-out shoppers and recent buyers are suppressed.</p>
+		</div>
+		<div class="flex flex-wrap gap-2">
+			<Button variant="secondary" size="sm" loading={sweeping} onclick={sweep}><Icon name="send" size="text-[16px]" /> Run sweep now</Button>
 		</div>
 	</div>
+
+	{#if report}
+		<div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
+			<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
+				<p class="text-xs text-secondary">Recovered orders</p>
+				<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{number(report.recoveredOrders)}</p>
+			</div>
+			<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
+				<p class="text-xs text-secondary">Recovered revenue</p>
+				<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{currency(report.recoveredRevenue)}</p>
+			</div>
+			<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
+				<p class="text-xs text-secondary">Abandoned carts</p>
+				<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{number(report.abandonedCarts)}</p>
+			</div>
+			<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
+				<p class="text-xs text-secondary">Emailed</p>
+				<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{number(report.emailedCarts)}</p>
+			</div>
+			<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
+				<p class="text-xs text-secondary">Recovery rate</p>
+				<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{report.conversionRate}%</p>
+			</div>
+		</div>
+	{/if}
 
 	<div class="space-y-3">
 		<div class="flex flex-wrap items-center gap-2 rounded border border-outline-variant bg-surface-container-lowest p-3">
 			<Icon name="info" size="text-[18px]" class="text-secondary" />
-			<p class="text-xs text-secondary">Only the shopping carts that never reached checkout conversion appear here. Cart totals and currency are not available through the API.</p>
+			<p class="text-xs text-secondary">Guest carts link to a customer when the checkout email matches; pure-guest carts cannot be emailed. Converted carts are never re-touched.</p>
 		</div>
 		<div class="flex flex-wrap items-center gap-3">
 			<select
@@ -144,7 +215,9 @@
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Cart</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Customer</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Items</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Subtotal</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Reminder sent</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Abandoned</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Last activity</th>
 						</tr>
@@ -157,8 +230,10 @@
 									<p class="font-medium text-on-surface">{customerName(c)}</p>
 									<p class="text-xs text-secondary">{customerEmail(c)}</p>
 								</td>
-								<td class="px-table-cell-x py-table-cell-y text-on-surface">{c.itemCount}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface">{c.itemCount}{c.quantity != null && c.quantity !== c.itemCount ? ` (${c.quantity} units)` : ''}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface">{c.subtotal != null ? currency(c.subtotal) : '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y"><Badge label={c.status} /></td>
+								<td class="px-table-cell-x py-table-cell-y text-secondary">{c.recoverySentAt ? dateTime(c.recoverySentAt) : '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTime(c.abandonedAt)}</td>
 								<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTime(c.lastActivityAt)}</td>
 							</tr>
@@ -211,8 +286,18 @@
 			</div>
 			<div class="flex justify-between gap-4">
 				<dt class="text-secondary">Items</dt>
-				<dd class="text-on-surface">{selected.itemCount}</dd>
+				<dd class="text-on-surface">{selected.itemCount}{selected.subtotal != null ? ` · ${currency(selected.subtotal)}` : ''}</dd>
 			</div>
+			{#if selected.items?.length}
+				<ul class="space-y-1 rounded border border-outline-variant bg-surface-container-low p-2.5">
+					{#each selected.items as item (item.name)}
+						<li class="flex justify-between gap-4 text-sm text-on-surface-variant">
+							<span>{item.name} × {item.quantity}</span>
+							<span>{currency(item.price * item.quantity)}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 			<div class="flex justify-between gap-4">
 				<dt class="text-secondary">Status</dt>
 				<dd><Badge label={selected.status} /></dd>

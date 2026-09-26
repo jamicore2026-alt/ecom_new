@@ -8,6 +8,7 @@ import {
   products,
   publicCustomerColumns,
   refunds,
+  returnsTable,
   visits
 } from '../../database/schema'
 import { ok } from '../../shared/response'
@@ -306,11 +307,14 @@ export class AnalyticsService {
 
   /* ------------------------------- conversion ------------------------------ */
 
-  static async conversion(db: DB, merchantId: string, q: Query) {
+  static async conversion(db: DB, merchantId: string, q: Query, branchIds: string[] | null = null) {
     const { start, end } = parseRange(q.from, q.to)
     const length = end.getTime() - start.getTime()
     const prevStart = new Date(start.getTime() - length)
     const prevEnd = new Date(start.getTime() - 1)
+    // NOTE (outlet scope): the visits funnel is merchant-level aggregates
+    // (visits has no outlet column), so funnel/byChannel stay merchant-wide.
+    // Everything order-derived below IS branch-scoped via branchOrderCondition.
 
     const run = async (s: Date, e: Date) => {
       const [totals] = await db
@@ -367,8 +371,19 @@ export class AnalyticsService {
     const previous = await run(prevStart, prevEnd)
     const delta = (c: number, p: number) => (p > 0 ? Number((((c - p) / p) * 100).toFixed(1)) : 0)
 
+    // Cart/checkout abandonment from the same funnel counters.
+    const abandon = (started: number, finished: number) =>
+      started > 0 ? round2(((started - finished) / started) * 100) : 0
+    // Order-derived, branch-scoped channel revenue for this window.
+    const revenueByChannel = await this.channelRevenue(db, merchantId, start, end, branchIds)
+
     return ok({
       ...current,
+      abandonment: {
+        cartAbandonmentRate: abandon(current.cartAdds, current.paid),
+        checkoutAbandonmentRate: abandon(current.checkouts, current.paid)
+      },
+      revenueByChannel,
       from: start.toISOString(),
       to: end.toISOString(),
       comparison: {
@@ -377,5 +392,239 @@ export class AnalyticsService {
         viewsDeltaPct: delta(current.views, previous.views)
       }
     })
+  }
+
+  /* --------------------------- revenue by channel -------------------------- */
+
+  private static async channelRevenue(
+    db: DB,
+    merchantId: string,
+    start: Date,
+    end: Date,
+    branchIds: string[] | null = null
+  ) {
+    const scope = branchOrderCondition(branchIds)
+    const rows = await db
+      .select({
+        channel: orders.attributionChannel,
+        revenue: sql<number>`coalesce(sum(${orders.total}), 0)`,
+        ordersCount: sql<number>`count(*)`
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.merchantId, merchantId),
+          inArray(orders.paymentStatus, PAID_PAYMENT_STATUSES),
+          gte(orders.createdAt, start),
+          lte(orders.createdAt, end),
+          ...(scope ? [scope] : [])
+        )
+      )
+      .groupBy(orders.attributionChannel)
+      .orderBy(sql`coalesce(sum(${orders.total}), 0) desc`)
+    return rows.map((r) => ({
+      channel: r.channel ?? 'direct',
+      revenue: Number(r.revenue),
+      orders: Number(r.ordersCount)
+    }))
+  }
+
+  /** Revenue split by attribution channel (branch-scoped, order-derived). */
+  static async channels(db: DB, merchantId: string, q: Query, branchIds: string[] | null = null) {
+    const { start, end } = parseRange(q.from, q.to)
+    return ok({
+      channels: await this.channelRevenue(db, merchantId, start, end, branchIds),
+      from: start.toISOString(),
+      to: end.toISOString()
+    })
+  }
+
+  /* ---------------------------------- CLV ---------------------------------- */
+
+  /**
+   * Average customer lifetime value = mean totalSpent over customers with at
+   * least one order. NOTE: customers carry no outlet column, so CLV is
+   * merchant-wide even when a branch scope is passed (documented).
+   */
+  static async clv(db: DB, merchantId: string, _q: Query, _branchIds: string[] | null = null) {
+    const [row] = await db
+      .select({
+        avg: sql<number>`coalesce(avg(${customers.totalSpent}), 0)`,
+        count: sql<number>`count(*)`
+      })
+      .from(customers)
+      .where(and(eq(customers.merchantId, merchantId), sql`${customers.ordersCount} >= 1`))
+    const average = Number(row?.avg ?? 0)
+    return ok({
+      averageClv: round2(average),
+      customersWithOrders: Number(row?.count ?? 0)
+    })
+  }
+
+  /* ------------------------------ refund / return --------------------------- */
+
+  /** Refund + return rates over paid orders in range (branch-scoped). */
+  static async refundRates(db: DB, merchantId: string, q: Query, branchIds: string[] | null = null) {
+    const { start, end } = parseRange(q.from, q.to)
+    const scope = branchOrderCondition(branchIds)
+    const orderFilter = and(
+      eq(orders.merchantId, merchantId),
+      inArray(orders.paymentStatus, PAID_PAYMENT_STATUSES),
+      gte(orders.createdAt, start),
+      lte(orders.createdAt, end),
+      ...(scope ? [scope] : [])
+    )
+    const [paidRow] = await db
+      .select({ count: sql<number>`count(*)`, revenue: sql<number>`coalesce(sum(${orders.total}), 0)` })
+      .from(orders)
+      .where(orderFilter)
+    const paidCount = Number(paidRow?.count ?? 0)
+
+    const [refundRow] = await db
+      .select({
+        ordersRefunded: sql<number>`count(distinct ${refunds.orderId})`,
+        amount: sql<number>`coalesce(sum(${refunds.amount}), 0)`
+      })
+      .from(refunds)
+      .innerJoin(orders, eq(refunds.orderId, orders.id))
+      .where(
+        and(
+          eq(refunds.merchantId, merchantId),
+          eq(refunds.status, 'completed'),
+          gte(refunds.createdAt, start),
+          lte(refunds.createdAt, end),
+          ...(scope ? [scope] : [])
+        )
+      )
+
+    const [returnRow] = await db
+      .select({
+        ordersReturned: sql<number>`count(distinct ${returnsTable.orderId})`,
+        count: sql<number>`count(*)`
+      })
+      .from(returnsTable)
+      .innerJoin(orders, eq(returnsTable.orderId, orders.id))
+      .where(
+        and(
+          eq(returnsTable.merchantId, merchantId),
+          gte(returnsTable.createdAt, start),
+          lte(returnsTable.createdAt, end),
+          ...(scope ? [scope] : [])
+        )
+      )
+
+    const refundedOrders = Number(refundRow?.ordersRefunded ?? 0)
+    const returnedOrders = Number(returnRow?.ordersReturned ?? 0)
+    return ok({
+      paidOrders: paidCount,
+      paidRevenue: Number(paidRow?.revenue ?? 0),
+      refundedOrders,
+      refundAmount: Number(refundRow?.amount ?? 0),
+      refundRate: paidCount > 0 ? round2((refundedOrders / paidCount) * 100) : 0,
+      returnedOrders,
+      totalReturns: Number(returnRow?.count ?? 0),
+      returnRate: paidCount > 0 ? round2((returnedOrders / paidCount) * 100) : 0,
+      from: start.toISOString(),
+      to: end.toISOString()
+    })
+  }
+
+  /* --------------------------------- cohorts -------------------------------- */
+
+  /**
+   * Signup-month cohorts: per month, signups + how many became repeat buyers
+   * (ordersCount >= 2). NOTE: merchant-wide — customers carry no outlet
+   * column (documented).
+   */
+  static async cohorts(db: DB, merchantId: string, q: Query) {
+    const { start, end } = parseRange(q.from, q.to, 365)
+    const monthTrunc = sql.raw(`date_trunc('month', "customers"."created_at")`)
+    const rows = await db
+      .select({
+        month: sql<string>`to_char(${monthTrunc} at time zone 'UTC', 'YYYY-MM')`,
+        signups: sql<number>`count(*)`,
+        repeat: sql<number>`count(*) filter (where ${customers.ordersCount} >= 2)`
+      })
+      .from(customers)
+      .where(
+        and(eq(customers.merchantId, merchantId), gte(customers.createdAt, start), lte(customers.createdAt, end))
+      )
+      .groupBy(monthTrunc)
+      .orderBy(monthTrunc)
+    return ok({
+      cohorts: rows.map((r) => {
+        const signups = Number(r.signups)
+        const repeat = Number(r.repeat)
+        return {
+          month: r.month,
+          signups,
+          repeatBuyers: repeat,
+          repeatRate: signups > 0 ? round2((repeat / signups) * 100) : 0
+        }
+      }),
+      from: start.toISOString(),
+      to: end.toISOString()
+    })
+  }
+
+  /* --------------------------------- export --------------------------------- */
+
+  /** CSV export mirroring the JSON endpoints (branch-scoped where applicable). */
+  static async exportCsv(
+    db: DB,
+    merchantId: string,
+    type: string,
+    q: Query,
+    branchIds: string[] | null = null
+  ): Promise<string> {
+    const esc = (v: unknown) => {
+      const s = String(v ?? '')
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    };
+    const toCsv = (headers: string[], rows: Array<Array<unknown>>) =>
+      [headers.join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n') + '\n'
+    if (type === 'products') {
+      const data = (await this.products(db, merchantId, q, branchIds)).data
+      return toCsv(
+        ['product_id', 'name', 'sku', 'revenue', 'quantity', 'orders'],
+        data.top.map((p: { productId: string; name: string; sku: string | null; revenue: number; quantity: number; ordersCount: number }) =>
+          [p.productId, p.name, p.sku ?? '', p.revenue, p.quantity, p.ordersCount])
+      )
+    }
+    if (type === 'customers') {
+      const data = (await this.customers(db, merchantId, q, branchIds)).data
+      return toCsv(
+        ['month', 'new_customers'],
+        data.monthlyNewCustomers.map((m: { month: string; count: number }) => [m.month, m.count])
+      )
+    }
+    if (type === 'conversion') {
+      const data = (await this.conversion(db, merchantId, q, branchIds)).data
+      return toCsv(
+        ['channel', 'views', 'cart_adds', 'checkouts', 'paid', 'conversion_rate'],
+        data.byChannel.map((c: { channel: string; views: number; cartAdds: number; checkouts: number; paid: number; conversionRate: number }) =>
+          [c.channel, c.views, c.cartAdds, c.checkouts, c.paid, c.conversionRate])
+      )
+    }
+    if (type === 'channels') {
+      const data = (await this.channels(db, merchantId, q, branchIds)).data
+      return toCsv(
+        ['channel', 'revenue', 'orders'],
+        data.channels.map((c: { channel: string; revenue: number; orders: number }) => [c.channel, c.revenue, c.orders])
+      )
+    }
+    if (type === 'cohorts') {
+      const data = (await this.cohorts(db, merchantId, q)).data
+      return toCsv(
+        ['month', 'signups', 'repeat_buyers', 'repeat_rate'],
+        data.cohorts.map((c: { month: string; signups: number; repeatBuyers: number; repeatRate: number }) =>
+          [c.month, c.signups, c.repeatBuyers, c.repeatRate])
+      )
+    }
+    const data = (await this.sales(db, merchantId, q, branchIds)).data
+    return toCsv(
+      ['date', 'revenue', 'orders'],
+      data.series.map((s: { date: string; revenue: number; orders: number }) => [s.date, s.revenue, s.orders])
+    )
   }
 }

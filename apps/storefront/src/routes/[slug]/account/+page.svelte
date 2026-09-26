@@ -31,6 +31,7 @@
 	let profFirstName = $state('')
 	let profLastName = $state('')
 	let profPhone = $state('')
+	let profOptOut = $state(false)
 	let profMessage = $state<{ kind: 'ok' | 'err'; text: string } | null>(null)
 	let profSubmitting = $state(false)
 	let profInitialized = $state(false)
@@ -76,6 +77,7 @@
 			profFirstName = account.customer.firstName ?? ''
 			profLastName = account.customer.lastName ?? ''
 			profPhone = account.customer.phone ?? ''
+			profOptOut = account.customer.marketingOptOut ?? false
 			profInitialized = true
 		}
 	})
@@ -209,7 +211,8 @@
 			await account.updateProfile(fetch, {
 				firstName: profFirstName,
 				lastName: profLastName,
-				phone: profPhone
+				phone: profPhone,
+				marketingOptOut: profOptOut
 			})
 			profMessage = { kind: 'ok', text: t('accountProfile.updated') }
 		} catch (e) {
@@ -613,6 +616,10 @@
 						class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 					/>
 				</div>
+				<label class="flex cursor-pointer items-center gap-2 text-sm text-neutral-700">
+					<input type="checkbox" bind:checked={profOptOut} class="h-4 w-4 accent-brand-600" />
+					Opt out of marketing emails (campaigns + cart reminders)
+				</label>
 				{#if profMessage}
 					<p
 						class="rounded-lg px-4 py-3 text-sm font-medium

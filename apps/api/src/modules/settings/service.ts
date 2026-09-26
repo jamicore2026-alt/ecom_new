@@ -1,6 +1,8 @@
 import { hash } from 'bcryptjs'
+import { randomBytes, createHash } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import type { DB } from '../../database/client'
+import { db as adminDb } from '../../database/client'
 import {
   carriers,
   checkoutSettings,
@@ -12,12 +14,15 @@ import {
   paymentSettings,
   roles,
   shippingSettings,
+  staffInvites,
   storeSettings,
   taxSettings,
   users
 } from '../../database/schema'
 import { getProvider, listProviders } from '../../payments/registry'
 import { decryptJson, encryptJson, isMaskedValue } from '../../shared/crypto'
+import { getMailer, renderEmail } from '../../shared/mailer'
+import { validatePassword } from '../../shared/password'
 import { ok } from '../../shared/response'
 import { badRequest, conflict, forbidden, notFound } from '../../shared/errors'
 import type { ResolvedProviderConfig } from '../../payments/types'
@@ -475,6 +480,7 @@ export class SettingsService {
       roleId?: string
     }
   ) {
+    validatePassword(input.password)
     const email = input.email.toLowerCase()
     const [existing] = await db
       .select()
@@ -540,7 +546,10 @@ export class SettingsService {
     const values: Partial<User> = {}
     if (input.name !== undefined) values.name = input.name
     if (input.email !== undefined) values.email = input.email.toLowerCase()
-    if (typeof input.password === 'string') values.passwordHash = await hash(input.password, 12)
+    if (typeof input.password === 'string') {
+      validatePassword(input.password)
+      values.passwordHash = await hash(input.password, 12)
+    }
     if (input.role !== undefined) values.role = input.role
     if (input.permissions !== undefined) values.permissions = normalizePermissions(input.permissions) as Permission[]
     if (input.roleId !== undefined) {
@@ -585,6 +594,173 @@ export class SettingsService {
       .returning({ id: users.id, name: users.name, email: users.email, role: users.role, roleId: users.roleId, permissions: users.permissions, status: users.status, createdAt: users.createdAt })
 
     return ok(updated)
+  }
+  /* ------------------------------- invites ------------------------------ */
+
+  static readonly INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+  private static inviteTokenHash(token: string): string {
+    return createHash('sha256').update(token, 'utf8').digest('hex')
+  }
+
+  private static inviteLink(token: string): string {
+    const base = (process.env.APP_URL ?? process.env.WEB_URL ?? '').replace(/\/$/, '')
+    return base ? `${base}/invite?token=${token}` : `/invite?token=${token}`
+  }
+
+  private static async sendInviteEmail(opts: {
+    to: string
+    storeName: string
+    link: string
+  }): Promise<void> {
+    await getMailer().send({
+      from: 'JamiCore <no-reply@localhost>',
+      to: opts.to,
+      subject: `You're invited to join ${opts.storeName}`,
+      html: renderEmail({
+        title: 'Staff invitation',
+        intro: `You've been invited to join ${opts.storeName} on JamiCore. The link expires in 7 days.`,
+        storeName: opts.storeName,
+        cta: { label: 'Accept invitation', url: opts.link },
+        footerNote: 'If you were not expecting this invitation, you can ignore it.'
+      })
+    })
+  }
+
+  static async listInvites(db: DB, merchantId: string) {
+    const rows = await db.select().from(staffInvites).where(eq(staffInvites.merchantId, merchantId))
+    return ok(
+      rows.map(({ tokenHash: _tokenHash, ...rest }) => rest)
+    )
+  }
+
+  static async createInvite(
+    db: DB,
+    merchantId: string,
+    createdBy: string,
+    input: { email: string; name?: string; role?: string; permissions?: string[]; roleId?: string }
+  ) {
+    const email = input.email.trim().toLowerCase()
+    const [existingUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.merchantId, merchantId), eq(users.email, email)))
+    if (existingUser) throw conflict('DUPLICATE', 'A staff member with this email already exists')
+
+    const roleId = input.roleId ? await this.assertRoleInMerchant(db, merchantId, input.roleId) : null
+    const token = randomBytes(32).toString('hex')
+    const expiresAt = new Date(Date.now() + this.INVITE_TTL_MS)
+    const permissions = normalizePermissions(input.permissions ?? []) as Permission[]
+
+    // One pending invite per merchant+email (unique index): refresh it when
+    // re-inviting instead of stacking rows.
+    const [existing] = await db
+      .select()
+      .from(staffInvites)
+      .where(and(eq(staffInvites.merchantId, merchantId), eq(staffInvites.email, email)))
+    let invite: typeof staffInvites.$inferSelect
+    if (existing && existing.status === 'pending') {
+      const [updated] = await db
+        .update(staffInvites)
+        .set({ roleId, permissions, tokenHash: this.inviteTokenHash(token), status: 'pending', expiresAt, acceptedAt: null, createdBy })
+        .where(eq(staffInvites.id, existing.id))
+        .returning()
+      invite = updated
+    } else if (existing) {
+      const [updated] = await db
+        .update(staffInvites)
+        .set({ roleId, permissions, tokenHash: this.inviteTokenHash(token), status: 'pending', expiresAt, acceptedAt: null, createdBy })
+        .where(eq(staffInvites.id, existing.id))
+        .returning()
+      invite = updated
+    } else {
+      const [created] = await db
+        .insert(staffInvites)
+        .values({ merchantId, email, roleId, permissions, tokenHash: this.inviteTokenHash(token), status: 'pending', expiresAt, createdBy })
+        .returning()
+      invite = created
+    }
+
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.id, merchantId))
+    await this.sendInviteEmail({ to: email, storeName: merchant?.name ?? 'the store', link: this.inviteLink(token) })
+
+    const { tokenHash: _tokenHash, ...publicInvite } = invite
+    // The raw token is returned one-time (email fallback + tests); the pending
+    // list never exposes it. Stored only as a SHA-256 hash.
+    return ok({ invite: publicInvite, token })
+  }
+
+  static async resendInvite(db: DB, merchantId: string, id: string) {
+    const [invite] = await db
+      .select()
+      .from(staffInvites)
+      .where(and(eq(staffInvites.id, id), eq(staffInvites.merchantId, merchantId)))
+    if (!invite) throw notFound('NOT_FOUND', 'Invite not found')
+    if (invite.status === 'accepted') throw badRequest('BAD_REQUEST', 'Invite was already accepted')
+
+    const token = randomBytes(32).toString('hex')
+    const [updated] = await db
+      .update(staffInvites)
+      .set({ tokenHash: this.inviteTokenHash(token), status: 'pending', expiresAt: new Date(Date.now() + this.INVITE_TTL_MS), acceptedAt: null })
+      .where(eq(staffInvites.id, id))
+      .returning()
+    const [merchant] = await db.select().from(merchants).where(eq(merchants.id, merchantId))
+    await this.sendInviteEmail({ to: updated.email, storeName: merchant?.name ?? 'the store', link: this.inviteLink(token) })
+    const { tokenHash: _tokenHash, ...publicInvite } = updated
+    return ok({ invite: publicInvite, token })
+  }
+
+  static async revokeInvite(db: DB, merchantId: string, id: string) {
+    const [invite] = await db
+      .select()
+      .from(staffInvites)
+      .where(and(eq(staffInvites.id, id), eq(staffInvites.merchantId, merchantId)))
+    if (!invite) throw notFound('NOT_FOUND', 'Invite not found')
+    const [updated] = await db
+      .update(staffInvites)
+      .set({ status: 'revoked' })
+      .where(eq(staffInvites.id, id))
+      .returning()
+    const { tokenHash: _tokenHash, ...publicInvite } = updated
+    return ok({ invite: publicInvite })
+  }
+
+  /** Accept uses the platform connection: the invitee has no tenant yet and
+   *  the merchant is resolved from the invite row itself. */
+  static async acceptInvite(token: string, input: { name: string; password: string }) {
+    validatePassword(input.password)
+    const tokenHash = this.inviteTokenHash(token)
+    const [invite] = await adminDb.select().from(staffInvites).where(eq(staffInvites.tokenHash, tokenHash))
+    if (!invite || invite.status !== 'pending') throw badRequest('INVALID_INVITE', 'This invitation link is invalid or no longer pending')
+    if (invite.expiresAt.getTime() <= Date.now()) {
+      await adminDb.update(staffInvites).set({ status: 'expired' }).where(eq(staffInvites.id, invite.id))
+      throw badRequest('INVITE_EXPIRED', 'This invitation has expired — ask for a new one')
+    }
+    const [existing] = await adminDb
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.merchantId, invite.merchantId), eq(users.email, invite.email)))
+    if (existing) throw conflict('DUPLICATE', 'A staff member with this email already exists')
+
+    const passwordHash = await hash(input.password, 12)
+    const [created] = await adminDb
+      .insert(users)
+      .values({
+        merchantId: invite.merchantId,
+        name: input.name,
+        email: invite.email,
+        passwordHash,
+        role: 'staff',
+        permissions: (invite.permissions ?? []) as Permission[],
+        roleId: invite.roleId,
+        status: 'active'
+      })
+      .returning({ id: users.id, name: users.name, email: users.email, role: users.role, status: users.status })
+    await adminDb
+      .update(staffInvites)
+      .set({ status: 'accepted', acceptedAt: new Date() })
+      .where(eq(staffInvites.id, invite.id))
+    return ok(created)
   }
   /* ----------------------------- COD rules ----------------------------- */
 

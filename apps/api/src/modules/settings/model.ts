@@ -122,16 +122,29 @@ export const notificationsBody = t.Object({
 export const staffCreateBody = t.Object({
   name: t.String({ minLength: 1 }),
   email: t.String({ format: 'email' }),
-  password: t.String({ minLength: 10 }),
+  password: t.String({ minLength: 12, maxLength: 72 }),
   role: t.Enum({ admin: 'admin', staff: 'staff' }),
   permissions: t.Optional(t.Array(t.String())),
   roleId: t.Optional(t.String())
 })
 
+export const staffInviteBody = t.Object({
+  email: t.String({ format: 'email', maxLength: 255 }),
+  name: t.Optional(t.String({ minLength: 1, maxLength: 255 })),
+  role: t.Optional(t.Enum({ admin: 'admin', staff: 'staff' })),
+  permissions: t.Optional(t.Array(t.String({ maxLength: 64 }))),
+  roleId: t.Optional(t.String())
+})
+
+export const staffInviteAcceptBody = t.Object({
+  name: t.String({ minLength: 1, maxLength: 255 }),
+  password: t.String({ minLength: 12, maxLength: 72 })
+})
+
 export const staffUpdateBody = t.Object({
   name: t.Optional(t.String({ minLength: 1 })),
   email: t.Optional(t.String({ format: 'email' })),
-  password: t.Optional(t.String({ minLength: 10 })),
+  password: t.Optional(t.String({ minLength: 12, maxLength: 72 })),
   role: t.Optional(t.Enum({ owner: 'owner', admin: 'admin', staff: 'staff' })),
   permissions: t.Optional(t.Array(t.String())),
   roleId: t.Optional(t.Union([t.String(), t.Null()])),

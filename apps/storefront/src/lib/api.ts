@@ -106,7 +106,7 @@ export const storefrontApi = {
 		fetchFn: typeof fetch,
 		slug: string,
 		token: string,
-		body: { productId: string; rating: number; title?: string; body?: string }
+		body: { productId: string; rating: number; title?: string; body?: string; images?: string[] }
 	) =>
 		request<SubmittedReview>(fetchFn, `/${slug}/auth/reviews`, {
 			method: 'POST',
@@ -267,7 +267,7 @@ export const storefrontApi = {
 		fetchFn: typeof fetch,
 		slug: string,
 		token: string,
-		body: { firstName?: string; lastName?: string; phone?: string }
+		body: { firstName?: string; lastName?: string; phone?: string; marketingOptOut?: boolean }
 	) =>
 		request<ShopperCustomer>(fetchFn, `/${slug}/auth/me`, {
 			method: 'PUT',

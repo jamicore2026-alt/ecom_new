@@ -3,9 +3,18 @@ import type { DB } from '../../database/client'
 import { customers, orders, refunds, publicCustomerColumns } from '../../database/schema'
 import { parseCsv, toCsv } from '../../shared/csv'
 import { emit } from '../../shared/event-dispatch'
-import { badRequest, notFound } from '../../shared/errors'
+import { badRequest, conflict, notFound } from '../../shared/errors'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
+
+export interface CustomerUpsert {
+  email: string
+  firstName?: string | null
+  lastName?: string | null
+  phone?: string | null
+  tags?: string[]
+  marketingOptOut?: boolean
+}
 
 const SORTABLE: Record<string, typeof customers.totalSpent | typeof customers.ordersCount | typeof customers.createdAt> = {
   total_spent: customers.totalSpent,
@@ -60,6 +69,11 @@ export class CustomersService {
       .where(and(eq(customers.id, id), eq(customers.merchantId, merchantId)))
     if (!customer) throw notFound('NOT_FOUND', 'Customer not found')
 
+    const [flags] = await db
+      .select({ marketingOptOut: customers.marketingOptOut, tags: customers.tags })
+      .from(customers)
+      .where(eq(customers.id, id))
+
     const [refundRow] = await db
       .select({ total: sql<number>`coalesce(sum(${refunds.amount}), 0)` })
       .from(refunds)
@@ -72,14 +86,135 @@ export class CustomersService {
 
     return ok({
       ...customer,
+      marketingOptOut: flags?.marketingOptOut ?? false,
       netSpent: Number((customer.totalSpent - refundTotal).toFixed(2)),
       refundTotal,
       avgOrderValue
     })
   }
 
-  static async orders(db: DB, merchantId: string, customerId: string, q: { page?: string; limit?: string }) {
-    const { page, limit, offset } = parsePagination(q)
+  /* ------------------------------ manual CRUD ----------------------------- */
+
+  static async create(db: DB, merchantId: string, input: CustomerUpsert) {
+    const email = input.email.trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      throw badRequest('BAD_REQUEST', 'A valid email is required')
+    }
+    const [existing] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(and(eq(customers.merchantId, merchantId), eq(customers.email, email)))
+    if (existing) throw conflict('DUPLICATE', 'A customer with this email already exists')
+
+    const [row] = await db
+      .insert(customers)
+      .values({
+        merchantId,
+        email,
+        firstName: input.firstName?.trim() || null,
+        lastName: input.lastName?.trim() || null,
+        phone: input.phone?.trim() || null,
+        tags: input.tags ?? [],
+        marketingOptOut: input.marketingOptOut ?? false
+      })
+      .returning()
+    emit(merchantId, 'customer.created', { customerId: row.id, email: row.email })
+    const [created] = await db
+      .select(publicCustomerColumns)
+      .from(customers)
+      .where(eq(customers.id, row.id))
+    return ok({ ...created, marketingOptOut: row.marketingOptOut })
+  }
+
+  static async update(
+    db: DB,
+    merchantId: string,
+    id: string,
+    input: Partial<CustomerUpsert> & { email?: string }
+  ) {
+    const [existing] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(and(eq(customers.id, id), eq(customers.merchantId, merchantId)))
+    if (!existing) throw notFound('NOT_FOUND', 'Customer not found')
+
+    const patch: Partial<typeof customers.$inferInsert> = {}
+    if (input.email !== undefined) {
+      const email = input.email.trim().toLowerCase()
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+        throw badRequest('BAD_REQUEST', 'A valid email is required')
+      }
+      const [dup] = await db
+        .select({ id: customers.id })
+        .from(customers)
+        .where(and(eq(customers.merchantId, merchantId), eq(customers.email, email)))
+      if (dup && dup.id !== id) throw conflict('DUPLICATE', 'A customer with this email already exists')
+      patch.email = email
+    }
+    if (input.firstName !== undefined) patch.firstName = input.firstName?.trim() || null
+    if (input.lastName !== undefined) patch.lastName = input.lastName?.trim() || null
+    if (input.phone !== undefined) patch.phone = input.phone?.trim() || null
+    if (input.tags !== undefined) patch.tags = input.tags
+    if (input.marketingOptOut !== undefined) patch.marketingOptOut = input.marketingOptOut
+
+    if (Object.keys(patch).length === 0) return this.get(db, merchantId, id)
+    await db.update(customers).set(patch).where(eq(customers.id, id))
+    return this.get(db, merchantId, id)
+  }
+
+  /**
+   * Delete a customer. There is no `status`/`archived` column on customers, so
+   * deletion is a hard delete — blocked when orders reference the customer to
+   * preserve order history (anonymize via update instead: blank name/phone).
+   */
+  static async remove(db: DB, merchantId: string, id: string) {
+    const [existing] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(and(eq(customers.id, id), eq(customers.merchantId, merchantId)))
+    if (!existing) throw notFound('NOT_FOUND', 'Customer not found')
+
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(orders)
+      .where(and(eq(orders.merchantId, merchantId), eq(orders.customerId, id)))
+    if (Number(total) > 0) {
+      throw badRequest(
+        'HAS_ORDERS',
+        'Customer has orders and cannot be deleted. Anonymize personal fields instead.'
+      )
+    }
+    await db.delete(customers).where(eq(customers.id, id))
+    return ok({ id, deleted: true })
+  }
+
+  /** Marketing opt-out toggle (campaigns + cart-recovery respect the flag). */
+  static async setOptOut(db: DB, merchantId: string, id: string, optOut: boolean) {
+    const [existing] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(and(eq(customers.id, id), eq(customers.merchantId, merchantId)))
+    if (!existing) throw notFound('NOT_FOUND', 'Customer not found')
+    await db.update(customers).set({ marketingOptOut: optOut }).where(eq(customers.id, id))
+    return this.get(db, merchantId, id)
+  }
+
+  /** Public unsubscribe by email (no auth — linked from campaign footers). */
+  static async unsubscribeByEmail(db: DB, merchantId: string, email: string) {
+    const normalized = email.trim().toLowerCase()
+    const [existing] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(and(eq(customers.merchantId, merchantId), eq(customers.email, normalized)))
+    if (!existing) return ok({ email: normalized, optedOut: false, known: false })
+    await db
+      .update(customers)
+      .set({ marketingOptOut: true })
+      .where(eq(customers.id, existing.id))
+    return ok({ email: normalized, optedOut: true, known: true })
+  }
+
+  static async orders(db: DB, merchantId: string, customerId: string, q: { page?: string; limit?: string }) {    const { page, limit, offset } = parsePagination(q)
 
     const [customer] = await db
       .select(publicCustomerColumns)

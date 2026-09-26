@@ -68,10 +68,28 @@ export async function resolveMerchantContext(
 
   // Merchants that predate the module system have no rows at all; without a
   // fallback their navigation would be stripped to the few ungated items.
-  // Default to the standard commerce set. Explicitly disabled rows are still
-  // respected — this only covers the "no rows registered" case.
+  // PERSIST the default set (insert rows, ignore conflicts) instead of an
+  // in-memory fallback so subsequent reads, RLS-adjacent code, and other
+  // requests see a stable module set. Explicitly disabled rows are still
+  // respected — this only covers the "no rows registered" case. The insert is
+  // best-effort: a failure (e.g. read-only replica) falls back to the
+  // in-memory defaults for this request only.
   if (modules.length === 0) {
     enabledModules.push(...DEFAULT_MODULES.commerce)
+    try {
+      await db
+        .insert(merchantModules)
+        .values(
+          DEFAULT_MODULES.commerce.map((module) => ({
+            merchantId,
+            module,
+            enabled: true
+          }))
+        )
+        .onConflictDoNothing()
+    } catch {
+      // In-memory defaults above already cover this request.
+    }
   }
 
   return { allowedOutlets, selectedOutlet, enabledModules }

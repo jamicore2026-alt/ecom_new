@@ -9,6 +9,7 @@ const storeParams = t.Object({ slug: t.String() })
 const saveCartBody = t.Object({
   cartId: t.Optional(t.String()),
   customerId: t.Optional(t.String()),
+  email: t.Optional(t.String()),
     items: t.Array(
       t.Object({
         variantId: t.String(),
@@ -66,5 +67,22 @@ export const cartsModule = new Elysia({ prefix: '/api' })
     {
       query: cartQuery,
       detail: { tags: ['Carts'], summary: 'List carts (abandoned/converted)' }
+    }
+  )
+  .get(
+    '/carts/recovery-report',
+    ({ auth }) => CartsService.recoveryReport(auth.db, auth.merchant.id),
+    {
+      detail: { tags: ['Carts'], summary: 'Recovered-revenue report for abandoned carts' }
+    }
+  )
+  .post(
+    '/carts/sweep',
+    async ({ auth }) => {
+      const touched = await CartsService.sweepAbandonedCarts(auth.db)
+      return { success: true as const, data: { touched } }
+    },
+    {
+      detail: { tags: ['Carts'], summary: 'Manually trigger the abandonment sweep (1st + 48h 2nd touch)' }
     }
   )

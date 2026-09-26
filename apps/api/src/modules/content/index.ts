@@ -7,7 +7,8 @@ const pageBody = t.Object({
   title: t.Optional(t.String({ minLength: 1 })),
   slug: t.Optional(t.String({ minLength: 1, maxLength: 255 })),
   content: t.Optional(t.String()),
-  status: t.Optional(t.Union([t.Literal('draft'), t.Literal('published'), t.Literal('archived')])),
+  status: t.Optional(t.Union([t.Literal('draft'), t.Literal('scheduled'), t.Literal('published'), t.Literal('archived')])),
+  publishedAt: t.Optional(t.Union([t.String(), t.Null()])),
   metaTitle: t.Optional(t.String()),
   metaDescription: t.Optional(t.String())
 })
@@ -16,7 +17,8 @@ const createBody = t.Object({
   title: t.String({ minLength: 1 }),
   slug: t.String({ minLength: 1, maxLength: 255 }),
   content: t.Optional(t.String()),
-  status: t.Optional(t.Union([t.Literal('draft'), t.Literal('published'), t.Literal('archived')]))
+  status: t.Optional(t.Union([t.Literal('draft'), t.Literal('scheduled'), t.Literal('published'), t.Literal('archived')])),
+  publishedAt: t.Optional(t.String())
 })
 
 export const contentModule = new Elysia({ prefix: '/api' })

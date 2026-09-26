@@ -26,12 +26,30 @@ const payoutBody = t.Object({
   minPayout: t.Optional(t.Number({ minimum: 0 }))
 })
 
+const portalRequestBody = t.Object({
+  email: t.String({ format: 'email' }),
+  merchantId: t.Optional(t.String()),
+  merchantSlug: t.Optional(t.String())
+})
+
+const portalMeQuery = t.Object({
+  token: t.String({ minLength: 1 })
+})
+
 export const affiliatesModule = new Elysia({ prefix: '/api' })
   // Public click tracking (storefront, anonymous ok) — registered before the
   // auth plugin so no credentials are required. Uses the platform connection
   // directly; the affiliate row itself scopes the merchant.
   .post('/affiliates/track', async ({ body }) => AffiliatesService.trackClick(db, body), {
     body: trackBody
+  })
+  // Public affiliate portal: magic-link request + token dashboard.
+  // Affiliates are not staff, so these live outside the staff auth plugin.
+  .post('/affiliates/portal/request', async ({ body }) => AffiliatesService.requestPortalLink(db, body), {
+    body: portalRequestBody
+  })
+  .get('/affiliates/portal/me', async ({ query }) => AffiliatesService.portalMe(db, query.token), {
+    query: portalMeQuery
   })
 
   .use(authPlugin)

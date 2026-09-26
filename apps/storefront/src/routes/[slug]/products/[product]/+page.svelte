@@ -57,6 +57,7 @@
 	let formRating = $state(0)
 	let formTitle = $state('')
 	let formBody = $state('')
+	let formPhotos = $state('')
 	let reviewNotice = $state('')
 	let reviewError = $state('')
 	let submittingReview = $state(false)
@@ -80,6 +81,7 @@
 		formRating = 0
 		formTitle = ''
 		formBody = ''
+		formPhotos = ''
 		reviewNotice = ''
 		reviewError = ''
 		wishError = ''
@@ -337,14 +339,17 @@
 		}
 		submittingReview = true
 		try {
+			const photos = formPhotos.split(/[\n,]+/).map((u) => u.trim()).filter(Boolean).slice(0, 5)
 			const result = await account.submitReview(fetch, {
 				productId: product.id,
 				rating: formRating,
 				title: formTitle.trim() || undefined,
-				body: formBody.trim() || undefined
+				body: formBody.trim() || undefined,
+				images: photos.length ? photos : undefined
 			})
 			formTitle = ''
 			formBody = ''
+			formPhotos = ''
 			reviewNotice =
 				result.status === 'approved'
 					? t('product.reviewLive')
@@ -353,6 +358,22 @@
 			reviewError = e instanceof Error ? e.message : t('product.reviewSubmitFailed')
 		} finally {
 			submittingReview = false
+		}
+	}
+
+	const markHelpful = async (reviewId: string) => {
+		try {
+			const res = await fetch(`/api/store/${data.slug}/reviews/${reviewId}/helpful`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ customerId: account.customer?.id ?? undefined })
+			})
+			if (!res.ok) return
+			const body = await res.json()
+			const count = body?.data?.helpfulCount
+			reviews = reviews.map((r) => (r.id === reviewId ? { ...r, helpfulCount: count ?? (r.helpfulCount ?? 0) + 1 } : r))
+		} catch {
+			/* best-effort */
 		}
 	}
 
@@ -709,6 +730,12 @@
 									placeholder={t('product.reviewBody')}
 									class="w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 								></textarea>
+								<textarea
+									bind:value={formPhotos}
+									rows="2"
+									placeholder="Photo URLs (one per line, up to 5 — upload first, then paste links)"
+									class="w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+								></textarea>
 								{#if reviewError}
 									<p class="rounded-lg bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{reviewError}</p>
 								{/if}
@@ -758,7 +785,19 @@
 								{#if review.body}
 									<p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-neutral-600">{review.body}</p>
 								{/if}
-								<p class="mt-2 text-xs text-neutral-400">{review.authorName}</p>
+								{#if review.images?.length}
+									<div class="mt-2 flex flex-wrap gap-2">
+										{#each review.images as img (img)}
+											<a href={img} target="_blank" rel="noreferrer"><img src={img} alt="" class="h-16 w-16 rounded-lg border border-neutral-200 object-cover" loading="lazy" /></a>
+										{/each}
+									</div>
+								{/if}
+								<div class="mt-2 flex items-center gap-3">
+									<p class="text-xs text-neutral-400">{review.authorName}</p>
+									<button type="button" class="text-xs font-medium text-neutral-500 hover:text-brand-600" onclick={() => markHelpful(review.id)}>
+										👍 Helpful{#if review.helpfulCount} ({review.helpfulCount}){/if}
+									</button>
+								</div>
 							</li>
 						{/each}
 					</ul>

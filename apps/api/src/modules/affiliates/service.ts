@@ -1,9 +1,51 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import { affiliates, referrals } from '../../database/schema'
 import { ok } from '../../shared/response'
-import { badRequest, notFound } from '../../shared/errors'
+import { badRequest, notFound, unauthorized } from '../../shared/errors'
 import { COMMISSION_STATUSES, type CommissionStatus } from '../../shared/types'
+import { getMailer, renderEmail } from '../../shared/mailer'
+import { createLogger } from '../../shared/logger'
+
+const log = createLogger('affiliates-portal')
+
+/** 24h signed magic-link tokens: base64url(affiliateId.merchantId.exp.sig). */
+const PORTAL_TTL_MS = 24 * 60 * 60 * 1000
+
+const portalSecret = () =>
+  process.env.AFFILIATE_PORTAL_SECRET ?? process.env.ENCRYPTION_KEY ?? 'dev-affiliate-portal-secret'
+
+const b64url = (buf: Buffer) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+const unb64url = (s: string) => Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
+
+const signPortalToken = (affiliateId: string, merchantId: string, exp: number): string => {
+  const payload = `${affiliateId}.${merchantId}.${exp}`
+  const sig = b64url(createHmac('sha256', portalSecret()).update(payload).digest())
+  return `${b64url(Buffer.from(affiliateId))}.${b64url(Buffer.from(merchantId))}.${exp}.${sig}`
+}
+
+const verifyPortalToken = (token: string): { affiliateId: string; merchantId: string } => {
+  const parts = token.split('.')
+  if (parts.length !== 4) throw unauthorized('Invalid portal token')
+  const [aB64, mB64, expRaw, sig] = parts
+  const affiliateId = unb64url(aB64).toString('utf8')
+  const merchantId = unb64url(mB64).toString('utf8')
+  const exp = Number(expRaw)
+  if (!affiliateId || !merchantId || !Number.isFinite(exp)) {
+    throw unauthorized('Invalid portal token')
+  }
+  if (Date.now() > exp) throw unauthorized('Portal link has expired')
+  const expected = b64url(
+    createHmac('sha256', portalSecret()).update(`${affiliateId}.${merchantId}.${exp}`).digest()
+  )
+  const a = Buffer.from(sig)
+  const b = Buffer.from(expected)
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    throw unauthorized('Invalid portal token')
+  }
+  return { affiliateId, merchantId }
+}
 
 export type AttributeOrderInput = {
   orderId: string
@@ -58,6 +100,128 @@ export class AffiliatesService {
       .where(and(eq(referrals.merchantId, merchantId), eq(referrals.affiliateId, affiliateId)))
       .orderBy(desc(referrals.createdAt))
     return ok({ items: rows })
+  }
+
+  /* ------------------------------ portal ------------------------------ */
+
+  /**
+   * Request a magic login link: emailed to the affiliate's address, valid 24h.
+   * The affiliate is resolved by email within the given merchant scope.
+   */
+  static async requestPortalLink(
+    db: DB,
+    input: { email: string; merchantId?: string; merchantSlug?: string }
+  ) {
+    const email = input.email.trim().toLowerCase()
+    if (!email) throw badRequest('INVALID_EMAIL', 'Email is required')
+
+    let merchantId = input.merchantId ?? null
+    if (!merchantId && input.merchantSlug) {
+      const { merchants } = await import('../../database/schema')
+      const [m] = await db
+        .select({ id: merchants.id })
+        .from(merchants)
+        .where(eq(merchants.slug, input.merchantSlug))
+      merchantId = m?.id ?? null
+    }
+    if (!merchantId) throw badRequest('INVALID_MERCHANT', 'merchantId or merchantSlug is required')
+
+    const [affiliate] = await db
+      .select()
+      .from(affiliates)
+      .where(
+        and(
+          eq(affiliates.merchantId, merchantId),
+          eq(affiliates.email, email),
+          eq(affiliates.status, 'active')
+        )
+      )
+    // Always return ok (no account enumeration) — only active affiliates get mail.
+    if (!affiliate) return ok({ sent: true })
+
+    const exp = Date.now() + PORTAL_TTL_MS
+    const token = signPortalToken(affiliate.id, merchantId, exp)
+    const portalBase = process.env.PUBLIC_WEB_URL ?? process.env.PUBLIC_STOREFRONT_URL ?? 'http://localhost:5478'
+    const link = `${portalBase}/affiliate?token=${encodeURIComponent(token)}`
+    try {
+      const fromEmail = process.env.MAIL_FROM_FALLBACK ?? 'onboarding@resend.dev'
+      const { merchants } = await import('../../database/schema')
+      const [m] = await db.select({ name: merchants.name }).from(merchants).where(eq(merchants.id, merchantId))
+      const storeName = m?.name ?? 'Our store'
+      await getMailer().send({
+        from: `${storeName} <${fromEmail}>`,
+        to: affiliate.email,
+        subject: `Your ${storeName} affiliate dashboard link`,
+        html: renderEmail({
+          title: 'Your affiliate dashboard',
+          intro: `Hi ${affiliate.name}! Use the link below to view your referrals, commissions and payouts. It expires in 24 hours.`,
+          storeName,
+          cta: { label: 'Open my dashboard', url: link },
+          footerNote: `If you didn't request this, ignore it. Link expires ${new Date(exp).toUTCString()}.`
+        })
+      })
+    } catch (e) {
+      log.error('portal link email failed', { affiliateId: affiliate.id, error: e })
+    }
+    // Return the token in non-production so e2e tests can follow the link
+    // without a mailbox; production returns sent-only.
+    return ok({ sent: true, ...(process.env.NODE_ENV === 'production' ? {} : { token, nonce: randomBytes(4).toString('hex') }) })
+  }
+
+  /** Resolve a portal token to the affiliate dashboard payload. */
+  static async portalMe(db: DB, token: string) {
+    const { affiliateId, merchantId } = verifyPortalToken(token)
+    const [affiliate] = await db
+      .select()
+      .from(affiliates)
+      .where(
+        and(
+          eq(affiliates.id, affiliateId),
+          eq(affiliates.merchantId, merchantId),
+          eq(affiliates.status, 'active')
+        )
+      )
+    if (!affiliate) throw unauthorized('Affiliate not found or inactive')
+
+    const rows = await db
+      .select()
+      .from(referrals)
+      .where(and(eq(referrals.merchantId, merchantId), eq(referrals.affiliateId, affiliateId)))
+      .orderBy(desc(referrals.createdAt))
+
+    const sum = (status: string) =>
+      Math.round(rows.filter((r) => r.commissionStatus === status).reduce((s, r) => s + Number(r.commissionAmount), 0) * 100) / 100
+    const stats = {
+      clicks: rows.filter((r) => r.conversionStatus === 'clicked').length,
+      conversions: rows.filter((r) => r.conversionStatus === 'converted').length,
+      pending: sum('pending'),
+      approved: sum('approved'),
+      paid: sum('paid'),
+      totalEarned: Math.round(rows.reduce((s, r) => s + Number(r.commissionAmount), 0) * 100) / 100
+    }
+    const [{ clicks30 }] = await db
+      .select({ clicks30: sql<number>`count(*)` })
+      .from(referrals)
+      .where(
+        and(
+          eq(referrals.merchantId, merchantId),
+          eq(referrals.affiliateId, affiliateId),
+          sql`${referrals.createdAt} > now() - interval '30 days'`
+        )
+      )
+    return ok({
+      affiliate: {
+        id: affiliate.id,
+        name: affiliate.name,
+        email: affiliate.email,
+        referralCode: affiliate.referralCode,
+        commissionRate: Number(affiliate.commissionRate),
+        status: affiliate.status
+      },
+      stats: { ...stats, eventsLast30Days: Number(clicks30) },
+      referrals: rows.slice(0, 100),
+      payouts: rows.filter((r) => r.commissionStatus === 'paid').slice(0, 100)
+    })
   }
 
   /**

@@ -1,4 +1,4 @@
-import { and, count, eq, gte, gt, inArray, lte, sql } from 'drizzle-orm'
+import { and, count, eq, gte, gt, inArray, lte, ne, sql } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import {
   customers,
@@ -42,6 +42,10 @@ export class OverviewService {
       .where(
         and(
           eq(orders.merchantId, merchantId),
+          // Exclude cancelled — consistent with the revenue filter (paid
+          // payment statuses) so the count and todaySales never disagree on
+          // what "today" means.
+          ne(orders.status, 'cancelled'),
           gte(orders.createdAt, today),
           ...(scope ? [scope] : [])
         )

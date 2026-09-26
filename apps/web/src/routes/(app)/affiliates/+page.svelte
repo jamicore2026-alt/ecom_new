@@ -176,6 +176,21 @@
 		}
 	}
 
+	// Affiliate portal: email the affiliate a 24h magic login link.
+	let portalBusy = $state<string | null>(null)
+
+	async function sendPortalLink(a: Affiliate) {
+		portalBusy = a.id
+		try {
+			await api.post('/api/affiliates/portal/request', { email: a.email, merchantId: a.merchantId })
+			toast.success(`Portal link sent to ${a.email}`)
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			portalBusy = null
+		}
+	}
+
 	const canAct = (r: Referral) => r.commissionStatus === 'pending' || r.commissionStatus === 'approved'
 
 </script>
@@ -274,8 +289,14 @@
 							<div>
 								<h2 class="font-display text-2xl text-on-surface">{selected.name}</h2>
 								<p class="mt-1 text-xs text-secondary">{selected.email} · <span class="font-mono">{selected.referralCode}</span> · {parseFloat(selected.commissionRate)}% commission</p>
+								<p class="mt-1 text-xs text-secondary">Portal: affiliates sign in at <span class="font-mono">/affiliate</span> with an emailed 24h magic link.</p>
 							</div>
-							<Badge label={selected.status} />
+							<div class="flex shrink-0 flex-col items-end gap-2">
+								<Badge label={selected.status} />
+								{#if canManage() && selected}
+									<Button variant="secondary" size="sm" loading={portalBusy === selected.id} onclick={() => selected && sendPortalLink(selected)}>Email portal link</Button>
+								{/if}
+							</div>
 						</div>
 
 						<h3 class="mt-6 mb-3 text-sm font-semibold text-on-surface">Referrals</h3>

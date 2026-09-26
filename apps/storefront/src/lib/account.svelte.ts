@@ -109,7 +109,7 @@ class Account {
 
 	async submitReview(
 		fetchFn: typeof fetch,
-		body: { productId: string; rating: number; title?: string; body?: string }
+		body: { productId: string; rating: number; title?: string; body?: string; images?: string[] }
 	) {
 		if (!this.token || !this.customer) {
 			throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
@@ -191,7 +191,7 @@ class Account {
 	}
 
 	/** Update profile name/phone and refresh the cached session. */
-	async updateProfile(fetchFn: typeof fetch, input: { firstName?: string; lastName?: string; phone?: string }) {
+	async updateProfile(fetchFn: typeof fetch, input: { firstName?: string; lastName?: string; phone?: string; marketingOptOut?: boolean }) {
 		if (!this.token || !this.customer) throw new ApiError(401, 'UNAUTHORIZED', 'Please sign in first')
 		const updated = await storefrontApi.updateProfile(fetchFn, this.slug, this.token, input)
 		this.customer = updated

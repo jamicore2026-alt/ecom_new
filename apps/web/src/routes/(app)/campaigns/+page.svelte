@@ -51,10 +51,22 @@
 	}
 
 	async function send(c: Campaign) {
-		if (!confirm(`Send campaign "${c.name}" now to all customers?`)) return
+		if (!confirm(`Send campaign "${c.name}" now? Opted-out customers are skipped.`)) return
 		try {
-			await api.post(`/api/campaigns/${c.id}/send`)
-			toast.success('Campaign sent')
+			const res = await api.post<{ success: boolean; data: { sentCount: number; skippedOptOut?: number } }>(`/api/campaigns/${c.id}/send`, {})
+			toast.success(`Sent to ${res.data.sentCount}${res.data.skippedOptOut ? ` (${res.data.skippedOptOut} opted out)` : ''}`)
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function schedule(c: Campaign) {
+		const when = prompt('Schedule send at (YYYY-MM-DDTHH:mm, blank to unschedule):', c.scheduledAt?.slice(0, 16) ?? '')
+		if (when === null) return
+		try {
+			await api.put(`/api/campaigns/${c.id}`, when.trim() ? { scheduledAt: new Date(when).toISOString() } : { scheduledAt: null, status: 'draft' })
+			toast.success(when.trim() ? 'Campaign scheduled' : 'Schedule cleared')
 			await load()
 		} catch (e) {
 			toast.error((e as Error).message)
@@ -97,7 +109,7 @@
 	</div>
 
 	<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded border border-outline-variant bg-surface-container-lowest p-1">
-		{#each ['all', 'draft', 'sent'] as s (s)}
+		{#each ['all', 'draft', 'scheduled', 'sent'] as s (s)}
 			<button class="rounded px-3 py-1.5 text-sm font-medium max-sm:min-h-11 max-sm:inline-flex max-sm:items-center transition-colors {statusFilter === s ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container hover:text-on-surface'}" onclick={() => (statusFilter = s)}>
 				{s[0].toUpperCase() + s.slice(1)}
 			</button>
@@ -142,18 +154,19 @@
 										{#if c.subject}<span class="block text-xs font-normal text-secondary">{c.subject}</span>{/if}
 									</a>
 								</td>
-								<td class="px-table-cell-x py-table-cell-y"><Badge label={c.status} /></td>
+								<td class="px-table-cell-x py-table-cell-y"><Badge label={c.status} />{#if c.status === 'scheduled' && c.scheduledAt}<span class="block text-xs text-secondary">{dateTime(c.scheduledAt)}</span>{/if}</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{titleCase(c.type)}</td>
 								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{number(c.sentCount)}</td>
-								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{number(c.openedCount)}</td>
-								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{number(c.clickedCount)}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{number(c.openedCount)}{#if c.sentCount > 0}<span class="text-outline"> ({((c.openedCount / c.sentCount) * 100).toFixed(1)}%)</span>{/if}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{number(c.clickedCount)}{#if c.sentCount > 0}<span class="text-outline"> ({((c.clickedCount / c.sentCount) * 100).toFixed(1)}%)</span>{/if}</td>
 								<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTime(c.createdAt)}</td>
 								<td class="px-table-cell-x py-table-cell-y">
 									<div class="flex items-center justify-end gap-1">
 										<a href="/campaigns/{c.id}" class="rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" aria-label="View campaign"><Icon name="visibility" size="text-[18px]" /></a>
 										{#if canWrite()}
 											<a href="/campaigns/{c.id}/edit" class="rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" aria-label="Edit campaign"><Icon name="edit" size="text-[18px]" /></a>
-											{#if c.status === 'draft'}
+											{#if c.status === 'draft' || c.status === 'scheduled'}
+												<button class="rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => schedule(c)} aria-label="Schedule campaign"><Icon name="schedule" size="text-[18px]" /></button>
 												<button class="rounded p-1.5 text-secondary hover:bg-primary/10 hover:text-primary" onclick={() => send(c)} aria-label="Send campaign"><Icon name="send" size="text-[18px]" /></button>
 											{/if}
 											<button class="rounded p-1.5 text-secondary hover:bg-error/10 hover:text-error" onclick={() => remove(c)} aria-label="Delete campaign"><Icon name="delete" size="text-[18px]" /></button>

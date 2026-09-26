@@ -15,3 +15,16 @@ export const reviewParams = t.Object({ id: t.String() })
 export const reviewUpdateBody = t.Object({
   status: reviewStatusSchema
 })
+
+export const reviewBulkBody = t.Object({
+  ids: t.Array(t.String(), { minItems: 1, maxItems: 200 }),
+  status: reviewStatusSchema
+})
+
+export const reviewReplyBody = t.Object({
+  body: t.String({ minLength: 1, maxLength: 5000 })
+})
+
+export const reviewHelpfulBody = t.Object({
+  customerId: t.Optional(t.String())
+})

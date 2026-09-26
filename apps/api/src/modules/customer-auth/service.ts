@@ -17,6 +17,7 @@ import {
 } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, conflict, notFound, unauthorized } from '../../shared/errors'
+import { validatePassword } from '../../shared/password'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { EmailsService } from '../emails/service'
 import { OrdersService } from '../orders/service'
@@ -52,6 +53,7 @@ const publicCustomer = (c: typeof customers.$inferSelect) => ({
   totalSpent: number(c.totalSpent),
   /** Store-credit balance from refunds — spendable at checkout. */
   storeCredit: number(c.storeCredit ?? 0),
+  marketingOptOut: c.marketingOptOut ?? false,
   createdAt: c.createdAt
 })
 
@@ -81,6 +83,7 @@ export class CustomerAuthService {
   ) {
     const store = await this.resolveStore(slug)
     const email = normalizeEmail(body.email)
+    validatePassword(body.password)
     const passwordHash = await hash(body.password, 12)
 
     const [existing] = await db
@@ -191,6 +194,7 @@ export class CustomerAuthService {
     const valid = await compare(body.currentPassword, customer.passwordHash as string)
     if (!valid) throw unauthorized('Current password is incorrect')
 
+    validatePassword(body.newPassword)
     const [updated] = await db
       .update(customers)
       .set({
@@ -215,11 +219,11 @@ export class CustomerAuthService {
     return ok(publicCustomer(customer))
   }
 
-  /** Update the shopper's editable profile fields (name/phone). Not a credential change. */
+  /** Update the shopper's editable profile fields (name/phone/opt-out). Not a credential change. */
   static async updateProfile(
     slug: string,
     shopper: ShopperContext,
-    body: { firstName?: string; lastName?: string; phone?: string }
+    body: { firstName?: string; lastName?: string; phone?: string; marketingOptOut?: boolean }
   ) {
     const { customer } = await this.requireShopper(slug, shopper)
 
@@ -228,7 +232,8 @@ export class CustomerAuthService {
       .set({
         ...(body.firstName !== undefined && { firstName: body.firstName.trim() || null }),
         ...(body.lastName !== undefined && { lastName: body.lastName.trim() || null }),
-        ...(body.phone !== undefined && { phone: body.phone.trim() || null })
+        ...(body.phone !== undefined && { phone: body.phone.trim() || null }),
+        ...(body.marketingOptOut !== undefined && { marketingOptOut: body.marketingOptOut })
       })
       .where(eq(customers.id, customer.id))
       .returning()
@@ -240,7 +245,7 @@ export class CustomerAuthService {
   static async submitReview(
     slug: string,
     shopper: ShopperContext,
-    body: { productId: string; rating: number; title?: string; body?: string }
+    body: { productId: string; rating: number; title?: string; body?: string; images?: string[] }
   ) {
     const { customer, merchant } = await this.requireShopper(slug, shopper)
 
@@ -263,7 +268,9 @@ export class CustomerAuthService {
     const values = {
       rating: body.rating,
       title: body.title?.trim() || null,
-      body: body.body?.trim() || null
+      body: body.body?.trim() || null,
+      // Shopper-uploaded photo URLs (uploaded first via /api/uploads).
+      images: (body.images ?? []).filter((u) => typeof u === 'string' && u.length > 0).slice(0, 10)
     }
 
     const [existing] = await db
@@ -298,6 +305,7 @@ export class CustomerAuthService {
       rating: row.rating,
       title: row.title,
       body: row.body,
+      images: row.images,
       status: row.status,
       createdAt: row.createdAt
     })
@@ -562,6 +570,7 @@ export class CustomerAuthService {
 
   /** Complete a password reset — validated + single-use + invalidates sessions. */
   static async resetPassword(slug: string, token: string, newPassword: string) {
+    validatePassword(newPassword)
     // The stored hash uses compare() (bcrypt), so find candidate tokens by customer
     // and compare — bcrypt can't be used in an equality query.
     const [merchant] = await db

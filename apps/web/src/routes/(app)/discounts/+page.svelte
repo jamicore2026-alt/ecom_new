@@ -45,6 +45,26 @@
 	let startsAt = $state('')
 	let endsAt = $state('')
 	let cStatus = $state('active')
+	let cScope = $state<'all' | 'products' | 'category' | 'customers'>('all')
+	let cProductIds = $state<string[]>([])
+	let cCategoryId = $state('')
+	let cCustomerIds = $state('')
+	let cPerCustomerLimit = $state('')
+	let cFirstOrderOnly = $state(false)
+	let cStackable = $state(true)
+	let cPriority = $state('')
+
+	// bulk generation
+	let bulkOpen = $state(false)
+	let bulkPrefix = $state('RECOVER')
+	let bulkCount = $state('10')
+	let bulkValue = $state('10')
+	let bulkType = $state<CouponType>('percentage')
+	let bulkSaving = $state(false)
+
+	// redemption report
+	let reportCoupon = $state<Coupon | null>(null)
+	let reportData = $state<{ redemptions: number; uniqueCustomers: number; orderValue: number; discountGiven: number } | null>(null)
 
 	let couponTarget = $state<Coupon | null>(null)
 	let promotionTarget = $state<Promotion | null>(null)
@@ -134,6 +154,14 @@
 		startsAt = ''
 		endsAt = ''
 		cStatus = 'active'
+		cScope = 'all'
+		cProductIds = []
+		cCategoryId = ''
+		cCustomerIds = ''
+		cPerCustomerLimit = ''
+		cFirstOrderOnly = false
+		cStackable = true
+		cPriority = ''
 		pName = ''
 		pType = 'discount_on_products'
 		pDiscount = ''
@@ -164,6 +192,14 @@
 		startsAt = c.startsAt ? c.startsAt.slice(0, 10) : ''
 		endsAt = c.endsAt ? c.endsAt.slice(0, 10) : ''
 		cStatus = c.status
+		cScope = c.appliesTo?.scope ?? 'all'
+		cProductIds = c.appliesTo?.productIds ?? []
+		cCategoryId = c.appliesTo?.categoryId ?? ''
+		cCustomerIds = (c.appliesTo?.customerIds ?? []).join(', ')
+		cPerCustomerLimit = c.perCustomerLimit != null ? String(c.perCustomerLimit) : ''
+		cFirstOrderOnly = c.firstOrderOnly ?? false
+		cStackable = c.stackable ?? true
+		cPriority = c.priority != null ? String(c.priority) : ''
 		createOpen = true
 	}
 
@@ -213,7 +249,17 @@
 					usageLimit: usageLimit ? Number(usageLimit) : undefined,
 					startsAt: startsAt || undefined,
 					endsAt: endsAt || undefined,
-					status: cStatus
+					status: cStatus,
+					appliesTo: {
+						scope: cScope,
+						...(cScope === 'products' ? { productIds: cProductIds } : {}),
+						...(cScope === 'category' ? { categoryId: cCategoryId || undefined } : {}),
+						...(cScope === 'customers' ? { customerIds: cCustomerIds.split(',').map((s) => s.trim()).filter(Boolean) } : {})
+					},
+					perCustomerLimit: cPerCustomerLimit ? Number(cPerCustomerLimit) : null,
+					firstOrderOnly: cFirstOrderOnly,
+					stackable: cStackable,
+					priority: cPriority ? Number(cPriority) : 0
 				}
 				if (editingCoupon) {
 					const { code: _c, ...rest } = body
@@ -234,6 +280,36 @@
 			}
 		} finally {
 			saving = false
+		}
+	}
+
+	async function submitBulk() {
+		bulkSaving = true
+		try {
+			const res = await api.post<{ success: boolean; data: { items: Coupon[]; count: number } }>('/api/coupons/bulk', {
+				prefix: bulkPrefix,
+				count: Number(bulkCount),
+				type: bulkType,
+				value: Number(bulkValue)
+			})
+			toast.success(`Generated ${res.data.count} codes`)
+			bulkOpen = false
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			bulkSaving = false
+		}
+	}
+
+	async function openReport(c: Coupon) {
+		reportCoupon = c
+		reportData = null
+		try {
+			const res = await api.get<{ success: boolean; data: { redemptions: number; uniqueCustomers: number; orderValue: number; discountGiven: number } }>(`/api/coupons/${c.id}/report`)
+			reportData = res.data
+		} catch (e) {
+			toast.error((e as Error).message)
 		}
 	}
 
@@ -329,7 +405,12 @@
 			<p class="mt-1 text-body-sm text-secondary">{meta.total} total</p>
 		</div>
 		{#if canWrite()}
-			<Button onclick={() => openCreate(section)}><Icon name="add" size="text-[18px]" /> Add {section === 'coupons' ? 'coupon' : 'promotion'}</Button>
+			<div class="flex flex-wrap gap-2">
+				{#if section === 'coupons'}
+					<Button variant="secondary" size="sm" onclick={() => (bulkOpen = true)}><Icon name="content_copy" size="text-[16px]" /> Bulk codes</Button>
+				{/if}
+				<Button onclick={() => openCreate(section)}><Icon name="add" size="text-[18px]" /> Add {section === 'coupons' ? 'coupon' : 'promotion'}</Button>
+			</div>
 		{/if}
 	</div>
 
@@ -387,6 +468,7 @@
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Value</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Min subtotal</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Usage</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Scope</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Dates</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
 							{#if canWrite()}<th class="px-table-cell-x py-table-cell-y text-right font-semibold">Actions</th>{/if}
@@ -399,7 +481,8 @@
 								<td class="px-table-cell-x py-table-cell-y"><Badge label={c.type} /></td>
 								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{c.type === 'free_shipping' ? '—' : c.type === 'percentage' ? `${c.value}%` : currency(c.value)}</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{c.minSubtotal ? currency(c.minSubtotal) : '—'}</td>
-								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{c.usedCount}{c.usageLimit != null ? ` / ${c.usageLimit}` : ''}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{c.usedCount}{c.usageLimit != null ? ` / ${c.usageLimit}` : ''}{c.perCustomerLimit != null ? ` (max ${c.perCustomerLimit}/customer)` : ''}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{c.appliesTo?.scope ?? 'all'}{c.firstOrderOnly ? ' · 1st order' : ''}{c.stackable === false ? ' · no-stack' : ''}</td>
 								<td class="px-table-cell-x py-table-cell-y text-secondary">
 									{#if c.startsAt || c.endsAt}
 										{c.startsAt ? dateTime(c.startsAt) : '∞'} → {c.endsAt ? dateTime(c.endsAt) : '∞'}
@@ -409,6 +492,7 @@
 								{#if canWrite()}
 									<td class="whitespace-nowrap px-table-cell-x py-table-cell-y text-right">
 										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEditCoupon(c)}>Edit</button>
+										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openReport(c)}>Report</button>
 										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container" onclick={() => toggleCoupon(c)}>{c.status === 'active' ? 'Disable' : 'Enable'}</button>
 										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => (couponTarget = c)}>Delete</button>
 									</td>
@@ -550,12 +634,67 @@
 						<input id="coupon-limit" type="number" min="0" class="field" bind:value={usageLimit} placeholder="Unlimited" />
 					</div>
 					<div>
+						<label class="field-label" for="coupon-per-customer">Per-customer limit</label>
+						<input id="coupon-per-customer" type="number" min="1" class="field" bind:value={cPerCustomerLimit} placeholder="Unlimited" />
+					</div>
+				</div>
+				<div>
+					<label class="field-label" for="coupon-scope">Applies to</label>
+					<select id="coupon-scope" class="field" bind:value={cScope}>
+						<option value="all">All carts</option>
+						<option value="products">Specific products</option>
+						<option value="category">Category</option>
+						<option value="customers">Specific customers</option>
+					</select>
+				</div>
+				{#if cScope === 'products'}
+					<div>
+						<p class="field-label" id="coupon-products-label">Products</p>
+						<div class="max-h-40 space-y-1 overflow-y-auto rounded border border-outline-variant bg-surface-container-lowest p-2" role="group" aria-labelledby="coupon-products-label">
+							{#each products as p (p.id)}
+								<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+									<input type="checkbox" class="field-check" checked={cProductIds.includes(p.id)} onchange={() => { cProductIds = cProductIds.includes(p.id) ? cProductIds.filter((x) => x !== p.id) : [...cProductIds, p.id] }} />
+									<span class="truncate">{p.name}</span>
+								</label>
+							{/each}
+						</div>
+					</div>
+				{:else if cScope === 'category'}
+					<div>
+						<label class="field-label" for="coupon-category">Category</label>
+						<select id="coupon-category" class="field" bind:value={cCategoryId}>
+							<option value="">Select…</option>
+							{#each categories as cat (cat.id)}
+								<option value={cat.id}>{cat.name}</option>
+							{/each}
+						</select>
+					</div>
+				{:else if cScope === 'customers'}
+					<div>
+						<label class="field-label" for="coupon-customers">Customer ids or emails (comma-separated)</label>
+						<input id="coupon-customers" class="field" bind:value={cCustomerIds} placeholder="id-or-email, …" />
+					</div>
+				{/if}
+				<div class="grid gap-4 sm:grid-cols-2">
+					<div>
+						<label class="field-label" for="coupon-priority">Priority (wins promo ties)</label>
+						<input id="coupon-priority" type="number" min="0" class="field" bind:value={cPriority} placeholder="0" />
+					</div>
+					<div>
 						<label class="field-label" for="coupon-status">Status</label>
 						<select id="coupon-status" class="field" bind:value={cStatus}>
 							<option value="active">Active</option>
 							<option value="disabled">Disabled</option>
 						</select>
 					</div>
+				</div>
+				<div class="flex flex-wrap gap-4">
+					<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+						<input type="checkbox" class="field-check" bind:checked={cFirstOrderOnly} /> First order only
+					</label>
+					<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+						<input type="checkbox" class="field-check" bind:checked={cStackable} /> Stackable with promotions
+					</label>
 				</div>
 			{/if}
 
@@ -613,3 +752,57 @@
 	onConfirm={confirmPromotionToggle}
 	onCancel={() => (promotionToggleTarget = null)}
 />
+
+{#if bulkOpen && canWrite()}
+	<Modal title="Bulk generate unique codes" open={true} width="sm" onClose={() => (bulkOpen = false)}>
+		<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); submitBulk() }}>
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div>
+					<label class="field-label" for="bulk-prefix">Prefix</label>
+					<input id="bulk-prefix" class="field font-mono-label uppercase" bind:value={bulkPrefix} required />
+				</div>
+				<div>
+					<label class="field-label" for="bulk-count">Count (1–500)</label>
+					<input id="bulk-count" type="number" min="1" max="500" class="field" bind:value={bulkCount} required />
+				</div>
+			</div>
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div>
+					<label class="field-label" for="bulk-type">Type</label>
+					<select id="bulk-type" class="field" bind:value={bulkType}>
+						<option value="percentage">Percentage</option>
+						<option value="fixed">Fixed amount</option>
+						<option value="free_shipping">Free shipping</option>
+					</select>
+				</div>
+				<div>
+					<label class="field-label" for="bulk-value">Value</label>
+					<input id="bulk-value" type="number" min="0" class="field" bind:value={bulkValue} required />
+				</div>
+			</div>
+			<p class="text-xs text-secondary">Codes are single-use (usage + per-customer limit 1).</p>
+			<div class="flex justify-end gap-2 pt-2">
+				<Button variant="secondary" onclick={() => (bulkOpen = false)}>Cancel</Button>
+				<Button type="submit" loading={bulkSaving}>Generate</Button>
+			</div>
+		</form>
+	</Modal>
+{/if}
+
+{#if reportCoupon}
+	<Modal title={`Redemptions · ${reportCoupon.code}`} open={true} width="sm" onClose={() => (reportCoupon = null)}>
+		{#if !reportData}
+			<p class="text-sm text-secondary">Loading…</p>
+		{:else}
+			<dl class="grid grid-cols-2 gap-3 text-sm">
+				<div><dt class="text-secondary">Redemptions</dt><dd class="font-semibold text-on-surface">{reportData.redemptions}</dd></div>
+				<div><dt class="text-secondary">Customers</dt><dd class="font-semibold text-on-surface">{reportData.uniqueCustomers}</dd></div>
+				<div><dt class="text-secondary">Order value</dt><dd class="font-semibold text-on-surface">{currency(reportData.orderValue)}</dd></div>
+				<div><dt class="text-secondary">Discount given</dt><dd class="font-semibold text-on-surface">{currency(reportData.discountGiven)}</dd></div>
+			</dl>
+		{/if}
+		<div class="flex justify-end pt-4">
+			<Button variant="secondary" onclick={() => (reportCoupon = null)}>Close</Button>
+		</div>
+	</Modal>
+{/if}

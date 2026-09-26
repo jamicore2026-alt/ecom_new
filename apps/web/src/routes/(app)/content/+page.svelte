@@ -16,7 +16,7 @@
 		title: string
 		slug: string
 		content: string
-		status: 'draft' | 'published' | 'archived'
+		status: 'draft' | 'scheduled' | 'published' | 'archived'
 		metaTitle: string | null
 		metaDescription: string | null
 		publishedAt: string | null
@@ -36,7 +36,8 @@
 	let formTitle = $state('')
 	let formSlug = $state('')
 	let formContent = $state('')
-	let formStatus = $state<'draft' | 'published' | 'archived'>('draft')
+	let formStatus = $state<'draft' | 'scheduled' | 'published' | 'archived'>('draft')
+	let formPublishedAt = $state('')
 	let formMetaTitle = $state('')
 	let formMetaDescription = $state('')
 
@@ -62,6 +63,7 @@
 		formSlug = ''
 		formContent = ''
 		formStatus = 'draft'
+		formPublishedAt = ''
 		formMetaTitle = ''
 		formMetaDescription = ''
 		showModal = true
@@ -73,6 +75,7 @@
 		formSlug = page.slug
 		formContent = page.content
 		formStatus = page.status
+		formPublishedAt = page.publishedAt ? page.publishedAt.slice(0, 16) : ''
 		formMetaTitle = page.metaTitle ?? ''
 		formMetaDescription = page.metaDescription ?? ''
 		showModal = true
@@ -109,6 +112,7 @@
 					slug: formSlug.trim(),
 					content: formContent,
 					status: formStatus,
+					publishedAt: formPublishedAt ? new Date(formPublishedAt).toISOString() : formStatus === 'scheduled' ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null,
 					metaTitle: formMetaTitle.trim() || null,
 					metaDescription: formMetaDescription.trim() || null
 				})
@@ -118,7 +122,8 @@
 					title: formTitle.trim(),
 					slug: formSlug.trim() || slugify(formTitle.trim()),
 					content: formContent,
-					status: formStatus
+					status: formStatus,
+					publishedAt: formPublishedAt ? new Date(formPublishedAt).toISOString() : undefined
 				})
 				toast.success('Page created')
 			}
@@ -174,6 +179,7 @@
 							<div class="flex items-center gap-2">
 								<span class="font-mono-label text-mono-label text-on-surface">{page.title}</span>
 								<Badge label={page.status} />
+								{#if page.status === 'scheduled' && page.publishedAt}<span class="text-xs text-secondary">→ {dateTime(page.publishedAt)}</span>{/if}
 							</div>
 							<p class="mt-0.5 text-xs text-secondary font-mono">/{page.slug}</p>
 						</div>
@@ -216,10 +222,17 @@
 				<label class="field-label" for="page-status">Status</label>
 				<select id="page-status" class="field" bind:value={formStatus}>
 					<option value="draft">Draft</option>
+					<option value="scheduled">Scheduled</option>
 					<option value="published">Published</option>
 					<option value="archived">Archived</option>
 				</select>
 			</div>
+			{#if formStatus === 'scheduled'}
+				<div>
+					<label class="field-label" for="page-published-at">Publish at (auto-published by worker)</label>
+					<input id="page-published-at" type="datetime-local" class="field" bind:value={formPublishedAt} />
+				</div>
+			{/if}
 			<div>
 				<label class="field-label" for="page-meta-title">Meta title</label>
 				<input id="page-meta-title" class="field" bind:value={formMetaTitle} placeholder="SEO title (optional)" />

@@ -4,6 +4,8 @@
 	import { toast } from '$lib/toast.svelte'
 	import Button from '$lib/components/Button.svelte'
 	import Card from '$lib/components/Card.svelte'
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte'
+	import Modal from '$lib/components/Modal.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import Icon from '$lib/components/Icon.svelte'
 	import { currency, dateTime, number, timeAgo } from '$lib/format'
@@ -110,6 +112,92 @@
 		page = p
 		load()
 	}
+
+	// manual CRUD + opt-out
+	let modalOpen = $state(false)
+	let editing = $state<Customer | null>(null)
+	let fEmail = $state('')
+	let fFirst = $state('')
+	let fLast = $state('')
+	let fPhone = $state('')
+	let fTags = $state('')
+	let fOptOut = $state(false)
+	let saving = $state(false)
+	let deleting = $state<Customer | null>(null)
+
+	const canWrite = () => session.can('customers.write')
+
+	function openCreate() {
+		editing = null
+		fEmail = ''
+		fFirst = ''
+		fLast = ''
+		fPhone = ''
+		fTags = ''
+		fOptOut = false
+		modalOpen = true
+	}
+
+	function openEdit(c: Customer) {
+		editing = c
+		fEmail = c.email
+		fFirst = c.firstName ?? ''
+		fLast = c.lastName ?? ''
+		fPhone = c.phone ?? ''
+		fTags = (c.tags ?? []).join(', ')
+		fOptOut = c.marketingOptOut ?? false
+		modalOpen = true
+	}
+
+	async function submitCustomer() {
+		saving = true
+		try {
+			const body = {
+				email: fEmail,
+				firstName: fFirst || undefined,
+				lastName: fLast || undefined,
+				phone: fPhone || undefined,
+				tags: fTags.split(',').map((s) => s.trim()).filter(Boolean),
+				marketingOptOut: fOptOut
+			}
+			if (editing) {
+				await api.put(`/api/customers/${editing.id}`, body)
+				toast.success('Customer updated')
+			} else {
+				await api.post('/api/customers', body)
+				toast.success('Customer created')
+			}
+			modalOpen = false
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			saving = false
+		}
+	}
+
+	async function confirmDelete() {
+		const c = deleting
+		deleting = null
+		if (!c) return
+		try {
+			await api.delete(`/api/customers/${c.id}`)
+			toast.success('Customer deleted')
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function toggleOptOut(c: Customer) {
+		try {
+			await api.post(`/api/customers/${c.id}/opt-out`, { marketingOptOut: !(c.marketingOptOut ?? false) })
+			toast.success('Marketing preference updated')
+			load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
 </script>
 
 <svelte:head>
@@ -124,6 +212,9 @@
 		</div>
 		{#if canRead()}
 			<div class="flex flex-wrap gap-2">
+				{#if canWrite()}
+					<Button size="sm" onclick={openCreate}><Icon name="add" size="text-[16px]" /> Add customer</Button>
+				{/if}
 				<Button variant="secondary" size="sm" loading={exporting} onclick={exportCsv}><Icon name="download" size="text-[16px]" /> Export CSV</Button>
 				{#if canImport()}
 					<Button variant="secondary" size="sm" loading={importing} onclick={() => fileInput?.click()}><Icon name="file_upload" size="text-[16px]" /> Import CSV</Button>
@@ -231,10 +322,12 @@
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Customer</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Contact</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Tags</th>
-							<th class="px-table-cell-x py-table-cell-y font-semibold">Orders</th>
+								<th class="px-table-cell-x py-table-cell-y font-semibold">Orders</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Total spent</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Marketing</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Last order</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Joined</th>
+							{#if canWrite()}<th class="px-table-cell-x py-table-cell-y text-right font-semibold">Actions</th>{/if}
 						</tr>
 					</thead>
 					<tbody>
@@ -261,8 +354,16 @@
 								</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{number(c.ordersCount)}</td>
 								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{currency(c.totalSpent)}</td>
+								<td class="px-table-cell-x py-table-cell-y text-secondary">{c.marketingOptOut ? 'Opted out' : 'Subscribed'}</td>
 								<td class="px-table-cell-x py-table-cell-y text-secondary">{c.lastOrderAt ? dateTime(c.lastOrderAt) : '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTime(c.createdAt)}</td>
+								{#if canWrite()}
+									<td class="whitespace-nowrap px-table-cell-x py-table-cell-y text-right">
+										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openEdit(c)}>Edit</button>
+										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => toggleOptOut(c)}>{c.marketingOptOut ? 'Subscribe' : 'Opt out'}</button>
+										<button class="min-h-11 rounded p-1.5 text-xs font-medium text-error hover:bg-error-container/40" onclick={() => (deleting = c)}>Delete</button>
+									</td>
+								{/if}
 							</tr>
 						{/each}
 					</tbody>
@@ -272,3 +373,48 @@
 		{/if}
 	</Card>
 </div>
+
+{#if modalOpen && canWrite()}
+	<Modal title={editing ? `Edit ${editing.email}` : 'New customer'} open={true} width="sm" onClose={() => (modalOpen = false)}>
+		<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); submitCustomer() }}>
+			<div>
+				<label class="field-label" for="cust-email">Email *</label>
+				<input id="cust-email" type="email" class="field" bind:value={fEmail} required disabled={!!editing} />
+			</div>
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div>
+					<label class="field-label" for="cust-first">First name</label>
+					<input id="cust-first" class="field" bind:value={fFirst} />
+				</div>
+				<div>
+					<label class="field-label" for="cust-last">Last name</label>
+					<input id="cust-last" class="field" bind:value={fLast} />
+				</div>
+			</div>
+			<div>
+				<label class="field-label" for="cust-phone">Phone</label>
+				<input id="cust-phone" class="field" bind:value={fPhone} />
+			</div>
+			<div>
+				<label class="field-label" for="cust-tags">Tags (comma-separated)</label>
+				<input id="cust-tags" class="field" bind:value={fTags} placeholder="VIP, wholesale" />
+			</div>
+			<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+				<input type="checkbox" class="field-check" bind:checked={fOptOut} /> Marketing opted out
+			</label>
+			<div class="flex justify-end gap-2 pt-2">
+				<Button variant="secondary" onclick={() => (modalOpen = false)}>Cancel</Button>
+				<Button type="submit" loading={saving}>{editing ? 'Save changes' : 'Create'}</Button>
+			</div>
+		</form>
+	</Modal>
+{/if}
+
+<ConfirmDialog
+	open={deleting !== null}
+	title={`Delete ${deleting?.email ?? ''}?`}
+	message="Blocked when the customer has orders — anonymize personal fields instead."
+	confirmLabel="Delete"
+	onConfirm={confirmDelete}
+	onCancel={() => (deleting = null)}
+/>

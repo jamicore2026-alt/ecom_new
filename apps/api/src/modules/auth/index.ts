@@ -15,7 +15,9 @@ import {
   recordSession,
   revokeSessionRow,
   signMfaToken,
-  verifyMfaToken
+  verifyMfaToken,
+  SESSION_ABSOLUTE_TTL_MS,
+  SESSION_IDLE_TTL_MS
 } from '../mfa/service'
 
 export const ACCESS_TOKEN_TTL = 60 * 60 // 1 hour
@@ -246,6 +248,21 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
       // session inventory (per-device logout / admin revoke).
       const { row: sessionRow } = await assertSessionUsable(String(payload.jti))
 
+      // Legacy fallback: refresh tokens issued before the sessions table (or
+      // whose row was pruned) carry no server-side touch tracking. Bound them
+      // by the token iat instead — absolute 30d cap + 7d idle timeout. Fresh
+      // rotations re-issue iat on every refresh, so active chains stay alive
+      // while abandoned ones die.
+      if (!sessionRow && typeof payload.iat === 'number') {
+        const ageMs = Date.now() - Number(payload.iat) * 1000
+        if (ageMs > SESSION_ABSOLUTE_TTL_MS) {
+          throw unauthorized('Session has expired — please sign in again')
+        }
+        if (ageMs > SESSION_IDLE_TTL_MS) {
+          throw unauthorized('Session timed out from inactivity — please sign in again')
+        }
+      }
+
       const session = await AuthService.session(String(payload.sub!))
       const { user, merchant } = session.data
 
@@ -290,7 +307,18 @@ export const authModule = new Elysia({ prefix: '/api/auth' })
   )
   .post(
     '/logout',
-    async ({ body, refreshJwt, cookie }) => {
+    async ({ body, refreshJwt, cookie, headers, request }) => {
+      const fromCookie = !body?.refreshToken && !!cookie[REFRESH_COOKIE]?.value
+      // Logout via cookie (browser flow) is state-changing: require the
+      // double-submit CSRF pair, mirroring authPlugin's cookie guard (which
+      // does not run here — this route is registered before .use(authPlugin)).
+      if (fromCookie) {
+        const csrfCookie = cookie[CSRF_COOKIE]?.value
+        const csrfHeader = (headers as Record<string, string | undefined>)['x-csrf-token']
+        if (!csrfCookie || !csrfHeader || csrfHeader !== csrfCookie) {
+          throw unauthorized('Invalid CSRF token')
+        }
+      }
       const token = body?.refreshToken ?? cookie[REFRESH_COOKIE]?.value ?? null
       if (token) {
         const payload = await refreshJwt.verify(token)

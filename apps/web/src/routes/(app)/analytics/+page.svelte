@@ -55,6 +55,15 @@
 		load()
 	}
 
+	async function exportCsv() {
+		try {
+			const type = tab === 'sales' ? 'sales' : tab === 'products' ? 'products' : tab === 'customers' ? 'customers' : 'conversion'
+			await api.download(`/api/analytics/export?type=${type}&from=${range().from}`, `analytics-${type}.csv`)
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
 	function barWidth(v: number, max: number) {
 		return max > 0 ? `${Math.max(3, (v / max) * 100)}%` : '3%'
 	}
@@ -82,11 +91,19 @@
 			<div>
 				<h1 class="font-display text-display text-on-surface">Analytics</h1>
 			</div>
-			<select class="field w-auto self-start md:self-auto" bind:value={days} onchange={load}>
-				<option value="7">Last 7 days</option>
-				<option value="30">Last 30 days</option>
-				<option value="90">Last 90 days</option>
-			</select>
+			<div class="flex items-center gap-2 self-start md:self-auto">
+				<select class="field w-auto" bind:value={days} onchange={load}>
+					<option value="7">Last 7 days</option>
+					<option value="30">Last 30 days</option>
+					<option value="90">Last 90 days</option>
+				</select>
+				<button
+					class="rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+					onclick={exportCsv}
+				>
+					Export CSV
+				</button>
+			</div>
 		</div>
 
 		<div class="flex w-fit max-w-full gap-1 overflow-x-auto rounded border border-outline-variant bg-surface-container-lowest p-1">
@@ -267,6 +284,14 @@
 		{:else if tab === 'conversion' && conversion}
 			<div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
 				<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
+					<p class="text-xs text-secondary">Cart abandonment</p>
+					<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{conversion.abandonment ? pct(conversion.abandonment.cartAbandonmentRate) : '—'}</p>
+				</div>
+				<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
+					<p class="text-xs text-secondary">Checkout abandonment</p>
+					<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{conversion.abandonment ? pct(conversion.abandonment.checkoutAbandonmentRate) : '—'}</p>
+				</div>
+				<div class="rounded border border-outline-variant bg-surface-container-lowest p-4">
 					<p class="text-xs text-secondary">Conversion rate</p>
 					<p class="mt-1.5 font-display text-[24px] font-semibold tracking-tight text-on-surface">{pct(conversion.conversionRate)}</p>
 					<p class="mt-0.5 text-xs {deltaClass(conversion.comparison.conversionDeltaPct)}">{deltaText(conversion.comparison.conversionDeltaPct)}</p>
@@ -340,6 +365,31 @@
 					{/if}
 				</Card>
 			</div>
+
+			{#if conversion.revenueByChannel && conversion.revenueByChannel.length > 0}
+				<Card title="Revenue by channel" headingLevel="h2" padded={false}>
+					<div class="overflow-x-auto">
+						<table class="w-full text-left text-sm">
+							<thead>
+								<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
+									<th class="px-table-cell-x py-table-cell-y font-semibold">Channel</th>
+									<th class="px-table-cell-x py-table-cell-y font-semibold">Orders</th>
+									<th class="px-table-cell-x py-table-cell-y font-semibold">Revenue</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each conversion.revenueByChannel as c (c.channel)}
+									<tr class="border-b border-outline-variant/60 transition-colors hover:bg-surface-container-low">
+										<td class="px-table-cell-x py-table-cell-y font-medium text-on-surface">{c.channel}</td>
+										<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{number(c.orders)}</td>
+										<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{currency(c.revenue)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				</Card>
+			{/if}
 		{:else}
 			<div class="rounded border border-outline-variant bg-surface-container-lowest p-8 text-center text-sm text-secondary">No data available.</div>
 		{/if}

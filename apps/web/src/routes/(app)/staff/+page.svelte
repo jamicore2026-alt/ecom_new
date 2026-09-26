@@ -20,13 +20,26 @@
 	let loading = $state(true)
 	let saving = $state(false)
 
+	interface StaffInvite {
+		id: string
+		email: string
+		status: string
+		expiresAt: string
+		createdAt: string
+	}
+	let invites = $state<StaffInvite[]>([])
+
 	let showInvite = $state(false)
+	let showEmailInvite = $state(false)
 	let editing = $state<StaffMember | null>(null)
 	let sName = $state('')
 	let sEmail = $state('')
 	let sPassword = $state('')
 	let sRole = $state<'admin' | 'staff'>('staff')
 	let sPerms = $state<Permission[]>([])
+	let inviteEmail = $state('')
+	let inviteRole = $state<'admin' | 'staff'>('staff')
+	let invitePerms = $state<Permission[]>([])
 
 	const isAdmin = () => session.isAdmin
 
@@ -35,6 +48,12 @@
 		try {
 			const res = await api.get<{ success: boolean; data: StaffMember[] }>('/api/settings/staff')
 			staff = res.data
+			try {
+				const inv = await api.get<{ success: boolean; data: StaffInvite[] }>('/api/settings/staff/invites')
+				invites = inv.data.filter((i) => i.status === 'pending')
+			} catch {
+				invites = []
+			}
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -65,8 +84,8 @@
 	}
 
 	async function save() {
-		if (!sName.trim() || !sEmail.trim() || (!editing && sPassword.length < 10)) {
-			toast.error(editing ? 'Name and email are required' : 'Name, email and a 10+ char password are required')
+		if (!sName.trim() || !sEmail.trim() || (!editing && !isStrong(sPassword))) {
+			toast.error(editing ? 'Name and email are required' : 'Name, email and a strong 12+ char password (upper, lower, digit) are required')
 			return
 		}
 		saving = true
@@ -86,6 +105,55 @@
 			toast.error((e as Error).message)
 		} finally {
 			saving = false
+		}
+	}
+
+	function isStrong(pw: string) {
+		return pw.length >= 12 && /[a-z]/.test(pw) && /[A-Z]/.test(pw) && /[0-9]/.test(pw)
+	}
+
+	function openEmailInvite() {
+		inviteEmail = ''
+		inviteRole = 'staff'
+		invitePerms = []
+		showEmailInvite = true
+	}
+
+	async function sendEmailInvite() {
+		if (!inviteEmail.trim()) {
+			toast.error('Email is required')
+			return
+		}
+		saving = true
+		try {
+			await api.post('/api/settings/staff/invite', { email: inviteEmail.trim(), role: inviteRole, permissions: invitePerms })
+			toast.success('Invitation sent')
+			showEmailInvite = false
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			saving = false
+		}
+	}
+
+	async function resendInvite(id: string) {
+		try {
+			await api.post(`/api/settings/staff/invites/${id}/resend`)
+			toast.success('Invitation resent')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		}
+	}
+
+	async function revokeInvite(id: string) {
+		try {
+			await api.post(`/api/settings/staff/invites/${id}/revoke`)
+			toast.success('Invitation revoked')
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
 		}
 	}
 
@@ -115,9 +183,44 @@
 			<p class="mt-1 text-body-sm text-secondary">Manage personnel, roles, and system access.</p>
 		</div>
 		{#if isAdmin()}
-			<Button size="sm" onclick={openInvite}><Icon name="person_add" size="text-[16px]" /> Invite staff</Button>
+			<div class="flex gap-2">
+				<Button size="sm" variant="secondary" onclick={openEmailInvite}><Icon name="mail" size="text-[16px]" /> Email invite</Button>
+				<Button size="sm" onclick={openInvite}><Icon name="person_add" size="text-[16px]" /> Invite staff</Button>
+			</div>
 		{/if}
 	</div>
+
+	{#if !loading && invites.length > 0}
+		<Card title="Pending invitations" headingLevel="h2" padded={false}>
+			<div class="overflow-x-auto">
+				<table class="w-full text-left text-sm">
+					<thead>
+						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Email</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Expires</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold text-right">Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each invites as inv (inv.id)}
+							<tr class="border-b border-outline-variant/60">
+								<td class="px-table-cell-x py-table-cell-y text-on-surface">{inv.email}</td>
+								<td class="px-table-cell-x py-table-cell-y text-secondary">{dateTime(inv.expiresAt)}</td>
+								<td class="px-table-cell-x py-table-cell-y">
+									{#if isAdmin()}
+										<div class="flex items-center justify-end gap-1">
+											<button class="rounded p-1.5 text-secondary hover:bg-surface-container hover:text-on-surface" onclick={() => resendInvite(inv.id)} aria-label="Resend invitation"><Icon name="refresh" size="text-[18px]" /></button>
+											<button class="rounded p-1.5 text-secondary hover:bg-error/10 hover:text-error" onclick={() => revokeInvite(inv.id)} aria-label="Revoke invitation"><Icon name="cancel" size="text-[18px]" /></button>
+										</div>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</Card>
+	{/if}
 
 	{#if loading}
 		<div class="grid gap-4">
@@ -197,7 +300,7 @@
 			{#if !editing}
 				<div>
 					<label class="field-label" for="st-password">Password</label>
-					<input id="st-password" class="field" bind:value={sPassword} type="password" minlength={10} placeholder="Min 10 characters" />
+					<input id="st-password" class="field" bind:value={sPassword} type="password" minlength={12} placeholder="Min 12 chars, upper + lower + digit" />
 				</div>
 			{/if}
 			<div>
@@ -224,6 +327,43 @@
 			<div class="flex justify-end gap-2 border-t border-outline-variant/60 pt-4">
 				<Button variant="secondary" size="sm" onclick={() => (showInvite = false)}>Cancel</Button>
 				<Button size="sm" onclick={save} loading={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Invite'}</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if showEmailInvite}
+	<Modal title="Invite by email" open={true} onClose={() => (showEmailInvite = false)}>
+		<div class="space-y-4">
+			<div>
+				<label class="field-label" for="inv-email">Email</label>
+				<input id="inv-email" class="field" bind:value={inviteEmail} type="email" placeholder="name@example.com" />
+				<p class="mt-1 text-xs text-secondary">They'll receive a link to set their name and password (12+ chars, upper + lower + digit).</p>
+			</div>
+			<div>
+				<label class="field-label" for="inv-role">Role</label>
+				<select id="inv-role" class="field" bind:value={inviteRole}>
+					<option value="staff">Staff</option>
+					<option value="admin">Admin</option>
+				</select>
+			</div>
+			<div>
+				<p class="field-label">Permission grants</p>
+				<div class="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+					{#each PERMISSIONS as p (p)}
+						<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+							<input type="checkbox" class="field-check" checked={invitePerms.includes(p)} onchange={(e) => {
+								const el = e.currentTarget as HTMLInputElement
+								invitePerms = el.checked ? [...invitePerms, p] : invitePerms.filter((x) => x !== p)
+							}} />
+							<span>{p}</span>
+						</label>
+					{/each}
+				</div>
+			</div>
+			<div class="flex justify-end gap-2 border-t border-outline-variant/60 pt-4">
+				<Button variant="secondary" size="sm" onclick={() => (showEmailInvite = false)}>Cancel</Button>
+				<Button size="sm" onclick={sendEmailInvite} loading={saving}>{saving ? 'Sending…' : 'Send invite'}</Button>
 			</div>
 		</div>
 	</Modal>

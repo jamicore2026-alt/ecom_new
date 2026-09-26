@@ -511,6 +511,8 @@ export const customers = pgTable(
     tokenVersion: integer('token_version').notNull().default(0),
     emailVerified: boolean('email_verified').notNull().default(false),
     emailVerifiedAt: tstz('email_verified_at'),
+    /** Marketing opt-out (campaigns + recovery emails respect it). */
+    marketingOptOut: boolean('marketing_opt_out').notNull().default(false),
     createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('customers_merchant_email_idx').on(t.merchantId, t.email)]
@@ -1019,6 +1021,9 @@ export const reviews = pgTable(
     rating: integer('rating').notNull(),
     title: varchar('title', { length: 255 }),
     body: text('body'),
+    /** Shopper-uploaded photo URLs (via /api/uploads). */
+    images: jsonb('images').$type<string[]>().notNull().default([]),
+    helpfulCount: integer('helpful_count').notNull().default(0),
     status: varchar('status', { length: 20 }).notNull().default('pending'),
     createdAt: tstz('created_at').defaultNow().notNull(),
     updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
@@ -1027,6 +1032,24 @@ export const reviews = pgTable(
     uniqueIndex('reviews_product_customer_idx').on(t.productId, t.customerId),
     index('reviews_merchant_status_idx').on(t.merchantId, t.status)
   ]
+)
+
+/** Merchant public replies to reviews. */
+export const reviewReplies = pgTable(
+  'review_replies',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    reviewId: varchar('review_id', { length: 30 })
+      .notNull()
+      .references(() => reviews.id, { onDelete: 'cascade' }),
+    body: text('body').notNull(),
+    createdBy: varchar('created_by', { length: 30 }).references(() => users.id, {
+      onDelete: 'set null'
+    }),
+    createdAt: tstz('created_at').defaultNow().notNull()
+  },
+  (t) => [index('review_replies_review_idx').on(t.reviewId)]
 )
 
 export const auditLogs = pgTable(
@@ -1114,12 +1137,46 @@ export const coupons = pgTable(
     minSubtotal: money('min_subtotal').notNull().default(0),
     usageLimit: integer('usage_limit'),
     usedCount: integer('used_count').notNull().default(0),
+    /** Scoping (mirrors promotions.appliesTo): which products/customers qualify. */
+    appliesTo: jsonb('applies_to')
+      .$type<{ scope: 'all' | 'products' | 'category' | 'customers'; productIds?: string[]; categoryId?: string; customerIds?: string[] }>()
+      .notNull()
+      .default({ scope: 'all' }),
+    /** Max redemptions per customer (NULL = unlimited, global usageLimit still applies). */
+    perCustomerLimit: integer('per_customer_limit'),
+    /** Coupon works only on the customer's first paid order. */
+    firstOrderOnly: boolean('first_order_only').notNull().default(false),
+    /** When false, cannot combine with a promotion in one checkout. */
+    stackable: boolean('stackable').notNull().default(true),
+    /** Higher wins when several coupons could apply (checkout takes one). */
+    priority: integer('priority').notNull().default(0),
     startsAt: tstz('starts_at'),
     endsAt: tstz('ends_at'),
     status: varchar('status', { length: 20 }).notNull().default('active'),
     createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [uniqueIndex('coupons_merchant_code_idx').on(t.merchantId, t.code)]
+)
+
+/** Per-customer coupon usage ledger (enforces perCustomerLimit). */
+export const couponRedemptions = pgTable(
+  'coupon_redemptions',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    couponId: varchar('coupon_id', { length: 30 })
+      .notNull()
+      .references(() => coupons.id, { onDelete: 'cascade' }),
+    customerId: varchar('customer_id', { length: 30 }).references(() => customers.id, {
+      onDelete: 'set null'
+    }),
+    customerEmail: varchar('customer_email', { length: 255 }),
+    orderId: varchar('order_id', { length: 30 }).references(() => orders.id, {
+      onDelete: 'set null'
+    }),
+    createdAt: tstz('created_at').defaultNow().notNull()
+  },
+  (t) => [index('coupon_redemptions_coupon_customer_idx').on(t.couponId, t.customerId)]
 )
 
 export const promotions = pgTable(
@@ -2115,6 +2172,32 @@ export const referrals = pgTable(
   (t) => [index('referrals_merchant_affiliate_idx').on(t.merchantId, t.affiliateId)]
 )
 
+/** Staff invitations: email + token lifecycle before the user row exists. */
+export const staffInvites = pgTable(
+  'staff_invites',
+  {
+    id: id('id').primaryKey(),
+    merchantId: merchantIdRef(),
+    email: varchar('email', { length: 255 }).notNull(),
+    roleId: varchar('role_id', { length: 30 }).references(() => roles.id, {
+      onDelete: 'set null'
+    }),
+    permissions: jsonb('permissions').$type<Permission[]>().notNull().default([]),
+    tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('pending'),
+    expiresAt: tstz('expires_at').notNull(),
+    acceptedAt: tstz('accepted_at'),
+    createdBy: varchar('created_by', { length: 30 }).references(() => users.id, {
+      onDelete: 'set null'
+    }),
+    createdAt: tstz('created_at').defaultNow().notNull()
+  },
+  (t) => [
+    uniqueIndex('staff_invites_merchant_email_idx').on(t.merchantId, t.email),
+    index('staff_invites_token_idx').on(t.tokenHash)
+  ]
+)
+
 /* ------------------------------- content pages ------------------------------- */
 
 export const contentPages = pgTable(
@@ -2301,6 +2384,8 @@ export const campaigns = pgTable(
     convertedCount: integer('converted_count').notNull().default(0),
     scheduledAt: tstz('scheduled_at'),
     sentAt: tstz('sent_at'),
+    /** Random per-campaign token powering open/click tracking URLs. */
+    trackToken: varchar('track_token', { length: 64 }),
     createdAt: tstz('created_at').defaultNow().notNull(),
     updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
   },

@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 import { t } from 'elysia'
 import { authPlugin, requirePermission } from '../../plugins/auth'
+import { auditFromRequest } from '../audit-logs'
 import { ThemeService } from './service'
 
 const themeBody = t.Object({
@@ -18,4 +19,12 @@ export const themeModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .get('/theme', async ({ auth }) => ThemeService.get(auth.db, auth.merchant.id))
   .use(requirePermission('settings.manage'))
-  .put('/theme', async ({ auth, body }) => ThemeService.update(auth.db, auth.merchant.id, body), { body: themeBody })
+  .put('/theme', async ({ auth, body, request }) => {
+    const result = await ThemeService.update(auth.db, auth.merchant.id, body)
+    await auditFromRequest(auth, request, {
+      action: 'settings.theme.update',
+      entityType: 'theme',
+      entityId: auth.merchant.id
+    })
+    return result
+  }, { body: themeBody })

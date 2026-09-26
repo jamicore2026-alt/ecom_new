@@ -270,6 +270,7 @@ export interface Customer {
 	totalSpent: number
 	ordersCount: number
 	lastOrderAt: string | null
+	marketingOptOut?: boolean
 	createdAt: string
 }
 
@@ -402,6 +403,11 @@ export interface Coupon {
 	minSubtotal: number
 	usageLimit: number | null
 	usedCount: number
+	appliesTo?: { scope: 'all' | 'products' | 'category' | 'customers'; productIds?: string[]; categoryId?: string; customerIds?: string[] } | null
+	perCustomerLimit?: number | null
+	firstOrderOnly?: boolean
+	stackable?: boolean
+	priority?: number
 	startsAt: string | null
 	endsAt: string | null
 	status: 'active' | 'disabled'
@@ -598,6 +604,8 @@ export interface ConversionAnalytics {
 	paid: number
 	conversionRate: number
 	funnel: { viewToCart: number; cartToCheckout: number; checkoutToPaid: number }
+	abandonment?: { cartAbandonmentRate: number; checkoutAbandonmentRate: number }
+	revenueByChannel?: Array<{ channel: string; revenue: number; orders: number }>
 	byChannel: Array<{
 		channel: string
 		views: number
@@ -622,9 +630,20 @@ export interface Review {
 	rating: number
 	title: string | null
 	body: string | null
+	images?: string[]
+	helpfulCount?: number
+	replies?: ReviewReply[]
 	status: 'pending' | 'approved' | 'rejected'
 	createdAt: string
 	updatedAt: string
+}
+
+export interface ReviewReply {
+	id: string
+	reviewId: string
+	body: string
+	createdBy: string | null
+	createdAt: string
 }
 
 export interface AuditEntry {
@@ -1124,6 +1143,7 @@ export interface Campaign {
 	convertedCount: number
 	scheduledAt: string | null
 	sentAt: string | null
+	trackToken?: string | null
 	createdAt: string
 	updatedAt: string
 }
@@ -1133,6 +1153,8 @@ export interface Campaign {
 export interface SegmentDefinition {
 	minSpent?: number
 	minOrders?: number
+	recencyDays?: number
+	tags?: string[]
 }
 
 export interface Segment {

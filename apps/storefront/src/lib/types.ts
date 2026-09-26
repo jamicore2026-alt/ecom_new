@@ -150,6 +150,8 @@ export interface ProductReview {
 	rating: number
 	title: string | null
 	body: string | null
+	images?: string[]
+	helpfulCount?: number
 	createdAt: string
 	verifiedPurchase: boolean
 }
@@ -160,6 +162,7 @@ export interface SubmittedReview {
 	rating: number
 	title: string | null
 	body: string | null
+	images?: string[]
 	status: 'pending' | 'approved' | 'rejected'
 	createdAt: string
 }
@@ -334,6 +337,7 @@ export interface ShopperCustomer {
 	totalSpent: number
 	/** Store-credit balance from refunds — spendable at checkout. */
 	storeCredit?: number
+	marketingOptOut?: boolean
 	createdAt: string
 }
 

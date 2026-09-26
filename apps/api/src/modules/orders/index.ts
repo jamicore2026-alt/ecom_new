@@ -1,5 +1,6 @@
 import { Elysia, t } from 'elysia'
 import { authPlugin, hasPermission, requirePermission } from '../../plugins/auth'
+import { outletGuard } from '../../plugins/outlet'
 import type { AuthContext } from '../../plugins/auth'
 import { branchScopeOf } from '../../shared/outlet-scope'
 import { forbidden } from '../../shared/errors'
@@ -27,7 +28,11 @@ export const ordersModule = new Elysia({ prefix: '/api' })
   // (branchOrderCondition in service.list/export) and row-level reads/writes
   // are asserted per order (assertOrderInBranchScope). Owners/admins are
   // merchant-wide. docs/outlet-isolation.md
+  // Outlet module gate: commerce orders. Row-level branch filtering stays manual
+  // (branchOrderCondition + assertOrderInBranchScope) because reads filter and
+  // writes assert per-order rather than requiring a selected outlet.
   .use(authPlugin)
+  .use(outletGuard({ module: 'commerce' }))
   .get('/returns', async ({ query, auth }) =>
     OrdersService.listReturns(auth.db, auth.merchant.id, query.orderId, await scopeOf(auth)),
     { beforeHandle: needOrderRead }

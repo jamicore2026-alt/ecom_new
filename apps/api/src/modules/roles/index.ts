@@ -1,14 +1,24 @@
 import { Elysia } from 'elysia'
-import { authPlugin } from '../../plugins/auth'
+import { authPlugin, hasPermission } from '../../plugins/auth'
+import type { AuthContext } from '../../plugins/auth'
 import { outletGuard } from '../../plugins/outlet'
+import { forbidden } from '../../shared/errors'
 import { auditFromRequest } from '../audit-logs'
 import { RolesService } from './service'
 import { createRoleBody, roleParams, updateRoleBody } from './model'
 
+/** Enumeration guard: role definitions (names/scopes/permissions) are only
+ *  visible to staff.read holders. Owner/admin bypass via hasPermission. */
+const needStaffRead = ({ auth }: { auth: AuthContext }) => {
+  if (!hasPermission(auth, 'staff.read')) throw forbidden()
+}
+
 export const rolesModule = new Elysia({ prefix: '/api' })
   .use(authPlugin)
   .use(outletGuard())
-  .get('/roles', async ({ auth }) => RolesService.list(auth.db, auth.merchant.id))
+  .get('/roles', async ({ auth }) => RolesService.list(auth.db, auth.merchant.id), {
+    beforeHandle: needStaffRead
+  })
   .use(outletGuard({ permissions: ['staff.manage'] }))
   .post('/roles', async ({ body, auth, request }) => {
     const result = await RolesService.create(auth.db, auth.merchant.id, body)

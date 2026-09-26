@@ -6,7 +6,7 @@ export const storeParams = t.Object({
 
 export const registerBody = t.Object({
   email: t.String({ format: 'email', maxLength: 255 }),
-  password: t.String({ minLength: 10, maxLength: 72 }),
+  password: t.String({ minLength: 12, maxLength: 72 }),
   firstName: t.Optional(t.String({ maxLength: 255 })),
   lastName: t.Optional(t.String({ maxLength: 255 })),
   /** Required when claiming an existing guest account — proof of mailbox ownership. */
@@ -15,7 +15,7 @@ export const registerBody = t.Object({
 
 export const changePasswordBody = t.Object({
   currentPassword: t.String({ minLength: 1, maxLength: 72 }),
-  newPassword: t.String({ minLength: 10, maxLength: 72 })
+  newPassword: t.String({ minLength: 12, maxLength: 72 })
 })
 
 export const loginBody = t.Object({
@@ -27,7 +27,8 @@ export const submitReviewBody = t.Object({
   productId: t.String(),
   rating: t.Integer({ minimum: 1, maximum: 5 }),
   title: t.Optional(t.String({ maxLength: 255 })),
-  body: t.Optional(t.String({ maxLength: 5000 }))
+  body: t.Optional(t.String({ maxLength: 5000 })),
+  images: t.Optional(t.Array(t.String({ maxLength: 2048 }), { maxItems: 10 }))
 })
 
 export const wishlistBody = t.Object({
@@ -61,7 +62,7 @@ export const forgotPasswordBody = t.Object({
 
 export const resetPasswordBody = t.Object({
   token: t.String({ minLength: 1 }),
-  password: t.String({ minLength: 10, maxLength: 72 })
+  password: t.String({ minLength: 12, maxLength: 72 })
 })
 
 export const resendVerificationBody = t.Object({
@@ -76,7 +77,8 @@ export const verifyEmailParams = t.Object({
 export const profileUpdateBody = t.Object({
   firstName: t.Optional(t.String({ maxLength: 255 })),
   lastName: t.Optional(t.String({ maxLength: 255 })),
-  phone: t.Optional(t.String({ maxLength: 50 }))
+  phone: t.Optional(t.String({ maxLength: 50 })),
+  marketingOptOut: t.Optional(t.Boolean())
 })
 
 export const addressBody = t.Object({
