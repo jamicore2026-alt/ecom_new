@@ -119,7 +119,7 @@ describe('Invoice PDF download + invoice customization', () => {
       body: JSON.stringify({
         name: 'Invoice PDF Scoped Staff',
         email: staffEmail,
-        password: 'scope-pass-123456',
+        password: 'Scope-pass-123456',
         role: 'staff',
         permissions: ['orders.read', 'reports.read']
       })
@@ -132,7 +132,7 @@ describe('Invoice PDF download + invoice customization', () => {
       body: JSON.stringify({ outletIds: [branchXId] })
     })
     expect(assigned.status).toBe(200)
-    scopedHeaders = await loginAs(staffEmail, 'scope-pass-123456')
+    scopedHeaders = await loginAs(staffEmail, 'Scope-pass-123456')
 
     // Outlet-scoped order + invoice owned by branch Y (outside staff's scope).
     const [scopedOrder] = await db

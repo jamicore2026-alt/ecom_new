@@ -109,6 +109,12 @@ describe('Phase 1: outlets, modules, roles, user-outlets', () => {
       headers: { ...admin, ...jsonHeaders },
       body: JSON.stringify({ enabled: false })
     })
+    // Restore: other suites (kitchen-gaps et al.) require the module enabled.
+    await call('/api/modules/kitchen', {
+      method: 'PUT',
+      headers: { ...admin, ...jsonHeaders },
+      body: JSON.stringify({ enabled: true })
+    })
   })
 
   it('rejects unknown module toggle', async () => {

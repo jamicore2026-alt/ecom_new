@@ -67,7 +67,7 @@ describe('food-order outlet isolation (P2)', () => {
       body: JSON.stringify({
         name: 'Scoped B',
         email: 'scope-b@jamicore.com',
-        password: 'scope-pass-123456',
+        password: 'Scope-pass-123456',
         role: 'staff',
         permissions: ['orders.read', 'orders.create', 'orders.update', 'payments.create']
       })
@@ -82,7 +82,7 @@ describe('food-order outlet isolation (P2)', () => {
     })
     expect(assigned.status).toBe(200)
 
-    scopeB = await loginAs('scope-b@jamicore.com', 'scope-pass-123456')
+    scopeB = await loginAs('scope-b@jamicore.com', 'Scope-pass-123456')
 
     const menu = await call('/api/menu', { headers: admin })
     menuItemId = menu.body.data.items.find((i: { available: boolean; status: string }) => i.available && i.status === 'active').id

@@ -184,7 +184,7 @@ describe('permission convergence (P2-2)', () => {
     const created = await SettingsService.createStaff(db, adminRow.merchantId, {
       name: 'Norm Conv',
       email,
-      password: 'password123',
+      password: 'Staffpass-1234',
       role: 'staff',
       permissions: ['settings:write', 'orders.read']
     })

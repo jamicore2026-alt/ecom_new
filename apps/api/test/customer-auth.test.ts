@@ -76,7 +76,7 @@ describe('Storefront customer accounts', () => {
   it('rejects credential attachment to a guest without order-number proof', async () => {
     const res = await call(
       '/api/store/jamicore-store/auth/register',
-      json({ email: EMAIL, password: 'sup3rsecret', firstName: 'Shop', lastName: 'Er' })
+      json({ email: EMAIL, password: 'Sup3rsecret99', firstName: 'Shop', lastName: 'Er' })
     )
     expect(res.status).toBe(400)
     expect(res.body.error.code).toBe('CLAIM_ORDER_REQUIRED')
@@ -85,7 +85,7 @@ describe('Storefront customer accounts', () => {
   it('rejects credential attachment with a wrong order number', async () => {
     const res = await call(
       '/api/store/jamicore-store/auth/register',
-      json({ email: EMAIL, password: 'sup3rsecret', orderNumber: '#WNOPE' })
+      json({ email: EMAIL, password: 'Sup3rsecret99', orderNumber: '#WNOPE' })
     )
     expect(res.status).toBe(400)
     expect(res.body.error.code).toBe('CLAIM_ORDER_MISMATCH')
@@ -96,7 +96,7 @@ describe('Storefront customer accounts', () => {
       '/api/store/jamicore-store/auth/register',
       json({
         email: EMAIL,
-        password: 'sup3rsecret',
+        password: 'Sup3rsecret99',
         firstName: 'Shop',
         lastName: 'Er',
         // Proof of mailbox ownership — cites the guest order just placed.
@@ -115,7 +115,7 @@ describe('Storefront customer accounts', () => {
   it('rejects duplicate registration with a conflict', async () => {
     const res = await call(
       '/api/store/jamicore-store/auth/register',
-      json({ email: EMAIL.toUpperCase(), password: 'anotherpass1' })
+      json({ email: EMAIL.toUpperCase(), password: 'Anotherpass-1234' })
     )
     expect(res.status).toBe(409)
     expect(res.body.error.code).toBe('EMAIL_IN_USE')
@@ -127,7 +127,7 @@ describe('Storefront customer accounts', () => {
   })
 
   it('logs in and returns a session token', async () => {
-    const res = await call('/api/store/jamicore-store/auth/login', json({ email: EMAIL.toUpperCase(), password: 'sup3rsecret' }))
+    const res = await call('/api/store/jamicore-store/auth/login', json({ email: EMAIL.toUpperCase(), password: 'Sup3rsecret99' }))
     expect(res.status).toBe(200)
     token = res.body.data.token
     expect(token.split('.')).toHaveLength(3)
@@ -197,7 +197,7 @@ describe('Storefront customer accounts', () => {
   })
 
   it('404s auth routes for unknown stores', async () => {
-    const res = await call('/api/store/nope-store/auth/login', json({ email: EMAIL, password: 'sup3rsecret' }))
+    const res = await call('/api/store/nope-store/auth/login', json({ email: EMAIL, password: 'Sup3rsecret99' }))
     expect(res.status).toBe(404)
     expect(res.body.error.code).toBe('STORE_NOT_FOUND')
   })

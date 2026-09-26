@@ -227,7 +227,7 @@ describe('register shifts: cash-drawer lifecycle', () => {
       body: JSON.stringify({
         name: 'Shift Scope',
         email,
-        password: 'scope-pass-123456',
+        password: 'Scope-pass-123456',
         role: 'staff',
         permissions: ['orders.read', 'orders.create', 'payments.read', 'payments.create']
       })
@@ -239,7 +239,7 @@ describe('register shifts: cash-drawer lifecycle', () => {
       headers: { ...admin, ...jh },
       body: JSON.stringify({ outletIds: [branchId] })
     })
-    const scoped = await loginAs(email, 'scope-pass-123456')
+    const scoped = await loginAs(email, 'Scope-pass-123456')
 
     const denied = await call('/api/register-shifts/open', {
       method: 'POST',

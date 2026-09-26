@@ -222,7 +222,7 @@ describe('P1 financial invariants', () => {
     expect(txns[0].status).toBe('paid')
     expect(Number(txns[0].amount)).toBeCloseTo(total)
     expect(txns[0].currency).toBe(merchant.currency)
-    expect(txns[0].raw).toEqual({ cashReceived, change: Math.round((cashReceived - total) * 100) / 100 })
+    expect(txns[0].raw).toEqual({ cashReceived, change: Math.round((cashReceived - total) * 100) / 100, tip: 0, discountAmount: 0, discountReason: null })
   })
 
   it('rejects POS under-tender cash and cash tender on card payments', async () => {
@@ -251,7 +251,7 @@ describe('P1 financial invariants', () => {
       body: JSON.stringify({ paymentMethod: 'cash', cashReceived: Math.max(0, total - 1) })
     })
     expect(under.status).toBe(400)
-    expect(under.body.error.message).toContain('less than the total')
+    expect(under.body.error.message).toContain('less than the payment amount')
 
     const cashOnCard = await call(`/api/food-orders/${orderId}/pay`, {
       method: 'POST',
