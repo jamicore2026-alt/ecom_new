@@ -11,6 +11,10 @@
 	let loading = $state(false)
 	let hydrated = $state(false)
 	let fieldErrors = $state<Record<string, string>>({})
+	let mfaToken = $state<string | null>(null)
+	let mfaCode = $state('')
+	let mfaBackup = $state('')
+	let useBackup = $state(false)
 
 	onMount(() => {
 		hydrated = true
@@ -20,7 +24,11 @@
 		loading = true
 		fieldErrors = {}
 		try {
-			await platformApi.login(email, password)
+			const res = await platformApi.login(email, password)
+			if ('mfaRequired' in res) {
+				mfaToken = res.mfaToken
+				return
+			}
 			toast.success('Signed in')
 			goto('/platform/merchants')
 		} catch (e) {
@@ -29,6 +37,20 @@
 			if (err.fields) {
 				for (const f of err.fields) fieldErrors[f.path] = f.message
 			}
+		} finally {
+			loading = false
+		}
+	}
+
+	async function submitMfa() {
+		if (!mfaToken) return
+		loading = true
+		try {
+			await platformApi.verifyMfa(mfaToken, useBackup ? undefined : mfaCode, useBackup ? mfaBackup : undefined)
+			toast.success('Signed in')
+			goto('/platform/merchants')
+		} catch (e) {
+			toast.error((e as Error).message ?? 'Verification failed')
 		} finally {
 			loading = false
 		}
@@ -92,5 +114,34 @@
 				Sign in
 			</Button>
 		</form>
+
+		{#if mfaToken}
+			<form
+				class="mt-4 rounded border border-outline-variant bg-surface-container-lowest p-6"
+				onsubmit={(e) => {
+					e.preventDefault()
+					submitMfa()
+				}}
+			>
+				<div class="space-y-4">
+					<p class="text-sm text-secondary">Two-factor verification required.</p>
+					{#if !useBackup}
+						<div>
+							<label class="mb-1 block text-sm font-medium text-on-surface" for="mfa-code">Authenticator code</label>
+							<input id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required bind:value={mfaCode} class="w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-center text-lg tracking-widest text-on-surface focus:outline-2 focus:outline-primary" placeholder="123456" />
+						</div>
+					{:else}
+						<div>
+							<label class="mb-1 block text-sm font-medium text-on-surface" for="mfa-backup">Backup code</label>
+							<input id="mfa-backup" bind:value={mfaBackup} required class="w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 font-mono text-sm text-on-surface focus:outline-2 focus:outline-primary" placeholder="XXXX-XXXX" />
+						</div>
+					{/if}
+					<button type="button" class="text-xs text-secondary hover:text-on-surface" onclick={() => (useBackup = !useBackup)}>
+						{useBackup ? 'Use authenticator app instead' : 'Lost access? Use a backup code'}
+					</button>
+				</div>
+				<Button type="submit" class="mt-6 w-full" loading={loading}>Verify</Button>
+			</form>
+		{/if}
 	</div>
 </div>

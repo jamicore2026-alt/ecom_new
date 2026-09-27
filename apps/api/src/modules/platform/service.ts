@@ -1,10 +1,11 @@
 import { and, count, desc, eq, ilike } from 'drizzle-orm'
 import { compare, hash, hashSync } from 'bcryptjs'
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { db } from '../../database/client'
 import { merchantModules, merchants, outlets, platformAdmins, platformTokenBlacklist, roles, users } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, conflict, notFound, unauthorized } from '../../shared/errors'
+import { buildOtpAuthUrl, generateBackupCodes, sha256Hex, verifyTotp } from '../mfa/service'
 import { DEFAULT_MODULES, DEFAULT_ROLES, MODULES, type ModuleId } from '../../shared/types'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import {
@@ -169,6 +170,78 @@ export class PlatformService {
       .set({ tokenVersion: admin.tokenVersion + 1 })
       .where(eq(platformAdmins.id, adminId))
     return ok({ revoked: true })
+  }
+
+  // ------------------------- opt-in TOTP MFA -------------------------
+
+  static async mfaStatus(adminId: string) {
+    const [admin] = await db
+      .select({ mfaEnabled: platformAdmins.mfaEnabled, mfaBackupCodes: platformAdmins.mfaBackupCodes })
+      .from(platformAdmins)
+      .where(eq(platformAdmins.id, adminId))
+    if (!admin) throw unauthorized('Invalid session')
+    return ok({ enabled: admin.mfaEnabled, backupCodesRemaining: (admin.mfaBackupCodes ?? []).length })
+  }
+
+  /** Start enrollment: fresh secret (unverified), otpauth URL for the app. */
+  static async mfaSetup(adminId: string, email: string) {
+    const { Secret } = await import('otpauth')
+    const base32 = Secret.fromHex(randomBytes(20).toString('hex')).base32
+    await db
+      .update(platformAdmins)
+      .set({ mfaSecret: base32, mfaEnabled: false })
+      .where(eq(platformAdmins.id, adminId))
+    return ok({ otpauthUrl: buildOtpAuthUrl(base32, email), secret: base32 })
+  }
+
+  /** Verify a TOTP code against the pending secret and enable MFA. */
+  static async mfaEnable(adminId: string, code: string) {
+    const [admin] = await db.select().from(platformAdmins).where(eq(platformAdmins.id, adminId))
+    if (!admin?.mfaSecret) throw badRequest('MFA_NOT_STARTED', 'Start MFA setup first')
+    if (!verifyTotp(admin.mfaSecret, code)) throw unauthorized('Invalid verification code')
+    const codes = generateBackupCodes()
+    await db
+      .update(platformAdmins)
+      .set({
+        mfaEnabled: true,
+        mfaBackupCodes: codes.map((c) => sha256Hex(c.replace('-', '')))
+      })
+      .where(eq(platformAdmins.id, adminId))
+    return ok({ enabled: true, backupCodes: codes })
+  }
+
+  static async mfaDisable(adminId: string, password: string) {
+    const [admin] = await db.select().from(platformAdmins).where(eq(platformAdmins.id, adminId))
+    if (!admin) throw unauthorized('Invalid session')
+    if (!(await compare(password, admin.passwordHash))) throw unauthorized('Current password is incorrect')
+    await db
+      .update(platformAdmins)
+      .set({ mfaSecret: null, mfaEnabled: false, mfaBackupCodes: [], tokenVersion: admin.tokenVersion + 1 })
+      .where(eq(platformAdmins.id, adminId))
+    return ok({ disabled: true })
+  }
+
+  /** Verify a login second factor: TOTP code or single-use backup code. */
+  static async mfaVerify(adminId: string, input: { code?: string; backupCode?: string }) {
+    const [admin] = await db.select().from(platformAdmins).where(eq(platformAdmins.id, adminId))
+    if (!admin?.mfaEnabled || !admin.mfaSecret) throw badRequest('MFA_NOT_ENABLED', 'MFA is not enabled')
+    if (input.code && verifyTotp(admin.mfaSecret, input.code)) {
+      return ok({ admin: { id: admin.id, email: admin.email, tokenVersion: admin.tokenVersion }, usedBackupCode: false })
+    }
+    const normalized = (input.backupCode ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (normalized) {
+      const digest = sha256Hex(normalized)
+      const remaining = (admin.mfaBackupCodes ?? []).filter((h) => h !== digest)
+      if (remaining.length < (admin.mfaBackupCodes ?? []).length) {
+        await db
+          .update(platformAdmins)
+          .set({ mfaBackupCodes: remaining })
+          .where(eq(platformAdmins.id, adminId))
+        return ok({ admin: { id: admin.id, email: admin.email, tokenVersion: admin.tokenVersion }, usedBackupCode: true })
+      }
+    }
+    await loginAttempts.increment(attemptKey(admin.email))
+    throw unauthorized('Invalid verification code')
   }
 
   static async listMerchants(q: {

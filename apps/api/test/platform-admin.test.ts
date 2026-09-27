@@ -501,3 +501,73 @@ describe('platform admin lifecycle', () => {
     expect(weak.status).toBe(400)
   })
 })
+
+describe('platform MFA opt-in', () => {
+  const stamp = Date.now()
+  const mfaEmail = `mfa-${stamp}@jamicore.com`
+  const mfaPass = 'Mfa-Pass-12345'
+  let mfaId = ''
+
+  it('enrolls, enables and challenges with TOTP', async () => {
+    const created = await base('/api/platform/admins', {
+      ...json({ email: mfaEmail, password: mfaPass }),
+      headers: mheaders()
+    })
+    expect(created.status).toBe(200)
+    mfaId = (await created.json()).data.id
+
+    const login = await base('/api/platform/auth/login', json({ email: mfaEmail, password: mfaPass }))
+    expect(login.status).toBe(200)
+    const loginCookie = cookieOf(login)!
+    const mheadersAs = () => {
+      const setCookies = login.headers.getSetCookie?.() ?? []
+      const csrf = setCookies.find((c) => c.startsWith('pd.csrf='))?.split(';')[0].slice('pd.csrf='.length) ?? ''
+      return { 'content-type': 'application/json', cookie: `${loginCookie}; pd.csrf=${csrf}`, 'x-csrf-token': csrf }
+    }
+
+    const setup = await base('/api/platform/mfa/setup', { method: 'POST', headers: mheadersAs() })
+    expect(setup.status).toBe(200)
+    const { secret } = (await setup.json()).data
+    expect(secret).toBeTruthy()
+
+    const bad = await base('/api/platform/mfa/enable', {
+      ...json({ code: '000000' }),
+      headers: mheadersAs()
+    })
+    expect(bad.status).toBe(401)
+
+    const { TOTP, Secret } = await import('otpauth')
+    const code = new TOTP({ secret: Secret.fromBase32(secret) }).generate()
+    const enable = await base('/api/platform/mfa/enable', {
+      ...json({ code }),
+      headers: mheadersAs()
+    })
+    expect(enable.status).toBe(200)
+    const backupCodes: string[] = (await enable.json()).data.backupCodes
+    expect(backupCodes.length).toBeGreaterThan(0)
+
+    // Password login now returns a challenge instead of a session.
+    const challenged = await base('/api/platform/auth/login', json({ email: mfaEmail, password: mfaPass }))
+    expect(challenged.status).toBe(200)
+    const challengeBody = await challenged.json()
+    expect(challengeBody.data.mfaRequired).toBe(true)
+
+    const code2 = new TOTP({ secret: Secret.fromBase32(secret) }).generate()
+    const verified = await base('/api/platform/auth/mfa/verify', {
+      ...json({ mfaToken: challengeBody.data.mfaToken, code: code2 })
+    })
+    expect(verified.status).toBe(200)
+
+    // Backup code is single-use.
+    const challenged2 = await base('/api/platform/auth/login', json({ email: mfaEmail, password: mfaPass }))
+    const token2 = (await challenged2.json()).data.mfaToken
+    const used = await base('/api/platform/auth/mfa/verify', {
+      ...json({ mfaToken: token2, backupCode: backupCodes[0] })
+    })
+    expect(used.status).toBe(200)
+    const reuse = await base('/api/platform/auth/mfa/verify', {
+      ...json({ mfaToken: token2, backupCode: backupCodes[0] })
+    })
+    expect(reuse.status).toBe(401)
+  })
+})

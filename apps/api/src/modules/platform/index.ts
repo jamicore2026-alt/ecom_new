@@ -57,6 +57,27 @@ const expireCsrfCookie = { ...expireCookie, httpOnly: false }
 
 export const platformJwt = jwt({ name: 'platformJwt', secret: PLATFORM_JWT_SECRET })
 
+const MFA_CHALLENGE_TTL = '5m'
+
+async function issuePlatformSession(
+  platformJwt: { sign: (...args: any[]) => Promise<string> },
+  cookie: Record<string, { set: (opts: Record<string, unknown>) => void } | undefined>,
+  admin: { id: string; email: string; tokenVersion: number }
+) {
+  const token = await platformJwt.sign({
+    sub: admin.id,
+    email: admin.email,
+    type: 'platform',
+    jti: randomUUID(),
+    ver: admin.tokenVersion,
+    exp: `${SESSION_TTL}s`
+  })
+  const csrfPair = randomBytes(32).toString('hex')
+  cookie[PLATFORM_COOKIE]?.set({ value: token, ...sessionCookieOptions })
+  cookie[PLATFORM_CSRF_COOKIE]?.set({ value: csrfPair, ...csrfCookieOptions })
+  return ok({ email: admin.email })
+}
+
 export const platformAuth = new Elysia({ name: 'platform-auth' })
   .use(platformJwt)
   .derive({ as: 'scoped' }, async ({ platformJwt, request, cookie, headers }) => {
@@ -98,23 +119,45 @@ export const platformModule = new Elysia({ prefix: '/api/platform' })
     '/auth/login',
     async ({ body, cookie, platformJwt }) => {
       const admin = await PlatformService.login(body.email, body.password)
-      const token = await platformJwt.sign({
-        sub: admin.id,
-        email: admin.email,
-        type: 'platform',
-        jti: randomUUID(),
-        ver: admin.tokenVersion,
-        exp: `${SESSION_TTL}s`
-      })
-      const csrfPair = randomBytes(32).toString('hex')
-      cookie[PLATFORM_COOKIE]?.set({ value: token, ...sessionCookieOptions })
-      cookie[PLATFORM_CSRF_COOKIE]?.set({ value: csrfPair, ...csrfCookieOptions })
-      return ok({ email: admin.email })
+      // Opt-in MFA: password passed but tokens wait for the second factor.
+      const status = await PlatformService.mfaStatus(admin.id)
+      if (status.data.enabled) {
+        const mfaToken = await platformJwt.sign({
+          sub: admin.id,
+          type: 'platform-mfa',
+          exp: MFA_CHALLENGE_TTL
+        })
+        return ok({ mfaRequired: true as const, mfaToken })
+      }
+      return issuePlatformSession(platformJwt, cookie as never, admin)
     },
     {
       body: platformLoginBody,
       cookie: cookieSchema,
       detail: { tags: ['Platform'], summary: 'Platform admin login (sets pd.session cookie)' }
+    }
+  )
+  .post(
+    '/auth/mfa/verify',
+    async ({ body, cookie, platformJwt }) => {
+      const payload = (await platformJwt.verify(body.mfaToken)) as Record<string, unknown> | false
+      if (!payload || payload.type !== 'platform-mfa' || !payload.sub) {
+        throw unauthorized('Invalid or expired verification code')
+      }
+      const checked = await PlatformService.mfaVerify(String(payload.sub), {
+        code: body.code,
+        backupCode: body.backupCode
+      })
+      const admin = checked.data.admin
+      return issuePlatformSession(platformJwt, cookie as never, admin)
+    },
+    {
+      body: t.Object({
+        mfaToken: t.String({ minLength: 10 }),
+        code: t.Optional(t.String({ maxLength: 10 })),
+        backupCode: t.Optional(t.String({ maxLength: 20 }))
+      }),
+      detail: { tags: ['Platform'], summary: 'Verify MFA challenge, issue session' }
     }
   )
   .post(
@@ -147,6 +190,35 @@ export const platformModule = new Elysia({ prefix: '/api/platform' })
     }
   )
   .use(platformAuth)
+  .get(
+    '/auth/me',
+    ({ platformAdmin }) => PlatformService.mfaStatus(platformAdmin.id).then((s) => ok({ ...platformAdmin, mfaEnabled: s.data.enabled })),
+    { detail: { tags: ['Platform'], summary: 'Current admin + MFA status' } }
+  )
+  .post(
+    '/mfa/setup',
+    async ({ platformAdmin }) => {
+      const res = await PlatformService.mfaSetup(platformAdmin.id, platformAdmin.email)
+      return res
+    },
+    { detail: { tags: ['Platform'], summary: 'Start MFA enrollment (otpauth URL)' } }
+  )
+  .post(
+    '/mfa/enable',
+    async ({ body, platformAdmin }) => PlatformService.mfaEnable(platformAdmin.id, body.code),
+    {
+      body: t.Object({ code: t.String({ minLength: 6, maxLength: 10 }) }),
+      detail: { tags: ['Platform'], summary: 'Verify TOTP code, enable MFA (one-time backup codes)' }
+    }
+  )
+  .post(
+    '/mfa/disable',
+    async ({ body, platformAdmin }) => PlatformService.mfaDisable(platformAdmin.id, body.password),
+    {
+      body: t.Object({ password: t.String({ minLength: 1, maxLength: 255 }) }),
+      detail: { tags: ['Platform'], summary: 'Disable MFA (verifies password, revokes sessions)' }
+    }
+  )
   .post(
     '/merchants',
     ({ body, platformAdmin }) => PlatformService.createMerchant(body, platformAdmin),

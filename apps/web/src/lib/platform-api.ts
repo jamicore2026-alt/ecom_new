@@ -53,9 +53,14 @@ async function envelope<T>(url: string, init: RequestInit = {}): Promise<T> {
 
 export const platformApi = {
 	login: (email: string, password: string) =>
-		envelope<{ email: string }>('/api/platform/auth/login', {
+		envelope<{ email: string } | { mfaRequired: true; mfaToken: string }>('/api/platform/auth/login', {
 			method: 'POST',
 			body: JSON.stringify({ email, password })
+		}),
+	verifyMfa: (mfaToken: string, code?: string, backupCode?: string) =>
+		envelope<{ email: string }>('/api/platform/auth/mfa/verify', {
+			method: 'POST',
+			body: JSON.stringify({ mfaToken, code, backupCode })
 		}),
 	logout: async () => {
 		try {
@@ -120,5 +125,16 @@ export const platformApi = {
 		envelope<{ changed: boolean }>(`/api/platform/auth/password`, {
 			method: 'POST',
 			body: JSON.stringify({ oldPassword, newPassword })
-		})
+		}),
+	mfaStatus: () => envelope<{ mfaEnabled: boolean; backupCodesRemaining: number }>(`/api/platform/mfa/status`),
+	mfaSetup: () => envelope<{ otpauthUrl: string; secret: string }>(`/api/platform/mfa/setup`, { method: 'POST', body: '{}' }),
+	mfaEnable: (code: string) => envelope<{ enabled: boolean; backupCodes: string[] }>(`/api/platform/mfa/enable`, {
+			method: 'POST',
+			body: JSON.stringify({ code })
+		}),
+	mfaDisable: (password: string) => envelope<{ disabled: boolean }>(`/api/platform/mfa/disable`, {
+			method: 'POST',
+			body: JSON.stringify({ password })
+		}),
+	me: () => envelope<{ id: string; email: string; mfaEnabled: boolean }>(`/api/platform/auth/me`)
 }

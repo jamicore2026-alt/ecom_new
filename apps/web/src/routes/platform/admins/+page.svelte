@@ -30,6 +30,74 @@
 	let newPassword = $state('')
 	let pwSaving = $state(false)
 
+	let myId = $state('')
+	let mfaEnabled = $state(false)
+	let mfaBackupLeft = $state(0)
+	let mfaSetup = $state<{ otpauthUrl: string; secret: string } | null>(null)
+	let mfaCode = $state('')
+	let mfaPw = $state('')
+	let mfaBusy = $state(false)
+	let freshBackupCodes = $state<string[]>([])
+
+	async function loadMe() {
+		try {
+			const me = await platformApi.me()
+			myId = me.id
+			mfaEnabled = me.mfaEnabled
+			const st = await platformApi.mfaStatus()
+			mfaBackupLeft = st.backupCodesRemaining
+		} catch {
+			// non-fatal: MFA card stays hidden
+		}
+	}
+
+	async function startMfaSetup() {
+		mfaBusy = true
+		try {
+			mfaSetup = await platformApi.mfaSetup()
+			freshBackupCodes = []
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			mfaBusy = false
+		}
+	}
+
+	async function confirmMfaEnable() {
+		mfaBusy = true
+		try {
+			const res = await platformApi.mfaEnable(mfaCode)
+			freshBackupCodes = res.backupCodes
+			mfaSetup = null
+			mfaCode = ''
+			mfaEnabled = true
+			toast.success('MFA enabled — save your backup codes')
+			await load()
+			await loadMe()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			mfaBusy = false
+		}
+	}
+
+	async function disableMfa() {
+		if (!mfaPw || !confirm('Disable two-factor authentication?')) return
+		mfaBusy = true
+		try {
+			await platformApi.mfaDisable(mfaPw)
+			mfaPw = ''
+			mfaEnabled = false
+			toast.success('MFA disabled')
+			await loadMe()
+			await load()
+		} catch (e) {
+			toast.error((e as Error).message)
+		} finally {
+			mfaBusy = false
+		}
+	}
+
 	async function load() {
 		loading = true
 		try {
@@ -41,7 +109,10 @@
 		}
 	}
 
-	onMount(load)
+	onMount(() => {
+		load()
+		loadMe()
+	})
 
 	async function submitCreate() {
 		if (!fEmail.trim() || fPassword.length < 12) {
@@ -170,11 +241,46 @@
 							</td>
 						</tr>
 					{/each}
-				</tbody>
-			</table>
-		</div>
-	{/if}
-</Card>
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</Card>
+
+	<Card title="My two-factor authentication" subtitle="Opt-in TOTP for your own account">
+		{#if mfaEnabled}
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<p class="text-sm text-secondary">Enabled · {mfaBackupLeft} backup code(s) left</p>
+				<div class="flex items-center gap-2">
+					<input type="password" class="field w-48" placeholder="Current password" bind:value={mfaPw} autocomplete="current-password" />
+					<Button size="sm" variant="secondary" loading={mfaBusy} onclick={disableMfa}>Disable MFA</Button>
+				</div>
+			</div>
+		{:else if mfaSetup}
+			<div class="space-y-3">
+				<p class="text-sm text-secondary">Scan this key in your authenticator app, then enter a code to enable.</p>
+				<p class="rounded bg-surface-container p-3 font-mono text-xs break-all text-on-surface">{mfaSetup.secret}</p>
+				<p class="text-xs text-secondary break-all">{mfaSetup.otpauthUrl}</p>
+				<div class="flex items-center gap-2">
+					<input inputmode="numeric" maxlength="6" class="field w-40" placeholder="123456" bind:value={mfaCode} />
+					<Button size="sm" loading={mfaBusy} onclick={confirmMfaEnable}>Verify & enable</Button>
+				</div>
+				{#if freshBackupCodes.length}
+					<div class="rounded border border-outline-variant p-3">
+						<p class="mb-2 text-sm font-medium text-on-surface">Backup codes — save them now, shown once:</p>
+						<ul class="grid gap-1 font-mono text-sm text-on-surface sm:grid-cols-2">
+							{#each freshBackupCodes as c (c)}<li>{c}</li>{/each}
+						</ul>
+					</div>
+				{/if}
+			</div>
+		{:else}
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<p class="text-sm text-secondary">Not enabled. Adds a second step to your sign-in.</p>
+				<Button size="sm" variant="secondary" loading={mfaBusy} onclick={startMfaSetup}>Set up MFA</Button>
+			</div>
+		{/if}
+	</Card>
 
 {#if createOpen}
 	<Modal title="New platform admin" open={true} width="sm" onClose={() => (createOpen = false)}>
