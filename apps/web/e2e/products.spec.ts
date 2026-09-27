@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test'
 const API = process.env.E2E_API_URL ?? 'http://localhost:3005'
 const SKU = `E2E-PROD-${Date.now()}`
 let productId = ''
+let cachedToken = ''
 
 async function api(path: string, init?: RequestInit) {
 	const res = await fetch(API + path, {
@@ -13,11 +14,15 @@ async function api(path: string, init?: RequestInit) {
 }
 
 async function adminToken() {
+	// Cached per file: /api/auth/login allows 10 req/min.
+	if (cachedToken) return cachedToken
 	const body = await api('/api/auth/login', {
 		method: 'POST',
 		body: JSON.stringify({ email: 'admin@jamicore.com', password: 'password123' })
 	})
-	return body.data.accessToken as string
+	cachedToken = body.data.accessToken as string
+	if (!cachedToken) throw new Error('E2E fixture login failed (rate-limited?)')
+	return cachedToken
 }
 
 test.describe('Products end-to-end', () => {

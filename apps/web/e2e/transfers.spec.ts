@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 const API = process.env.E2E_API_URL ?? 'http://localhost:3005'
+let cachedToken = ''
 
 async function api(path: string, token: string, init?: RequestInit) {
 	const res = await fetch(API + path, {
@@ -15,12 +16,17 @@ async function api(path: string, token: string, init?: RequestInit) {
 }
 
 async function adminToken() {
+	// Cached per file: /api/auth/login allows 10 req/min, and refetching per
+	// hook would exhaust it across the suite.
+	if (cachedToken) return cachedToken
 	const res = await fetch(API + '/api/auth/login', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ email: 'admin@jamicore.com', password: 'password123' })
 	})
-	return ((await res.json()).data.accessToken as string) ?? ''
+	cachedToken = (((await res.json()).data.accessToken as string) ?? '')
+	if (!cachedToken) throw new Error('E2E fixture login failed (rate-limited?)')
+	return cachedToken
 }
 
 test.describe('Warehouse transfers end-to-end', () => {
