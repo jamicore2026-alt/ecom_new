@@ -66,6 +66,14 @@ export class SettingsService {
       footerNote: null,
       displayFields: { columns: ['item', 'sku', 'qty', 'price', 'total'], showDiscount: true, showTax: true },
       layout: 'standard',
+      layoutStyle: 'light',
+      tableStyle: 'light',
+      fontFamily: 'helvetica',
+      accentColor: '#004ac6',
+      paperFormat: 'A4',
+      tagline: null,
+      bankAccount: null,
+      showQr: false,
       nextNumber: 1,
       updatedAt: new Date()
     })
@@ -84,6 +92,22 @@ export class SettingsService {
     if (body.headerNote !== undefined) clean.headerNote = (body.headerNote as string | null) || null
     if (body.footerNote !== undefined) clean.footerNote = (body.footerNote as string | null) || null
     if (body.layout !== undefined) clean.layout = body.layout === 'compact' ? 'compact' : 'standard'
+    const LAYOUT_STYLES = ['light', 'bubble', 'wave', 'folder', 'center', 'dual', 'lines']
+    if (typeof body.layoutStyle === 'string' && LAYOUT_STYLES.includes(body.layoutStyle)) {
+      clean.layoutStyle = body.layoutStyle
+    }
+    const TABLE_STYLES = ['light', 'boxed', 'bold', 'striped', 'bubble', 'column']
+    if (typeof body.tableStyle === 'string' && TABLE_STYLES.includes(body.tableStyle)) {
+      clean.tableStyle = body.tableStyle
+    }
+    if (body.fontFamily === 'helvetica' || body.fontFamily === 'times') clean.fontFamily = body.fontFamily
+    if (typeof body.accentColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.accentColor.trim())) {
+      clean.accentColor = body.accentColor.trim()
+    }
+    if (body.paperFormat === 'A4' || body.paperFormat === 'Letter') clean.paperFormat = body.paperFormat
+    if (body.tagline !== undefined) clean.tagline = (body.tagline as string | null) || null
+    if (body.bankAccount !== undefined) clean.bankAccount = (body.bankAccount as string | null) || null
+    if (typeof body.showQr === 'boolean') clean.showQr = body.showQr
     const displayFields = body.displayFields as
       | { columns?: string[]; showDiscount?: boolean; showTax?: boolean }
       | undefined

@@ -2342,8 +2342,21 @@ export const invoiceSettings = pgTable('invoice_settings', {
     .$type<{ columns: string[]; showDiscount: boolean; showTax: boolean }>()
     .notNull()
     .default({ columns: [], showDiscount: true, showTax: true }),
-  /** 'standard' | 'compact' — layout control for the PDF renderer. */
+  /** 'standard' | 'compact' — density control for the PDF renderer. */
   layout: varchar('layout', { length: 20 }).notNull().default('standard'),
+  /** Document layout style: light | bubble | wave | folder | center | dual | lines. */
+  layoutStyle: varchar('layout_style', { length: 20 }).notNull().default('light'),
+  /** Line-item table style: light | boxed | bold | striped | bubble | column. */
+  tableStyle: varchar('table_style', { length: 20 }).notNull().default('light'),
+  /** Latin typeface: helvetica | times (Arabic runs always use embedded Naskh). */
+  fontFamily: varchar('font_family', { length: 20 }).notNull().default('helvetica'),
+  /** Accent color (#rrggbb) driving bands, totals and highlights. */
+  accentColor: varchar('accent_color', { length: 20 }).notNull().default('#004ac6'),
+  /** Paper format: A4 | Letter. */
+  paperFormat: varchar('paper_format', { length: 20 }).notNull().default('A4'),
+  tagline: varchar('tagline', { length: 255 }),
+  bankAccount: text('bank_account'),
+  showQr: boolean('show_qr').notNull().default(false),
   nextNumber: integer('next_number').notNull().default(1),
   updatedAt: tstz('updated_at').defaultNow().notNull().$onUpdate(() => new Date())
 })

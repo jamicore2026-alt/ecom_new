@@ -197,6 +197,14 @@
 		footerNote: string | null
 		displayFields: { columns: string[]; showDiscount: boolean; showTax: boolean }
 		layout: 'standard' | 'compact'
+		layoutStyle: string
+		tableStyle: string
+		fontFamily: string
+		accentColor: string
+		paperFormat: string
+		tagline: string | null
+		bankAccount: string | null
+		showQr: boolean
 		nextNumber: number
 	}
 	let invoiceSettings = $state<InvoiceSettings | null>(null)
@@ -213,6 +221,18 @@
 	let invShowDiscount = $state(true)
 	let invShowTax = $state(true)
 	let invLayout = $state<'standard' | 'compact'>('standard')
+	let invLayoutStyle = $state('light')
+	let invTableStyle = $state('light')
+	let invFontFamily = $state('helvetica')
+	let invAccentColor = $state('#004ac6')
+	let invPaperFormat = $state('A4')
+	let invTagline = $state('')
+	let invBankAccount = $state('')
+	let invShowQr = $state(false)
+	let invLogo = $state('')
+	let invLogoUploading = $state(false)
+	const INV_LAYOUT_STYLES = ['light', 'bubble', 'wave', 'folder', 'center', 'dual', 'lines'] as const
+	const INV_TABLE_STYLES = ['light', 'boxed', 'bold', 'striped', 'bubble', 'column'] as const
 
 	const PERMISSIONS: Permission[] = [
 		'products:write',
@@ -320,6 +340,15 @@
 				invShowDiscount = res.data.displayFields.showDiscount
 				invShowTax = res.data.displayFields.showTax
 				invLayout = res.data.layout
+				invLayoutStyle = res.data.layoutStyle ?? 'light'
+				invTableStyle = res.data.tableStyle ?? 'light'
+				invFontFamily = res.data.fontFamily ?? 'helvetica'
+				invAccentColor = res.data.accentColor ?? '#004ac6'
+				invPaperFormat = res.data.paperFormat ?? 'A4'
+				invTagline = res.data.tagline ?? ''
+				invBankAccount = res.data.bankAccount ?? ''
+				invShowQr = res.data.showQr ?? false
+				invLogo = res.data.logo ?? ''
 			} else {
 				const res = await api.get<{ success: boolean; data: StaffMember[] }>('/api/settings/staff')
 				staff = res.data
@@ -810,7 +839,16 @@
 				headerNote: invHeaderNote.trim() || null,
 				footerNote: invFooterNote.trim() || null,
 				displayFields: { columns: invColumns, showDiscount: invShowDiscount, showTax: invShowTax },
-				layout: invLayout
+				layout: invLayout,
+				layoutStyle: invLayoutStyle,
+				tableStyle: invTableStyle,
+				fontFamily: invFontFamily,
+				accentColor: invAccentColor,
+				paperFormat: invPaperFormat,
+				tagline: invTagline.trim() || null,
+				bankAccount: invBankAccount.trim() || null,
+				showQr: invShowQr,
+				logo: invLogo.trim() || null
 			})
 			invoiceSettings = res.data
 			toast.success('Invoice settings saved')
@@ -819,6 +857,55 @@
 			toast.error((e as Error).message)
 		} finally {
 			saving = false
+		}
+	}
+
+	/** Discard unsaved invoice edits — restore every field from last saved state. */
+	function discardInvoice() {
+		const s = invoiceSettings
+		if (!s) return
+		invPrefix = s.prefix
+		invBusinessName = s.businessName ?? ''
+		invAddress = { ...s.address }
+		invPhone = s.phone ?? ''
+		invEmail = s.email ?? ''
+		invTaxLabel = s.taxLabel ?? ''
+		invTaxNumber = s.taxNumber ?? ''
+		invHeaderNote = s.headerNote ?? ''
+		invFooterNote = s.footerNote ?? ''
+		invColumns = [...s.displayFields.columns]
+		invShowDiscount = s.displayFields.showDiscount
+		invShowTax = s.displayFields.showTax
+		invLayout = s.layout
+		invLayoutStyle = s.layoutStyle ?? 'light'
+		invTableStyle = s.tableStyle ?? 'light'
+		invFontFamily = s.fontFamily ?? 'helvetica'
+		invAccentColor = s.accentColor ?? '#004ac6'
+		invPaperFormat = s.paperFormat ?? 'A4'
+		invTagline = s.tagline ?? ''
+		invBankAccount = s.bankAccount ?? ''
+		invShowQr = s.showQr ?? false
+		invLogo = s.logo ?? ''
+		markClean('invoice')
+		toast.success('Invoice changes discarded')
+	}
+
+	async function uploadInvoiceLogo(e: Event) {
+		const input = e.currentTarget as HTMLInputElement
+		const file = input.files?.[0]
+		if (!file) return
+		invLogoUploading = true
+		try {
+			const form = new FormData()
+			form.append('files', file)
+			const res = await api.upload<{ success: boolean; data: Array<{ url: string }> }>('/api/uploads', form)
+			invLogo = res.data[0]?.url ?? ''
+			if (!invLogo) toast.error('Upload returned no URL')
+		} catch (err) {
+			toast.error((err as Error).message)
+		} finally {
+			invLogoUploading = false
+			input.value = ''
 		}
 	}
 
@@ -1382,11 +1469,103 @@
 
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div>
-							<label for="inv-layout" class="field-label">Layout</label>
+							<label for="inv-layout" class="field-label">Layout density</label>
 							<select id="inv-layout" class="field" bind:value={invLayout}>
 								<option value="standard">Standard</option>
 								<option value="compact">Compact</option>
 							</select>
+						</div>
+						<div>
+							<label for="inv-paper" class="field-label">Paper format</label>
+							<select id="inv-paper" class="field" bind:value={invPaperFormat}>
+								<option value="A4">A4</option>
+								<option value="Letter">Letter</option>
+							</select>
+						</div>
+					</div>
+
+					<div>
+						<p class="field-label mb-2">Document layout style</p>
+						<div class="flex flex-wrap gap-2">
+							{#each INV_LAYOUT_STYLES as style (style)}
+								<button
+									type="button"
+									class="rounded-lg border px-3 py-2 text-sm capitalize transition-colors {invLayoutStyle === style ? 'border-primary bg-primary-fixed-dim/40 font-semibold text-primary' : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-low'}"
+									onclick={() => (invLayoutStyle = style)}
+								>
+									{style}
+								</button>
+							{/each}
+						</div>
+					</div>
+
+					<div>
+						<p class="field-label mb-2">Table style</p>
+						<div class="flex flex-wrap gap-2">
+							{#each INV_TABLE_STYLES as style (style)}
+								<button
+									type="button"
+									class="rounded-lg border px-3 py-2 text-sm capitalize transition-colors {invTableStyle === style ? 'border-primary bg-primary-fixed-dim/40 font-semibold text-primary' : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-low'}"
+									onclick={() => (invTableStyle = style)}
+								>
+									{style}
+								</button>
+							{/each}
+						</div>
+					</div>
+
+					<div class="grid gap-4 sm:grid-cols-3">
+						<div>
+							<label for="inv-font" class="field-label">Text font</label>
+							<select id="inv-font" class="field" bind:value={invFontFamily}>
+								<option value="helvetica">Helvetica</option>
+								<option value="times">Times</option>
+							</select>
+						</div>
+						<div>
+							<label for="inv-accent" class="field-label">Accent color</label>
+							<div class="flex items-center gap-2">
+								<input id="inv-accent" type="color" class="h-10 w-12 cursor-pointer rounded border border-outline-variant bg-surface-container-lowest p-1" bind:value={invAccentColor} />
+								<input class="field flex-1 font-mono" value={invAccentColor} maxlength="7" placeholder="#004ac6" oninput={(e) => (invAccentColor = (e.currentTarget as HTMLInputElement).value)} />
+							</div>
+						</div>
+						<label class="flex items-center gap-2 self-end pb-2 text-sm text-on-surface-variant">
+							<input type="checkbox" class="field-check" bind:checked={invShowQr} />
+							QR code on invoice
+						</label>
+					</div>
+
+					<div class="grid gap-4 sm:grid-cols-2">
+						<div>
+							<label for="inv-logo" class="field-label">Logo</label>
+							<div class="flex items-center gap-3">
+								{#if invLogo}
+									<img src={invLogo} alt="" class="h-10 w-10 rounded object-cover" onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')} />
+								{/if}
+								<label for="inv-logo-file" class="inline-flex min-h-11 cursor-pointer items-center rounded border border-outline-variant px-3 text-sm font-medium text-primary hover:bg-surface-container-low">
+									{invLogoUploading ? 'Uploading…' : invLogo ? 'Replace logo' : 'Upload logo'}
+								</label>
+								<input id="inv-logo-file" type="file" accept="image/*" class="hidden" onchange={uploadInvoiceLogo} />
+								{#if invLogo}
+									<button type="button" class="text-xs text-error hover:underline" onclick={() => (invLogo = '')}>Remove</button>
+								{/if}
+							</div>
+						</div>
+						<div>
+							<label for="inv-tagline" class="field-label">Tagline</label>
+							<input id="inv-tagline" class="field" bind:value={invTagline} maxlength="255" placeholder="Quality you can trust" />
+						</div>
+					</div>
+
+					<div class="grid gap-4 sm:grid-cols-2">
+						<div>
+							<label for="inv-bank" class="field-label">Bank account details</label>
+							<textarea id="inv-bank" class="field" rows="3" bind:value={invBankAccount} placeholder="Bank name, IBAN, SWIFT…"></textarea>
+						</div>
+						<div>
+							<label for="inv-tax-number2" class="field-label">Tax ID</label>
+							<input id="inv-tax-number2" class="field" bind:value={invTaxNumber} placeholder="Same as tax / registration number above" />
+							<p class="mt-1 text-[11px] text-outline">Printed on the PDF next to the tax label.</p>
 						</div>
 					</div>
 
@@ -1399,8 +1578,9 @@
 						<input id="inv-footer-note" class="field" bind:value={invFooterNote} placeholder="Optional line below the totals (e.g. thanks for your business)" />
 					</div>
 
-					<div class="flex justify-end">
-						<Button type="submit" loading={saving}>Save</Button>
+					<div class="flex justify-end gap-2">
+						<Button variant="secondary" onclick={discardInvoice}>Discard</Button>
+						<Button type="submit" loading={saving}>Continue</Button>
 					</div>
 				</form>
 			</Card>

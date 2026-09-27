@@ -20,6 +20,14 @@ type InvoiceSettingsShape = {
   footerNote?: string | null
   displayFields?: { columns: string[]; showDiscount: boolean; showTax: boolean }
   layout?: string | null
+  layoutStyle?: string | null
+  tableStyle?: string | null
+  fontFamily?: string | null
+  accentColor?: string | null
+  paperFormat?: string | null
+  tagline?: string | null
+  bankAccount?: string | null
+  showQr?: boolean | null
 }
 
 type InvoiceLineItem = Pick<OrderItem, 'name' | 'sku' | 'price' | 'quantity' | 'total'> & {
@@ -47,6 +55,36 @@ const addressLines = (a: Address | null | undefined): string[] => {
 
 const fmtDate = (d: Date) =>
   d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+
+/** Active Latin typeface for this render (Arabic runs always use embedded
+ *  Naskh for glyph coverage). Set once at render start; module state is safe
+ *  because a render is fully synchronous once begun. */
+let LATIN = 'Helvetica'
+let LATIN_BOLD = 'Helvetica-Bold'
+let LATIN_ITALIC = 'Helvetica-Oblique'
+
+function setLatinFace(family: string | null | undefined) {
+  if (family === 'times') {
+    LATIN = 'Times-Roman'
+    LATIN_BOLD = 'Times-Bold'
+    LATIN_ITALIC = 'Times-Italic'
+  } else {
+    LATIN = 'Helvetica'
+    LATIN_BOLD = 'Helvetica-Bold'
+    LATIN_ITALIC = 'Helvetica-Oblique'
+  }
+}
+
+const LAYOUT_STYLES = ['light', 'bubble', 'wave', 'folder', 'center', 'dual', 'lines'] as const
+const TABLE_STYLES = ['light', 'boxed', 'bold', 'striped', 'bubble', 'column'] as const
+
+function pick<T extends string>(value: string | null | undefined, allowed: readonly T[], fallback: T): T {
+  return allowed.includes(value as T) ? (value as T) : fallback
+}
+
+function validAccent(value: string | null | undefined): string {
+  return value && /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value.trim() : '#004ac6'
+}
 
 const VALID_COLUMNS = ['item', 'sku', 'qty', 'price', 'total']
 
@@ -135,7 +173,7 @@ function printMixed(doc: PdfDoc, useArabic: boolean, text: string, opts: MixedOp
   const atXY = x !== undefined && y !== undefined
   if (!useArabic || !hasArabic(text)) {
     doc
-      .font(`Helvetica${bold ? '-Bold' : ''}`)
+      .font((bold ? LATIN_BOLD : LATIN))
       .fontSize(fontSize)
       .fillColor(color)
     if (atXY) doc.text(text, x, y, baseOpts)
@@ -182,7 +220,7 @@ function printMixed(doc: PdfDoc, useArabic: boolean, text: string, opts: MixedOp
     }
     if (!last) runOpts.continued = true
     doc
-      .font(run.arabic ? arFont : `Helvetica${bold ? '-Bold' : ''}`)
+      .font(run.arabic ? arFont : (bold ? LATIN_BOLD : LATIN))
       .fontSize(fontSize)
       .fillColor(color)
     const runText = run.arabic ? toVisual(run.text) : run.text
@@ -214,6 +252,13 @@ export async function renderInvoicePdf(args: {
   const businessName =
     settings.businessName?.trim() || store?.name?.trim() || 'Business'
   const layout = settings.layout === 'compact' ? 'compact' : 'standard'
+  const layoutStyle = pick(settings.layoutStyle, LAYOUT_STYLES, 'light')
+  const tableStyle = pick(settings.tableStyle, TABLE_STYLES, 'light')
+  setLatinFace(settings.fontFamily)
+  const accent = validAccent(settings.accentColor)
+  const showQr = settings.showQr === true
+  const tagline = settings.tagline?.trim() || null
+  const bankAccount = settings.bankAccount?.trim() || null
   const displayFields = settings.displayFields ?? {
     columns: ['item', 'sku', 'qty', 'price', 'total'],
     showDiscount: true,
@@ -224,7 +269,11 @@ export async function renderInvoicePdf(args: {
   const showTax = displayFields.showTax !== false && (invoice.taxTotal ?? 0) !== 0
   const currency = order.currency || 'USD'
 
-  const doc = new PDFDocument({ size: 'A4', margin: layout === 'compact' ? 36 : 52, bufferPages: false })
+  const doc = new PDFDocument({
+    size: settings.paperFormat === 'Letter' ? 'LETTER' : 'A4',
+    margin: layout === 'compact' ? 36 : 52,
+    bufferPages: false
+  })
   useArabic = registerArabicFonts(doc)
   const chunks: Buffer[] = []
   doc.on('data', (c: Buffer) => chunks.push(c))
@@ -248,7 +297,7 @@ export async function renderInvoicePdf(args: {
 
   const keyValue = (k: string, v: string, opts: { bold?: boolean } = {}) => {
     doc
-      .font('Helvetica')
+      .font(LATIN)
       .fontSize(small)
       .fillColor('#6b7280')
       .text(k, undefined, undefined, { continued: true })
@@ -262,7 +311,7 @@ export async function renderInvoicePdf(args: {
         .text(`  ${visual}`)
     } else {
       doc
-        .font(`Helvetica${opts.bold ? '-Bold' : ''}`)
+        .font(opts.bold ? LATIN_BOLD : LATIN)
         .fontSize(base)
         .fillColor('#111827')
         .text(`  ${v}`)
@@ -287,10 +336,93 @@ export async function renderInvoicePdf(args: {
 
   doc.y = (settings.logo ? 130 : doc.page.margins.top) + 4
 
-  // ---------- header ----------
-  writeLine(businessName, { fontSize: layout === 'compact' ? 16 : 20, bold: true, color: '#111827' })
+  // ---------- header (7 layout styles, one content core) ----------
   const addr = addressLines(settings.address as Address | null | undefined)
-  for (const line of addr.slice(0, 3)) writeLine(line, { fontSize: small, color: '#6b7280' })
+  const headerTop = doc.y
+  const pageW = doc.page.width
+  const marginL = doc.page.margins.left
+  const marginR = doc.page.margins.right
+  const contentW = pageW - marginL - marginR
+  const titleSize = layout === 'compact' ? 16 : 20
+  const drawTagline = (align: 'left' | 'center' | 'right' = 'left') => {
+    if (!tagline) return
+    printMixed(doc, useArabic, tagline, { fontSize: small, color: '#6b7280', align, width: contentW })
+  }
+  const drawAddr = (align: 'left' | 'center' | 'right' = 'left') => {
+    for (const line of addr.slice(0, 3)) {
+      printMixed(doc, useArabic, line, { fontSize: small, color: '#6b7280', align, width: contentW })
+    }
+  }
+  if (layoutStyle === 'bubble') {
+    const bandH = tagline ? 64 : 50
+    doc.roundedRect(marginL, headerTop, contentW, bandH, 12).fill(accent)
+    printMixed(doc, useArabic, businessName, { fontSize: titleSize, color: '#ffffff', bold: true, x: marginL + 16, y: headerTop + 10, width: contentW - 32 })
+    if (tagline) printMixed(doc, useArabic, tagline, { fontSize: small, color: '#ffffff', x: marginL + 16, y: headerTop + 34, width: contentW - 32 })
+    doc.y = headerTop + bandH + 8
+    drawAddr()
+  } else if (layoutStyle === 'wave') {
+    const bandH = 56
+    doc
+      .moveTo(marginL, headerTop + bandH)
+      .bezierCurveTo(marginL + contentW * 0.3, headerTop + bandH - 22, marginL + contentW * 0.7, headerTop + bandH + 6, pageW - marginR, headerTop + bandH - 14)
+      .lineTo(pageW - marginR, headerTop)
+      .lineTo(marginL, headerTop)
+      .closePath()
+      .fill(accent)
+    printMixed(doc, useArabic, businessName, { fontSize: titleSize, color: '#ffffff', bold: true, x: marginL + 12, y: headerTop + 8, width: contentW - 24 })
+    doc.y = headerTop + bandH + 4
+    drawTagline()
+    drawAddr()
+  } else if (layoutStyle === 'folder') {
+    const tabW = Math.min(260, contentW * 0.55)
+    doc.roundedRect(marginL, headerTop, tabW, 30, 8).fill(accent)
+    printMixed(doc, useArabic, businessName, { fontSize: base + 2, color: '#ffffff', bold: true, x: marginL + 12, y: headerTop + 7, width: tabW - 24 })
+    doc
+      .moveTo(marginL, headerTop + 30)
+      .lineTo(marginL + contentW, headerTop + 30)
+      .lineWidth(2)
+      .strokeColor(accent)
+      .stroke()
+    doc.y = headerTop + 38
+    drawTagline()
+    drawAddr()
+  } else if (layoutStyle === 'center') {
+    printMixed(doc, useArabic, businessName, { fontSize: titleSize, color: '#111827', bold: true, align: 'center', width: contentW })
+    drawTagline('center')
+    doc
+      .moveTo(marginL + contentW / 2 - 40, doc.y + 4)
+      .lineTo(marginL + contentW / 2 + 40, doc.y + 4)
+      .lineWidth(2)
+      .strokeColor(accent)
+      .stroke()
+    doc.y += 10
+    drawAddr('center')
+  } else if (layoutStyle === 'dual') {
+    const half = contentW / 2
+    printMixed(doc, useArabic, businessName, { fontSize: titleSize, color: '#111827', bold: true, x: marginL, y: headerTop, width: half - 8 })
+    const rightTop = doc.y
+    if (tagline) printMixed(doc, useArabic, tagline, { fontSize: small, color: '#6b7280', align: 'right', x: marginL + half, y: headerTop, width: half })
+    const contact = [settings.phone, settings.email].filter(Boolean).join(' · ')
+    if (contact) printMixed(doc, useArabic, contact, { fontSize: small, color: '#6b7280', align: 'right', x: marginL + half, y: headerTop + (tagline ? 14 : 0), width: half })
+    doc.y = Math.max(doc.y, rightTop) + 4
+    drawAddr()
+  } else if (layoutStyle === 'lines') {
+    doc.moveTo(marginL, headerTop).lineTo(marginL + contentW, headerTop).lineWidth(2).strokeColor(accent).stroke()
+    printMixed(doc, useArabic, businessName, { fontSize: titleSize, color: '#111827', bold: true, x: marginL, y: headerTop + 6, width: contentW })
+    drawTagline()
+    drawAddr()
+    doc
+      .moveTo(marginL, doc.y + 4)
+      .lineTo(marginL + contentW, doc.y + 4)
+      .lineWidth(0.5)
+      .strokeColor('#9ca3af')
+      .stroke()
+    doc.y += 8
+  } else {
+    writeLine(businessName, { fontSize: titleSize, bold: true, color: '#111827' })
+    drawTagline()
+    drawAddr()
+  }
   doc.moveDown(0.4)
 
   // ---------- invoice meta ----------
@@ -318,9 +450,9 @@ export async function renderInvoicePdf(args: {
     const shipX = doc.x + (layout === 'compact' ? 200 : 260)
     const shipY = doc.y - (bill.length > 0 ? ship.length + 2 : 0) * (layout === 'compact' ? 10 : 12)
     if (shipY > 40) {
-      doc.font('Helvetica-Bold').fontSize(base).fillColor('#111827')
+      doc.font(LATIN_BOLD).fontSize(base).fillColor('#111827')
       doc.text('Ship To', doc.x + (layout === 'compact' ? 200 : 260), shipY)
-      doc.font('Helvetica').fontSize(small).fillColor('#374151')
+      doc.font(LATIN).fontSize(small).fillColor('#374151')
       let y = shipY + (base + 2)
       for (const line of ship.slice(0, 5)) {
         printMixed(doc, useArabic, line, { fontSize: small, color: '#374151', x: shipX, y })
@@ -357,31 +489,54 @@ export async function renderInvoicePdf(args: {
   }
 
   const headerY = doc.y
-  let rowY = headerY + (rowPad * 2 + (layout === 'compact' ? 10 : 12))
+  const headerH = rowPad * 2 + (layout === 'compact' ? 10 : 12)
+  let rowY = headerY + headerH
 
-  // header row
-  doc.rect(tableLeft, headerY, tableWidth, rowPad * 2 + (layout === 'compact' ? 10 : 12)).fill('#f3f4f6')
+  // header row per table style
+  const headerText = tableStyle === 'bold' ? '#ffffff' : '#111827'
+  if (tableStyle === 'bold') {
+    doc.rect(tableLeft, headerY, tableWidth, headerH).fill('#111827')
+  } else if (tableStyle === 'light' || tableStyle === 'striped') {
+    doc.rect(tableLeft, headerY, tableWidth, headerH).fill('#f3f4f6')
+  } else if (tableStyle === 'column') {
+    doc.rect(tableLeft, headerY, tableWidth, headerH).fill('#f3f4f6')
+    doc.rect(tableLeft, headerY, 3, headerH).fill(accent)
+  }
   let x = tableLeft
   for (const c of columns) {
     doc
-      .font('Helvetica-Bold')
+      .font(LATIN_BOLD)
       .fontSize(small)
-      .fillColor('#111827')
+      .fillColor(headerText)
       .text(c.toUpperCase(), x, headerY + rowPad, { width: colWidth(widths[c]) - 6 })
+    if (tableStyle === 'boxed') {
+      doc.rect(x, headerY, colWidth(widths[c]), headerH).lineWidth(0.5).strokeColor('#d1d5db').stroke()
+    }
     x += colWidth(widths[c])
   }
 
   // item rows
-  doc.font('Helvetica').fontSize(base).fillColor('#111827')
-  for (const item of items) {
+  doc.font(LATIN).fontSize(base).fillColor('#111827')
+  const rowH = layout === 'compact' ? 12 : 16
+  items.forEach((item, rowIdx) => {
     if (rowY > doc.page.height - doc.page.margins.bottom - 40) {
       doc.addPage()
       rowY = doc.page.margins.top
+    }
+    if (tableStyle === 'striped' && rowIdx % 2 === 1) {
+      doc.rect(tableLeft, rowY - 2, tableWidth, rowH + 2).fill('#f8fafc')
+    }
+    if (tableStyle === 'bubble') {
+      doc.roundedRect(tableLeft, rowY - 2, tableWidth, rowH + 2, 6).fill('#f3f4f6')
+    }
+    if (tableStyle === 'column') {
+      doc.rect(tableLeft, rowY - 2, 3, rowH + 2).fill(accent)
     }
     const name = `${isCredit ? `${item.name} (credit)` : item.name}${vatRateOf(item) !== null ? ` — ${vatRateOf(item)}% VAT` : ''}`
     x = tableLeft
     for (const c of columns) {
       const cellX = x
+      const cellW = colWidth(widths[c]) - 6
       switch (c) {
         case 'item':
           printMixed(doc, useArabic, name, {
@@ -389,44 +544,60 @@ export async function renderInvoicePdf(args: {
             color: '#111827',
             x: cellX,
             y: rowY,
-            width: colWidth(widths[c]) - 6
+            width: cellW
           })
           break
         case 'sku':
-          doc.font('Helvetica').fontSize(base).fillColor('#111827')
-          doc.text(item.sku ?? '—', cellX, rowY, { width: colWidth(widths[c]) - 6 })
+          doc.font(LATIN).fontSize(base).fillColor('#111827')
+          doc.text(item.sku ?? '—', cellX, rowY, { width: cellW })
           break
         case 'qty':
-          doc.font('Helvetica').fontSize(base).fillColor('#111827')
-          doc.text(String(item.quantity), cellX, rowY, { width: colWidth(widths[c]) - 6, align: 'right' })
+          doc.font(LATIN).fontSize(base).fillColor('#111827')
+          doc.text(String(item.quantity), cellX, rowY, { width: cellW, align: 'right' })
           break
         case 'price':
-          doc.font('Helvetica').fontSize(base).fillColor('#111827')
-          doc.text(money(Number(item.price), currency), cellX, rowY, { width: colWidth(widths[c]) - 6, align: 'right' })
+          doc.font(LATIN).fontSize(base).fillColor('#111827')
+          doc.text(money(Number(item.price), currency), cellX, rowY, { width: cellW, align: 'right' })
           break
         case 'total':
-          doc.font('Helvetica').fontSize(base).fillColor('#111827')
-          doc.text(money(Number(item.total), currency), cellX, rowY, { width: colWidth(widths[c]) - 6, align: 'right' })
+          doc.font(LATIN).fontSize(base).fillColor('#111827')
+          doc.text(money(Number(item.total), currency), cellX, rowY, { width: cellW, align: 'right' })
           break
+      }
+      if (tableStyle === 'boxed') {
+        doc.rect(cellX, rowY - 2, colWidth(widths[c]), rowH + 2).lineWidth(0.5).strokeColor('#d1d5db').stroke()
       }
       x += colWidth(widths[c])
     }
-    rowY += layout === 'compact' ? 12 : 16
-    doc.moveTo(tableLeft, rowY - (layout === 'compact' ? 4 : 5))
-    doc.strokeColor('#e5e7eb').lineWidth(0.5).stroke()
-  }
+    rowY += rowH
+    if (tableStyle === 'light' || tableStyle === 'bold' || tableStyle === 'column') {
+      doc.moveTo(tableLeft, rowY - (layout === 'compact' ? 4 : 5))
+      doc.strokeColor(tableStyle === 'column' ? accent : '#e5e7eb').lineWidth(0.5).stroke()
+    }
+  })
 
-  // ---------- totals ----------
+  // ---------- totals (explicit two-column rows — label and value can
+  // never overlap: each gets its own box and doc.y advances per row) ----------
   const totalsX = tableLeft + tableWidth * (columns.includes('item') ? 0.55 : 0.3)
   const totalsW = tableWidth * 0.45
+  const labelW = totalsW * 0.55
+  const valueW = totalsW - labelW
+  const lineH = base + 6
+  doc.y = Math.max(rowY + (layout === 'compact' ? 6 : 10), doc.page.margins.top + 60)
   const totalRow = (labelText: string, val: string, bold = false, color = '#111827') => {
     const labelArabic = useArabic && hasArabic(labelText)
     doc
-      .font(labelArabic ? (bold ? AR_FONT_BOLD : AR_FONT) : `Helvetica${bold ? '-Bold' : ''}`)
+      .font(labelArabic ? (bold ? AR_FONT_BOLD : AR_FONT) : bold ? LATIN_BOLD : LATIN)
       .fontSize(base)
       .fillColor(color)
-      .text(labelArabic ? toVisual(labelText) : labelText, totalsX, doc.y, { width: totalsW, continued: true, align: 'right' })
-    doc.text(val, { width: totalsW, align: 'right' })
+    if (labelArabic) {
+      doc.text(toVisual(labelText), totalsX, doc.y, { width: labelW, align: 'right' })
+    } else {
+      doc.text(labelText, totalsX, doc.y, { width: labelW, align: 'right' })
+    }
+    doc.font(bold ? LATIN_BOLD : LATIN).fontSize(base).fillColor(color)
+    doc.text(val, totalsX + labelW, doc.y, { width: valueW, align: 'right' })
+    doc.y += lineH
   }
   doc.y = Math.max(rowY + (layout === 'compact' ? 6 : 10), doc.page.margins.top + 60)
   totalRow('Subtotal', money(Number(invoice.subtotal), currency))
@@ -451,6 +622,37 @@ export async function renderInvoicePdf(args: {
   doc.moveDown(0.3)
   totalRow(isCredit ? 'Credit Total' : 'Total', money(Number(invoice.total), currency), true, '#111827')
 
+  // ---------- bank details + QR ----------
+  if (bankAccount) {
+    doc.moveDown(0.4)
+    doc.font(LATIN_BOLD).fontSize(small).fillColor('#111827')
+    doc.text('Bank details', totalsX, doc.y, { width: totalsW, align: 'right' })
+    printMixed(doc, useArabic, bankAccount, {
+      fontSize: small,
+      color: '#374151',
+      x: totalsX,
+      y: doc.y,
+      width: totalsW,
+      align: 'right'
+    })
+    doc.y += small + 10
+  }
+  if (showQr) {
+    try {
+      const QRCode = (await import('qrcode')).default
+      const qrText = `invoice:${invoice.invoiceNumber}|order:${order.orderNumber}|total:${Number(invoice.total)}|${currency}`
+      const dataUrl = await QRCode.toDataURL(qrText, { width: 96, margin: 1 })
+      const qrBuf = Buffer.from(dataUrl.split(',')[1], 'base64')
+      const qrY = doc.y + 4
+      doc.image(qrBuf, totalsX + totalsW - 100, qrY, { width: 96 })
+      doc.font(LATIN).fontSize(small).fillColor('#6b7280')
+      doc.text('Scan to verify', totalsX + totalsW - 100, qrY + 100, { width: 96, align: 'center' })
+      doc.y = qrY + 100 + small + 4
+    } catch {
+      /* QR is decorative — never break an invoice */
+    }
+  }
+
   // ---------- footer ----------
   if (settings.footerNote) {
     doc.moveDown(0.8)
@@ -465,7 +667,7 @@ export async function renderInvoicePdf(args: {
   if (settings.phone || settings.email) {
     doc.moveDown(0.4)
     const contact = [settings.phone, settings.email].filter(Boolean).join(' · ')
-    doc.font('Helvetica').fontSize(small).fillColor('#9ca3af')
+    doc.font(LATIN).fontSize(small).fillColor('#9ca3af')
     doc.text(contact, { width: totalsX + totalsW, align: 'center' })
   }
 

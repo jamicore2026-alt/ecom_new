@@ -33,7 +33,34 @@ export const invoiceSettingsBody = t.Object({
       showTax: t.Optional(t.Boolean())
     })
   ),
-  layout: t.Optional(t.Union([t.Literal('standard'), t.Literal('compact')]))
+  layout: t.Optional(t.Union([t.Literal('standard'), t.Literal('compact')])),
+  layoutStyle: t.Optional(
+    t.Union([
+      t.Literal('light'),
+      t.Literal('bubble'),
+      t.Literal('wave'),
+      t.Literal('folder'),
+      t.Literal('center'),
+      t.Literal('dual'),
+      t.Literal('lines')
+    ])
+  ),
+  tableStyle: t.Optional(
+    t.Union([
+      t.Literal('light'),
+      t.Literal('boxed'),
+      t.Literal('bold'),
+      t.Literal('striped'),
+      t.Literal('bubble'),
+      t.Literal('column')
+    ])
+  ),
+  fontFamily: t.Optional(t.Union([t.Literal('helvetica'), t.Literal('times')])),
+  accentColor: t.Optional(t.String({ maxLength: 20 })),
+  paperFormat: t.Optional(t.Union([t.Literal('A4'), t.Literal('Letter')])),
+  tagline: t.Optional(t.Nullable(t.String({ maxLength: 255 }))),
+  bankAccount: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
+  showQr: t.Optional(t.Boolean())
 })
 
 export const storeBody = t.Object({

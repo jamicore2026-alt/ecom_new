@@ -358,6 +358,13 @@
       "when": 1790484392469,
       "tag": "0050_variant_definition",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1790486528514,
+      "tag": "0051_invoice_design",
+      "breakpoints": true
     }
   ]
 }
