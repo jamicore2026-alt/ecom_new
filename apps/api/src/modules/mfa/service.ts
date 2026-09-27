@@ -6,6 +6,9 @@ import { sessions, tokenBlacklist, users } from '../../database/schema'
 import { REFRESH_SECRET, hashToken } from '../../plugins/auth'
 import { badRequest, unauthorized } from '../../shared/errors'
 import { ok } from '../../shared/response'
+import { createLogger } from '../../shared/logger'
+
+const log = createLogger('mfa')
 
 export const MFA_ISSUER = 'JamiCore'
 export const MFA_TOKEN_TTL_SECONDS = 5 * 60
@@ -256,21 +259,32 @@ export interface SessionRecord {
   expiresAt: Date
 }
 
-/** Insert a login session row. jtiHash = sha256(refresh jti); raw tokens are never stored. */
-export const recordSession = async (input: SessionRecord) => {
+/** Insert a login session row. jtiHash = sha256(refresh jti); raw tokens are never stored.
+ *  Best-effort by design: the sessions table is an observability/revocation
+ *  aid, and a missing/failing table must never block login itself. Failures
+ *  are logged LOUDLY (the gap is visible) and return null. */
+export const recordSession = async (input: SessionRecord): Promise<string | null> => {
   const jtiHash = hashToken(input.jti)
-  await db
-    .insert(sessions)
-    .values({
+  try {
+    await db
+      .insert(sessions)
+      .values({
+        merchantId: input.merchantId,
+        userId: input.userId,
+        jtiHash,
+        ip: input.ip?.slice(0, 64) ?? null,
+        userAgent: input.userAgent?.slice(0, 512) ?? null,
+        expiresAt: input.expiresAt
+      })
+      .onConflictDoNothing({ target: sessions.jtiHash })
+    return jtiHash
+  } catch (err) {
+    log.error('SESSION_WRITE_FAILED — session inventory gap! login continues without a session row', {
       merchantId: input.merchantId,
-      userId: input.userId,
-      jtiHash,
-      ip: input.ip?.slice(0, 64) ?? null,
-      userAgent: input.userAgent?.slice(0, 512) ?? null,
-      expiresAt: input.expiresAt
+      userId: input.userId
     })
-    .onConflictDoNothing({ target: sessions.jtiHash })
-  return jtiHash
+    return null
+  }
 }
 
 /** Refresh must reject revoked, expired, absolutely-aged-out, or idle sessions
