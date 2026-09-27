@@ -197,6 +197,12 @@ export interface ProductVariant {
 	inventory: number
 	unlimited?: boolean
 	image: string | null
+	name: string | null
+	nameAr: string | null
+	required: boolean
+	minSelections: number | null
+	maxSelections: number | null
+	buttonStyle: 'radio' | 'checkbox' | 'select' | 'swatch' | 'number' | 'text' | null
 	createdAt: string
 }
 

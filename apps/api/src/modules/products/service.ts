@@ -149,6 +149,16 @@ function assertValidSalePrice(price: number | null | undefined, compareAtPrice: 
   }
 }
 
+/**
+ * Variant selection-bounds guard: min/max are optional (blank = unlimited),
+ * but when both are set min must not exceed max.
+ */
+function assertValidVariantBounds(minSelections: number | null | undefined, maxSelections: number | null | undefined) {
+  if (minSelections != null && maxSelections != null && minSelections > maxSelections) {
+    throw badRequest('INVALID_SELECTION_RANGE', 'Minimum selections cannot exceed maximum selections')
+  }
+}
+
 export class ProductsService {
   /* ------------------------------- helpers ------------------------------- */
 
@@ -346,6 +356,12 @@ export class ProductsService {
         inventory?: number
         unlimited?: boolean
         image?: string
+        name?: string
+        nameAr?: string
+        required?: boolean
+        minSelections?: number | null
+        maxSelections?: number | null
+        buttonStyle?: string
       }>
       images?: Array<{ url: string; altText?: string; sortOrder?: number }>
     }
@@ -356,6 +372,7 @@ export class ProductsService {
     assertValidSalePrice(input.price, input.compareAtPrice)
     for (const v of input.variants ?? []) {
       assertValidSalePrice(v.price ?? input.price, v.compareAtPrice)
+      assertValidVariantBounds(v.minSelections, v.maxSelections)
     }
     if (input.categoryId) {
       const [cat] = await db
@@ -444,6 +461,12 @@ export class ProductsService {
       inventory?: number
       unlimited?: boolean
       image?: string
+      name?: string
+      nameAr?: string
+      required?: boolean
+      minSelections?: number | null
+      maxSelections?: number | null
+      buttonStyle?: string
     }>,
     defaultPrice: number
   ) {
@@ -456,7 +479,13 @@ export class ProductsService {
       compareAtPrice: v.compareAtPrice ?? null,
       inventory: v.inventory ?? 0,
       unlimited: v.unlimited ?? false,
-      image: v.image ?? null
+      image: v.image ?? null,
+      name: v.name ?? null,
+      nameAr: v.nameAr ?? null,
+      required: v.required ?? false,
+      minSelections: v.minSelections ?? null,
+      maxSelections: v.maxSelections ?? null,
+      buttonStyle: (v.buttonStyle as NewProductVariant['buttonStyle']) ?? null
     }))
     return executor.insert(productVariants).values(values).returning()
   }
@@ -1199,12 +1228,19 @@ export class ProductsService {
       inventory?: number
       unlimited?: boolean
       image?: string
+      name?: string
+      nameAr?: string
+      required?: boolean
+      minSelections?: number | null
+      maxSelections?: number | null
+      buttonStyle?: string
     }
   ) {
     const product = await this.findProduct(db, merchantId, productId)
     if (!product) throw notFound('NOT_FOUND', 'Product not found')
     if ((input.inventory ?? 0) < 0) throw badRequest('BAD_REQUEST', 'Variant inventory cannot be negative')
     assertValidSalePrice(input.price ?? product.price, input.compareAtPrice)
+    assertValidVariantBounds(input.minSelections, input.maxSelections)
     await this.assertUniqueVariantSkus(db, productId, [input.sku])
     const [variant] = await db.transaction(async (tx) =>
       tx
@@ -1218,7 +1254,13 @@ export class ProductsService {
           compareAtPrice: input.compareAtPrice ?? null,
           inventory: input.inventory ?? 0,
           unlimited: input.unlimited ?? false,
-          image: input.image ?? null
+          image: input.image ?? null,
+          name: input.name ?? null,
+          nameAr: input.nameAr ?? null,
+          required: input.required ?? false,
+          minSelections: input.minSelections ?? null,
+          maxSelections: input.maxSelections ?? null,
+          buttonStyle: (input.buttonStyle as NewProductVariant['buttonStyle']) ?? null
         })
         .returning()
     )
@@ -1238,6 +1280,12 @@ export class ProductsService {
       inventory?: number
       unlimited?: boolean
       image?: string
+      name?: string
+      nameAr?: string
+      required?: boolean
+      minSelections?: number | null
+      maxSelections?: number | null
+      buttonStyle?: string
     }
   ) {
     const found = await this.findVariant(db, merchantId, variantId)
@@ -1249,6 +1297,10 @@ export class ProductsService {
     assertValidSalePrice(
       input.price ?? variant.price,
       input.compareAtPrice !== undefined ? input.compareAtPrice : variant.compareAtPrice
+    )
+    assertValidVariantBounds(
+      input.minSelections !== undefined ? input.minSelections : variant.minSelections,
+      input.maxSelections !== undefined ? input.maxSelections : variant.maxSelections
     )
     if (input.sku !== undefined) {
       await this.assertUniqueVariantSkus(db, variant.productId, [input.sku], variantId)
@@ -1262,6 +1314,14 @@ export class ProductsService {
     if (input.compareAtPrice !== undefined) values.compareAtPrice = input.compareAtPrice ?? null
     if (input.unlimited !== undefined) values.unlimited = input.unlimited
     if (input.image !== undefined) values.image = input.image ?? null
+    if (input.name !== undefined) values.name = input.name || null
+    if (input.nameAr !== undefined) values.nameAr = input.nameAr || null
+    if (input.required !== undefined) values.required = input.required
+    if (input.minSelections !== undefined) values.minSelections = input.minSelections
+    if (input.maxSelections !== undefined) values.maxSelections = input.maxSelections
+    if (input.buttonStyle !== undefined) {
+      values.buttonStyle = (input.buttonStyle || null) as NewProductVariant['buttonStyle']
+    }
 
     if (Object.keys(values).length === 0) return ok(variant)
 

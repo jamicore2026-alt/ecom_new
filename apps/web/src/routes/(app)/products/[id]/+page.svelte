@@ -20,11 +20,14 @@
 	let editVariant = $state<ProductVariant | null>(null)
 	let variantModal = $state(false)
 
-	// variant form
-	let vSku = $state('')
-	let vPrice = $state('')
-	let vCompareAt = $state('')
-	let vInventory = $state('0')
+	// variant form (3-screen variant UX: definition fields live here; pricing
+	// and stock stay on the product default / inventory flows)
+	let vName = $state('')
+	let vNameAr = $state('')
+	let vRequired = $state(false)
+	let vMin = $state('')
+	let vMax = $state('')
+	let vButtonStyle = $state('')
 	let vUnlimited = $state(false)
 	let vImage = $state('')
 	let optionValues = $state<Array<{ key: string; value: string }>>([{ key: '', value: '' }])
@@ -91,10 +94,12 @@
 
 	function openAddVariant() {
 		editVariant = null
-		vSku = ''
-		vPrice = product ? String(product.price) : ''
-		vCompareAt = ''
-		vInventory = '0'
+		vName = ''
+		vNameAr = ''
+		vRequired = false
+		vMin = ''
+		vMax = ''
+		vButtonStyle = ''
 		vUnlimited = false
 		vImage = ''
 		optionValues = [{ key: '', value: '' }]
@@ -104,10 +109,12 @@
 
 	function openEditVariant(v: ProductVariant) {
 		editVariant = v
-		vSku = v.sku ?? ''
-		vPrice = String(v.price)
-		vCompareAt = v.compareAtPrice != null ? String(v.compareAtPrice) : ''
-		vInventory = String(v.inventory)
+		vName = v.name ?? ''
+		vNameAr = v.nameAr ?? ''
+		vRequired = v.required ?? false
+		vMin = v.minSelections != null ? String(v.minSelections) : ''
+		vMax = v.maxSelections != null ? String(v.maxSelections) : ''
+		vButtonStyle = v.buttonStyle ?? ''
 		vUnlimited = v.unlimited ?? false
 		vImage = v.image ?? ''
 		optionValues = Object.entries(v.optionValues ?? {}).map(([key, value]) => ({ key, value }))
@@ -121,6 +128,11 @@
 		vSaving = true
 		vFieldErrors = {}
 		try {
+			const min = vMin.trim() === '' ? null : Number(vMin)
+			const max = vMax.trim() === '' ? null : Number(vMax)
+			if (min !== null && max !== null && min > max) {
+				throw { message: 'Minimum selections cannot exceed maximum selections' }
+			}
 			const ov: Record<string, string> = {}
 			for (const row of optionValues) {
 				if (row.key.trim()) ov[row.key.trim()] = row.value.trim()
@@ -130,12 +142,14 @@
 				if (row.key.trim() && row.value.trim()) ovAr[row.key.trim()] = row.value.trim()
 			}
 			const body: Record<string, unknown> = {
-				sku: vSku || undefined,
+				name: vName.trim() || undefined,
+				nameAr: vNameAr.trim() || undefined,
+				required: vRequired,
+				minSelections: min,
+				maxSelections: max,
+				buttonStyle: vButtonStyle || undefined,
 				optionValues: ov,
 				optionValuesAr: ovAr,
-				price: vPrice ? Number(vPrice) : undefined,
-				compareAtPrice: vCompareAt ? Number(vCompareAt) : undefined,
-				inventory: Number(vInventory || 0),
 				unlimited: vUnlimited,
 				image: vImage || undefined
 			}
@@ -396,9 +410,6 @@
 								<thead>
 									<tr class="border-b border-outline-variant text-left text-xs font-medium uppercase tracking-wide text-secondary">
 										<th class="px-5 py-3">Options</th>
-										<th class="px-3 py-3">SKU</th>
-										<th class="px-3 py-3">Price</th>
-										<th class="px-3 py-3">Inventory</th>
 										<th class="px-5 py-3 text-right">Actions</th>
 									</tr>
 								</thead>
@@ -406,30 +417,25 @@
 									{#each product.variants as v (v.id)}
 										<tr class="border-b border-outline-variant hover:bg-surface-container-low">
 											<td class="px-5 py-3">
-												{#if v.image}
-													<img src={v.image} alt="" class="mr-2 inline h-8 w-8 rounded object-cover" onerror={handleImageError} />
+												{#if v.name || v.nameAr}
+													<p class="font-medium text-on-surface">
+														{v.name ?? Object.keys(v.optionValues ?? {}).join(' / ') ?? 'Default'}
+														{#if v.nameAr}<span class="text-secondary" dir="auto"> · {v.nameAr}</span>{/if}
+													</p>
 												{/if}
 												{#if Object.keys(v.optionValues ?? {}).length}
-													<span class="text-on-surface-variant">
-														{Object.entries(v.optionValues).map(([k, val]) => `${k}: ${val}`).join(', ')}
-													</span>
-													{#if Object.keys(v.optionValuesAr ?? {}).length}
-														<br />
-														<span class="text-secondary" dir="auto">
-															{Object.entries(v.optionValuesAr).map(([k, val]) => `${k}: ${val}`).join(', ')}
-														</span>
+													<p class="mt-0.5 text-sm text-on-surface-variant">
+														{Object.keys(v.optionValues).join(', ')}
+													</p>
+													{#if v.required}
+														<p class="mt-0.5 text-xs text-secondary">
+															Required{#if v.minSelections != null || v.maxSelections != null}
+																{` · ${v.minSelections ?? '∞'}–${v.maxSelections ?? '∞'}`}
+															{/if}
+														</p>
 													{/if}
-												{:else}
+												{:else if !(v.name || v.nameAr)}
 													<span class="text-secondary">Default</span>
-												{/if}
-											</td>
-											<td class="px-3 py-3 text-on-surface-variant">{v.sku ?? '—'}</td>
-											<td class="px-3 py-3 font-medium">{currency(v.price)}</td>
-											<td class="px-3 py-3">
-												{#if v.unlimited}
-													<span class="inline-flex items-center gap-1 rounded-full bg-info/10 px-2 py-0.5 text-xs font-medium text-info ring-1 ring-inset ring-info/30">∞ Unlimited</span>
-												{:else}
-													<span class:font-semibold={true} class:text-error={v.inventory === 0}>{number(v.inventory)}</span>
 												{/if}
 											</td>
 											<td class="px-5 py-3 text-right">
@@ -502,25 +508,46 @@
 			}}
 		>
 			<div>
-				<label for="v-sku" class="mb-1 block text-sm font-medium text-on-surface-variant">SKU</label>
-				<input id="v-sku" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vSku} />
+				<label for="v-name" class="mb-1 block text-sm font-medium text-on-surface-variant">Variant Name (English)</label>
+				<input id="v-name" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vName} placeholder="Large, Red, …" />
 			</div>
 
 			<div>
-				<label for="v-price" class="mb-1 block text-sm font-medium text-on-surface-variant">Price</label>
-				<input id="v-price" type="number" step="0.01" min="0" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vPrice} />
+				<label for="v-name-ar" class="mb-1 block text-sm font-medium text-on-surface-variant">Variant Name (Arabic)</label>
+				<input id="v-name-ar" dir="auto" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vNameAr} placeholder="كبير، أحمر، …" />
+			</div>
+
+			<label class="flex items-center gap-2 text-sm text-on-surface-variant">
+				<input type="checkbox" class="h-4 w-4 rounded border-outline-variant" bind:checked={vRequired} />
+				<span>Required selection <span class="text-secondary">(customer must choose this variant)</span></span>
+			</label>
+
+			<div class="grid grid-cols-2 gap-3">
+				<div>
+					<label for="v-min" class="mb-1 block text-sm font-medium text-on-surface-variant">Min selections</label>
+					<input id="v-min" type="number" min="0" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vMin} placeholder="Unlimited" />
+				</div>
+				<div>
+					<label for="v-max" class="mb-1 block text-sm font-medium text-on-surface-variant">Max selections</label>
+					<input id="v-max" type="number" min="1" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vMax} placeholder="Unlimited" />
+				</div>
+			</div>
+			<p class="-mt-2 text-xs text-secondary">Behaves like an add-on selector: Max 1 = pick one option. Blank Min/Max = unlimited picks.</p>
+
+			<div>
+				<label for="v-button-style" class="mb-1 block text-sm font-medium text-on-surface-variant">Button Style</label>
+				<select id="v-button-style" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vButtonStyle}>
+					<option value="">Default</option>
+					<option value="checkbox">Check Box</option>
+					<option value="radio">Radio</option>
+					<option value="number">Number (stepper)</option>
+					<option value="text">Text (free input)</option>
+					<option value="swatch">Swatch</option>
+				</select>
 			</div>
 
 			<div>
-				<label for="v-compare-at" class="mb-1 block text-sm font-medium text-on-surface-variant">Compare-at price</label>
-				<input id="v-compare-at" type="number" step="0.01" min="0" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" bind:value={vCompareAt} />
-			</div>
-
-			<div>
-				<label for="v-inventory" class="mb-1 block text-sm font-medium text-on-surface-variant">Inventory</label>
-				<input id="v-inventory" type="number" min="0" class="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm disabled:bg-surface-container disabled:text-outline" disabled={vUnlimited} bind:value={vInventory} />
-				{#if vFieldErrors.inventory}<p class="mt-1 text-xs text-error">{vFieldErrors.inventory}</p>{/if}
-				<label class="mt-2 flex items-center gap-2 text-sm text-on-surface-variant">
+				<label class="flex items-center gap-2 text-sm text-on-surface-variant">
 					<input type="checkbox" class="h-4 w-4 rounded border-outline-variant" bind:checked={vUnlimited} />
 					<span>Unlimited <span class="text-secondary">(never runs out — quantity box disabled)</span></span>
 				</label>

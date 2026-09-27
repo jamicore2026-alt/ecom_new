@@ -383,6 +383,15 @@ export const productVariants = pgTable(
     sku: varchar('sku', { length: 100 }),
     price: money('price').notNull().default(0),
     compareAtPrice: money('compare_at_price'),
+    /** Merchant-facing variant definition (3-screen variant UX): display
+     *  names, required/optional selection, min/max bounds (NULL = unlimited),
+     *  and the storefront button style for this variant's options. */
+    name: varchar('name', { length: 255 }),
+    nameAr: varchar('name_ar', { length: 255 }),
+    required: boolean('required').notNull().default(false),
+    minSelections: integer('min_selections'),
+    maxSelections: integer('max_selections'),
+    buttonStyle: varchar('button_style', { length: 20 }).$type<OptionType>(),
     inventory: integer('inventory').notNull().default(0),
     /** Tracked-quantity override: when true the variant is always in stock and
      *  `inventory` is advisory (admin qty box is disabled). */

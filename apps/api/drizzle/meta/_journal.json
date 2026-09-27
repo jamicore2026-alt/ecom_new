@@ -351,6 +351,13 @@
       "when": 1790483451371,
       "tag": "0049_inventory_actor",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790484392469,
+      "tag": "0050_variant_definition",
+      "breakpoints": true
     }
   ]
 }

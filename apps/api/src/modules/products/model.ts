@@ -12,7 +12,23 @@ export const variantInput = t.Object({
   compareAtPrice: t.Optional(t.Number({ minimum: 0 })),
   inventory: t.Optional(t.Integer()),
   unlimited: t.Optional(t.Boolean()),
-  image: t.Optional(t.String())
+  image: t.Optional(t.String()),
+  /** Variant display + selection definition (3-screen variant UX). Blank
+   *  min/max = unlimited picks; both set requires min ≤ max. */
+  name: t.Optional(t.String({ maxLength: 255 })),
+  nameAr: t.Optional(t.String({ maxLength: 255 })),
+  required: t.Optional(t.Boolean()),
+  minSelections: t.Optional(t.Union([t.Integer({ minimum: 0 }), t.Null()])),
+  maxSelections: t.Optional(t.Union([t.Integer({ minimum: 1 }), t.Null()])),
+  buttonStyle: t.Optional(
+    t.Union([
+      t.Literal('checkbox'),
+      t.Literal('radio'),
+      t.Literal('number'),
+      t.Literal('text'),
+      t.Literal('swatch')
+    ])
+  )
 })
 
 export const productOptionValueInput = t.Object({
