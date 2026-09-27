@@ -125,7 +125,12 @@
 		<h1 class="text-3xl font-bold tracking-tight text-on-surface">Merchants</h1>
 		<p class="mt-1 text-sm text-secondary">{meta.total} stores on the platform</p>
 	</div>
-	<Button size="sm" onclick={openCreate}><Icon name="add" size="text-[16px]" /> New merchant</Button>
+	<div class="flex flex-wrap gap-2 self-start">
+		<Button size="sm" onclick={openCreate}><Icon name="add" size="text-[16px]" /> New merchant</Button>
+		<a href="/platform/admins" class="inline-flex min-h-9 items-center gap-1 rounded border border-outline-variant px-3 text-sm font-medium text-secondary hover:bg-surface-container-low hover:text-on-surface">
+			<Icon name="manage_accounts" size="text-[16px]" /> Admins
+		</a>
+	</div>
 </div>
 
 <div class="rounded border border-outline-variant bg-surface-container-lowest p-3">

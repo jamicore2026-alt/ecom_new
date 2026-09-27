@@ -64,6 +64,24 @@ export const platformAdmins = pgTable('platform_admins', {
   id: id('id').primaryKey(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  lastLoginAt: tstz('last_login_at'),
+  /** Bumped on disable/password-change to kill all outstanding JWTs. */
+  tokenVersion: integer('token_version').notNull().default(0),
+  /** Opt-in TOTP MFA (mirrors users.mfa_*). */
+  mfaSecret: text('mfa_secret'),
+  mfaEnabled: boolean('mfa_enabled').notNull().default(false),
+  mfaBackupCodes: jsonb('mfa_backup_codes').$type<string[]>().notNull().default([]),
+  createdAt: tstz('created_at').defaultNow().notNull()
+})
+
+/** Revoked platform sessions (logout / admin disable kills outstanding JWTs). */
+export const platformTokenBlacklist = pgTable('platform_token_blacklist', {
+  jti: varchar('jti', { length: 64 }).primaryKey(),
+  adminId: varchar('admin_id', { length: 30 }).references(() => platformAdmins.id, {
+    onDelete: 'cascade'
+  }),
+  expiresAt: tstz('expires_at').notNull(),
   createdAt: tstz('created_at').defaultNow().notNull()
 })
 

@@ -1,6 +1,6 @@
 import { Elysia, t } from 'elysia'
 import jwt from '@elysiajs/jwt'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { PlatformService } from './service'
 import { platformLoginBody, platformStatusBody, platformListQuery, platformIdParams, platformCreateMerchantBody } from './model'
 import { resolveSecret } from '../../plugins/auth'
@@ -69,9 +69,16 @@ export const platformAuth = new Elysia({ name: 'platform-auth' })
       ?.slice(prefix.length)
     if (!token) throw unauthorized('Please sign in')
     const payload = await platformJwt.verify(token)
-    if (!payload || !payload.sub || payload.type !== 'platform') {
+    if (!payload || !payload.sub || payload.type !== 'platform' || !payload.jti) {
       throw unauthorized('Invalid or expired session')
     }
+    // Re-validate the admin row on every request: a disabled/deleted admin or
+    // a bumped token version kills outstanding JWTs immediately (logout and
+    // explicit revocation blacklist individual jtis below).
+    const admin = await PlatformService.getAdminForAuth(String(payload.sub))
+    if (!admin) throw unauthorized('Admin no longer exists')
+    if (Number(payload.ver ?? -1) !== admin.tokenVersion) throw unauthorized('Session has been revoked')
+    if (await PlatformService.isRevoked(String(payload.jti))) throw unauthorized('Session has been revoked')
     // Double-submit CSRF for cookie-authenticated state-changing requests,
     // mirroring the merchant auth baseline.
     const method = request.method.toUpperCase()
@@ -82,7 +89,7 @@ export const platformAuth = new Elysia({ name: 'platform-auth' })
         throw forbidden('Invalid CSRF token')
       }
     }
-    return { platformAdmin: { id: String(payload.sub), email: String(payload.email ?? '') } }
+    return { platformAdmin: { id: admin.id, email: admin.email } }
   })
 
 export const platformModule = new Elysia({ prefix: '/api/platform' })
@@ -95,6 +102,8 @@ export const platformModule = new Elysia({ prefix: '/api/platform' })
         sub: admin.id,
         email: admin.email,
         type: 'platform',
+        jti: randomUUID(),
+        ver: admin.tokenVersion,
         exp: `${SESSION_TTL}s`
       })
       const csrfPair = randomBytes(32).toString('hex')
@@ -110,7 +119,24 @@ export const platformModule = new Elysia({ prefix: '/api/platform' })
   )
   .post(
     '/auth/logout',
-    ({ cookie }) => {
+    async ({ cookie, platformJwt, request }) => {
+      // Best-effort server-side revocation so the JWT dies now, not at exp.
+      try {
+        const raw = request.headers.get('cookie') ?? ''
+        const token = raw
+          .split(';')
+          .map((s) => s.trim())
+          .find((s) => s.startsWith(`${PLATFORM_COOKIE}=`))
+          ?.slice(PLATFORM_COOKIE.length + 1)
+        if (token) {
+          const payload = (await platformJwt.verify(token)) as Record<string, unknown> | false
+          if (payload && typeof payload.jti === 'string') {
+            await PlatformService.revokeToken(payload.jti, String(payload.sub ?? ''))
+          }
+        }
+      } catch {
+        // Logout must succeed even when the token is already unusable.
+      }
       cookie[PLATFORM_COOKIE]?.set(expireCookie)
       cookie[PLATFORM_CSRF_COOKIE]?.set(expireCsrfCookie)
       return ok({ message: 'Signed out' })
@@ -177,5 +203,49 @@ export const platformModule = new Elysia({ prefix: '/api/platform' })
         enabled: t.Boolean()
       }),
       detail: { tags: ['Platform'], summary: 'Toggle a module for a merchant (audited)' }
+    }
+  )
+  .get(
+    '/admins',
+    () => PlatformService.listAdmins(),
+    { detail: { tags: ['Platform'], summary: 'List platform admins' } }
+  )
+  .post(
+    '/admins',
+    ({ body, platformAdmin }) => PlatformService.createAdmin(body, platformAdmin),
+    {
+      body: t.Object({
+        email: t.String({ format: 'email', maxLength: 255 }),
+        password: t.String({ minLength: 12, maxLength: 72 })
+      }),
+      detail: { tags: ['Platform'], summary: 'Create a platform admin (audited, policy-enforced)' }
+    }
+  )
+  .post(
+    '/admins/:id/status',
+    ({ params, body, platformAdmin }) => PlatformService.setAdminStatus(params.id, body.status, platformAdmin),
+    {
+      params: platformIdParams,
+      body: t.Object({ status: t.Union([t.Literal('active'), t.Literal('disabled')]) }),
+      detail: { tags: ['Platform'], summary: 'Enable/disable a platform admin (revokes sessions)' }
+    }
+  )
+  .post(
+    '/admins/:id/revoke',
+    ({ params, platformAdmin }) => PlatformService.revokeAllSessions(params.id, platformAdmin),
+    {
+      params: platformIdParams,
+      detail: { tags: ['Platform'], summary: 'Revoke all sessions of a platform admin' }
+    }
+  )
+  .post(
+    '/auth/password',
+    ({ body, platformAdmin }) => PlatformService.changeOwnPassword(platformAdmin.id, body.oldPassword, body.newPassword),
+    {
+      body: t.Object({
+        oldPassword: t.String({ minLength: 1, maxLength: 255 }),
+        newPassword: t.String({ minLength: 12, maxLength: 72 })
+      }),
+      detail: { tags: ['Platform'], summary: 'Change own password (verifies old, revokes sessions)' }
     }
   )

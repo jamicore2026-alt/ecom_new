@@ -1,13 +1,15 @@
 import { hash } from 'bcryptjs'
-import { sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from './client'
 import { connection } from './client'
 import { platformAdmins } from './schema'
 import { validatePassword } from '../shared/password'
 
 /**
- * Create or reset the platform admin row. Idempotent upsert keyed on email so
- * running it repeatedly (or from tests) can never duplicate accounts.
+ * Create the platform admin row if missing. Idempotent and non-destructive:
+ * an existing row (password, status, MFA) is never touched, so re-running
+ * the seed — or a deploy hook — can neither lock out nor take over the
+ * account. Returns the email.
  *
  * Not part of the merchant seed: `db:seed` restores a fixed demo state and
  * must NOT be able to wipe a real admin row, so this lives as its own script
@@ -30,13 +32,13 @@ export async function ensurePlatformAdmin(opts?: { email?: string; password?: st
     validatePassword(password)
   }
 
-  await db
-    .insert(platformAdmins)
-    .values({ email, passwordHash: await hash(password, 12) })
-    .onConflictDoUpdate({
-      target: platformAdmins.email,
-      set: { passwordHash: sql`excluded.password_hash` }
-    })
+  const [existing] = await db
+    .select({ id: platformAdmins.id })
+    .from(platformAdmins)
+    .where(eq(platformAdmins.email, email))
+  if (existing) return email
+
+  await db.insert(platformAdmins).values({ email, passwordHash: await hash(password, 12) })
 
   return email
 }

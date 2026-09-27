@@ -346,6 +346,17 @@ describe('platform logout', () => {
     const cleared = res.headers.getSetCookie().find((c) => c.startsWith('pd.session='))
     expect(cleared).toBeTruthy()
   })
+
+  it('re-login refreshes the session for later suites', async () => {
+    const res = await base('/api/platform/auth/login', json({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD }))
+    expect(res.status).toBe(200)
+    sessionCookie = cookieOf(res)!
+    const setCookies = res.headers.getSetCookie?.() ?? []
+    const csrfRaw = setCookies.find((c) => c.startsWith('pd.csrf='))
+    csrfToken = csrfRaw?.split(';')[0].slice('pd.csrf='.length) ?? ''
+    sessionCookie = `${sessionCookie}; pd.csrf=${csrfToken}`
+    expect(csrfToken).toBeTruthy()
+  })
 })
 describe('platform auth hardening', () => {
   it('rejects mutations without a CSRF token', async () => {
@@ -380,5 +391,113 @@ describe('platform auth hardening', () => {
     })
     expect(res.status).toBe(400)
     expect((await res.json()).error.code).toBe('WEAK_PASSWORD')
+  })
+})
+
+describe('platform admin lifecycle', () => {
+  const stamp = Date.now()
+  const secondEmail = `second-${stamp}@jamicore.com`
+  const secondPass = 'Second-Pass-123'
+  let secondId = ''
+
+  it('creates a second admin (policy-enforced)', async () => {
+    const res = await base('/api/platform/admins', {
+      ...json({ email: secondEmail, password: secondPass }),
+      headers: mheaders()
+    })
+    expect(res.status).toBe(200)
+    secondId = (await res.json()).data.id
+    expect(secondId).toBeTruthy()
+  })
+
+  it('rejects duplicate admin emails', async () => {
+    const res = await base('/api/platform/admins', {
+      ...json({ email: secondEmail, password: secondPass }),
+      headers: mheaders()
+    })
+    expect(res.status).toBe(409)
+  })
+
+  it('lists admins', async () => {
+    const res = await base('/api/platform/admins', { headers: mheaders() })
+    expect(res.status).toBe(200)
+    const emails = (await res.json()).data.map((a: { email: string }) => a.email)
+    expect(emails).toContain(secondEmail)
+  })
+
+  it('forbids self-disable', async () => {
+    const me = await base('/api/platform/admins', { headers: mheaders() })
+    const mine = ((await me.json()).data as Array<{ id: string; email: string }>).find((a) => a.email === ADMIN_EMAIL)!
+    const res = await base(`/api/platform/admins/${mine.id}/status`, {
+      ...json({ status: 'disabled' }),
+      headers: mheaders()
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('disabling kills outstanding sessions immediately', async () => {
+    const login = await base(
+      '/api/platform/auth/login',
+      json({ email: secondEmail, password: secondPass })
+    )
+    expect(login.status).toBe(200)
+    const victimCookie = cookieOf(login)!
+    const dis = await base(`/api/platform/admins/${secondId}/status`, {
+      ...json({ status: 'disabled' }),
+      headers: mheaders()
+    })
+    expect(dis.status).toBe(200)
+    const gated = await base('/api/platform/merchants', { headers: { cookie: victimCookie } })
+    expect(gated.status).toBe(401)
+  })
+
+  it('revoking sessions forces re-login', async () => {
+    await base(`/api/platform/admins/${secondId}/status`, {
+      ...json({ status: 'active' }),
+      headers: mheaders()
+    })
+    const login = await base(
+      '/api/platform/auth/login',
+      json({ email: secondEmail, password: secondPass })
+    )
+    expect(login.status).toBe(200)
+    const victimCookie = cookieOf(login)!
+    const rev = await base(`/api/platform/admins/${secondId}/revoke`, {
+      method: 'POST',
+      headers: mheaders()
+    })
+    expect(rev.status).toBe(200)
+    const gated = await base('/api/platform/merchants', { headers: { cookie: victimCookie } })
+    expect(gated.status).toBe(401)
+  })
+
+  it('logout blacklists the token', async () => {
+    const login = await base(
+      '/api/platform/auth/login',
+      json({ email: secondEmail, password: secondPass })
+    )
+    const victimCookie = cookieOf(login)!
+    const csrfRaw = (login.headers.getSetCookie?.() ?? []).find((c) => c.startsWith('pd.csrf='))
+    const csrf = csrfRaw?.split(';')[0].slice('pd.csrf='.length) ?? ''
+    const out = await base('/api/platform/auth/logout', {
+      method: 'POST',
+      headers: { cookie: `${victimCookie}; pd.csrf=${csrf}`, 'x-csrf-token': csrf }
+    })
+    expect(out.status).toBe(200)
+    const gated = await base('/api/platform/merchants', { headers: { cookie: victimCookie } })
+    expect(gated.status).toBe(401)
+  })
+
+  it('change password verifies the old one and revokes sessions', async () => {
+    const bad = await base('/api/platform/auth/password', {
+      ...json({ oldPassword: 'wrong-old-pass', newPassword: 'Brand-New-Pass-1' }),
+      headers: mheaders()
+    })
+    expect(bad.status).toBe(401)
+    const weak = await base('/api/platform/auth/password', {
+      ...json({ oldPassword: secondPass, newPassword: 'short' }),
+      headers: mheaders()
+    })
+    expect(weak.status).toBe(400)
   })
 })

@@ -99,5 +99,26 @@ export const platformApi = {
 		envelope<{ module: string; enabled: boolean }>(`/api/platform/merchants/${id}/modules`, {
 			method: 'PUT',
 			body: JSON.stringify({ module, enabled })
+		}),
+	listAdmins: () =>
+		envelope<Array<{ id: string; email: string; status: string; lastLoginAt: string | null; mfaEnabled: boolean; createdAt: string }>>(
+			`/api/platform/admins`
+		),
+	createAdmin: (email: string, password: string) =>
+		envelope<{ id: string; email: string }>(`/api/platform/admins`, {
+			method: 'POST',
+			body: JSON.stringify({ email, password })
+		}),
+	setAdminStatus: (id: string, status: 'active' | 'disabled') =>
+		envelope<{ id: string; email: string; status: string }>(`/api/platform/admins/${id}/status`, {
+			method: 'POST',
+			body: JSON.stringify({ status })
+		}),
+	revokeAdminSessions: (id: string) =>
+		envelope<{ revoked: boolean }>(`/api/platform/admins/${id}/revoke`, { method: 'POST', body: '{}' }),
+	changeOwnPassword: (oldPassword: string, newPassword: string) =>
+		envelope<{ changed: boolean }>(`/api/platform/auth/password`, {
+			method: 'POST',
+			body: JSON.stringify({ oldPassword, newPassword })
 		})
 }

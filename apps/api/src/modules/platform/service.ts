@@ -1,7 +1,8 @@
 import { and, count, desc, eq, ilike } from 'drizzle-orm'
 import { compare, hash, hashSync } from 'bcryptjs'
+import { randomUUID } from 'node:crypto'
 import { db } from '../../database/client'
-import { merchantModules, merchants, outlets, platformAdmins, roles, users } from '../../database/schema'
+import { merchantModules, merchants, outlets, platformAdmins, platformTokenBlacklist, roles, users } from '../../database/schema'
 import { ok } from '../../shared/response'
 import { badRequest, conflict, notFound, unauthorized } from '../../shared/errors'
 import { DEFAULT_MODULES, DEFAULT_ROLES, MODULES, type ModuleId } from '../../shared/types'
@@ -61,12 +62,117 @@ export class PlatformService {
       await loginAttempts.increment(attemptKey(normalized))
       throw unauthorized('Invalid email or password')
     }
+    if (admin.status !== 'active') {
+      await alwaysCompare(password)
+      throw unauthorized('Invalid email or password')
+    }
     await loginAttempts.reset(attemptKey(normalized))
+    await db
+      .update(platformAdmins)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(platformAdmins.id, admin.id))
 
-    return { id: admin.id, email: admin.email }
+    return { id: admin.id, email: admin.email, tokenVersion: admin.tokenVersion }
+  }
+
+  /** Row validation for platformAuth: null when deleted, status gates access. */
+  static async getAdminForAuth(id: string) {
+    const [admin] = await db
+      .select({ id: platformAdmins.id, email: platformAdmins.email, status: platformAdmins.status, tokenVersion: platformAdmins.tokenVersion })
+      .from(platformAdmins)
+      .where(eq(platformAdmins.id, id))
+    if (!admin || admin.status !== 'active') return null
+    return admin
+  }
+
+  /** Blacklist a platform JWT by jti (logout / disable / password change). */
+  static async revokeToken(jti: string, adminId: string, ttlSeconds = 3600) {    await db
+      .insert(platformTokenBlacklist)
+      .values({ jti, adminId, expiresAt: new Date(Date.now() + ttlSeconds * 1000) })
+      .onConflictDoNothing()
+  }
+
+  static async isRevoked(jti: string) {
+    const [row] = await db
+      .select({ jti: platformTokenBlacklist.jti })
+      .from(platformTokenBlacklist)
+      .where(eq(platformTokenBlacklist.jti, jti))
+    return !!row
+  }
+
+  static async listAdmins() {
+    const rows = await db
+      .select({
+        id: platformAdmins.id,
+        email: platformAdmins.email,
+        status: platformAdmins.status,
+        lastLoginAt: platformAdmins.lastLoginAt,
+        mfaEnabled: platformAdmins.mfaEnabled,
+        createdAt: platformAdmins.createdAt
+      })
+      .from(platformAdmins)
+      .orderBy(platformAdmins.createdAt)
+    return ok(rows)
+  }
+
+  static async createAdmin(input: { email: string; password: string }, actor: PlatformActor) {
+    const email = input.email.trim().toLowerCase()
+    validatePassword(input.password)
+    const [existing] = await db.select({ id: platformAdmins.id }).from(platformAdmins).where(eq(platformAdmins.email, email))
+    if (existing) throw conflict('ADMIN_EXISTS', 'A platform admin with this email already exists')
+    const [row] = await db
+      .insert(platformAdmins)
+      .values({ email, passwordHash: await hash(input.password, 12) })
+      .returning({ id: platformAdmins.id, email: platformAdmins.email })
+    // NOTE: not written to audit_logs — rows require a merchant FK and admin
+    // lifecycle has no attributable merchant. Creation is visible via the
+    // returned row; consider a platform-scoped audit trail as follow-up.
+    return ok(row)
+  }
+
+  static async setAdminStatus(id: string, status: 'active' | 'disabled', actor: PlatformActor) {
+    if (id === actor.id) throw badRequest('SELF_CHANGE_FORBIDDEN', 'You cannot change your own status')
+    const [admin] = await db.select().from(platformAdmins).where(eq(platformAdmins.id, id))
+    if (!admin) throw notFound('ADMIN_NOT_FOUND', 'Platform admin not found')
+    if (status === 'disabled') {
+      const actives = await db.select({ id: platformAdmins.id }).from(platformAdmins).where(eq(platformAdmins.status, 'active'))
+      if (actives.length <= 1 && actives[0]?.id === id) {
+        throw badRequest('LAST_ADMIN', 'Cannot disable the last active platform admin')
+      }
+    }
+    const [updated] = await db
+      .update(platformAdmins)
+      .set({ status, tokenVersion: admin.tokenVersion + 1 })
+      .where(eq(platformAdmins.id, id))
+      .returning({ id: platformAdmins.id, email: platformAdmins.email, status: platformAdmins.status })
+    return ok(updated)
+  }
+
+  static async changeOwnPassword(adminId: string, oldPassword: string, newPassword: string) {
+    const [admin] = await db.select().from(platformAdmins).where(eq(platformAdmins.id, adminId))
+    if (!admin || admin.status !== 'active') throw unauthorized('Invalid session')
+    if (!(await compare(oldPassword, admin.passwordHash))) throw unauthorized('Current password is incorrect')
+    validatePassword(newPassword)
+    await db
+      .update(platformAdmins)
+      .set({ passwordHash: await hash(newPassword, 12), tokenVersion: admin.tokenVersion + 1 })
+      .where(eq(platformAdmins.id, adminId))
+    return ok({ changed: true })
+  }
+
+  static async revokeAllSessions(adminId: string, actor: PlatformActor) {
+    if (adminId === actor.id) throw badRequest('SELF_CHANGE_FORBIDDEN', 'Use sign-out for your own sessions')
+    const [admin] = await db.select().from(platformAdmins).where(eq(platformAdmins.id, adminId))
+    if (!admin) throw notFound('ADMIN_NOT_FOUND', 'Platform admin not found')
+    await db
+      .update(platformAdmins)
+      .set({ tokenVersion: admin.tokenVersion + 1 })
+      .where(eq(platformAdmins.id, adminId))
+    return ok({ revoked: true })
   }
 
   static async listMerchants(q: {
+
     status?: string
     search?: string
     page?: string
