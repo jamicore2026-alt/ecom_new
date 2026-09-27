@@ -50,16 +50,34 @@ const sweepAbandonedCarts = () =>
 // deployed database) surfaces as 500s on live traffic. Applying pending
 // migrations at boot keeps every environment self-healing: drizzle skips
 // already-applied entries, so this is a fast no-op on a current database.
-// A migration failure is fatal on purpose — a deploy must visibly fail
-// instead of serving 500s from a half-migrated schema.
+// Failure policy:
+// - connection / corrupt-migration errors → fatal (a deploy must visibly
+//   fail instead of serving 500s from a half-migrated schema).
+// - insufficient_privilege (42501, e.g. CREATE SCHEMA on a locked-down
+//   production role) → boot DEGRADED with a loud remediation message.
+//   New-schema endpoints will 500 until a privileged role runs the
+//   migrations; everything else keeps serving.
 try {
   migrate(db, {
     migrationsFolder: fileURLToPath(new URL('../drizzle', import.meta.url))
   })
   log.info('Database migrations up to date')
 } catch (err) {
-  log.error('Database migration failed — refusing to boot', err)
-  process.exit(1)
+  const code =
+    (err as { cause?: { code?: string } })?.cause?.code ??
+    (err as { code?: string })?.code
+  if (code === '42501') {
+    log.error(
+      'Database migration BLOCKED: this role lacks CREATE privilege (tried CREATE SCHEMA "drizzle"). ' +
+        'Booting DEGRADED — endpoints needing newer columns will 500 until migrations run. ' +
+        'Fix with a privileged role: GRANT CREATE ON DATABASE "<db>" TO "<app_role>"; ' +
+        'or run `bun run db:migrate` as the database owner, then redeploy.',
+      err
+    )
+  } else {
+    log.error('Database migration failed — refusing to boot', err)
+    process.exit(1)
+  }
 }
 
 app.listen(port, () => {
