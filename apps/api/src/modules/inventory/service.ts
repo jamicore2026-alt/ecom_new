@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, gt, ilike, lte, or, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, gt, ilike, inArray, lte, or, sql } from 'drizzle-orm'
 import type { DB } from '../../database/client'
 import {
   categories,
@@ -6,7 +6,9 @@ import {
   merchants,
   notificationSettings,
   products,
-  productVariants
+  productVariants,
+  warehouseInventory,
+  warehouses
 } from '../../database/schema'
 import { makeMeta, parsePagination } from '../../shared/pagination'
 import { ok } from '../../shared/response'
@@ -36,6 +38,40 @@ const variantWithProduct = {
 }
 
 export class InventoryService {
+  /** Attach per-warehouse breakdown to list rows before responding. */
+  private static async withWarehouses<T extends { id: string }>(
+    db: DB,
+    merchantId: string,
+    rows: T[]
+  ): Promise<Array<T & { warehouses: Array<{ id: string; name: string; code: string; quantity: number }> }>> {
+    const map = await this.attachWarehouses(db, merchantId, rows)
+    return rows.map((r) => ({ ...r, warehouses: map.get(r.id) ?? [] }))
+  }
+  private static async attachWarehouses(
+    db: DB,
+    merchantId: string,
+    rows: Array<{ id: string }>
+  ): Promise<Map<string, Array<{ id: string; name: string; code: string; quantity: number }>>> {
+    const ids = [...new Set(rows.map((r) => r.id))]
+    if (ids.length === 0) return new Map()
+    const allocs = await db
+      .select({
+        variantId: warehouseInventory.variantId,
+        warehouseId: warehouseInventory.warehouseId,
+        name: warehouses.name,
+        code: warehouses.code,
+        quantity: warehouseInventory.quantity
+      })
+      .from(warehouseInventory)
+      .innerJoin(warehouses, eq(warehouseInventory.warehouseId, warehouses.id))
+      .where(and(eq(warehouseInventory.merchantId, merchantId), inArray(warehouseInventory.variantId, ids)))
+    const map = new Map<string, Array<{ id: string; name: string; code: string; quantity: number }>>()
+    for (const a of allocs) {
+      if (!map.has(a.variantId)) map.set(a.variantId, [])
+      map.get(a.variantId)!.push({ id: a.warehouseId, name: a.name, code: a.code, quantity: a.quantity })
+    }
+    return map
+  }
   static async list(db: DB, merchantId: string, q: { page?: string; limit?: string; search?: string; status?: string }) {
     const { page, limit, offset } = parsePagination(q)
     const conditions = [eq(products.merchantId, merchantId)]
@@ -64,7 +100,7 @@ export class InventoryService {
       .limit(limit)
       .offset(offset)
 
-    return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
+    return ok({ items: await this.withWarehouses(db, merchantId, rows), meta: makeMeta(page, limit, Number(total)) })
   }
 
   static async lowStock(db: DB, merchantId: string, q: { page?: string; limit?: string }) {
@@ -88,7 +124,7 @@ export class InventoryService {
       .orderBy(sql`${productVariants.inventory} asc`)
       .limit(limit)
       .offset(offset)
-    return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
+    return ok({ items: await this.withWarehouses(db, merchantId, rows), meta: makeMeta(page, limit, Number(total)) })
   }
 
   static async outOfStock(db: DB, merchantId: string, q: { page?: string; limit?: string }) {
@@ -108,7 +144,7 @@ export class InventoryService {
       .orderBy(desc(products.name))
       .limit(limit)
       .offset(offset)
-    return ok({ items: rows, meta: makeMeta(page, limit, Number(total)) })
+    return ok({ items: await this.withWarehouses(db, merchantId, rows), meta: makeMeta(page, limit, Number(total)) })
   }
 
   static async history(
@@ -139,6 +175,8 @@ export class InventoryService {
         afterValue: inventoryLogs.afterValue,
         reason: inventoryLogs.reason,
         reference: inventoryLogs.reference,
+        actorName: inventoryLogs.actorName,
+        warehouseName: warehouses.name,
         createdAt: inventoryLogs.createdAt,
         productId: productVariants.productId,
         sku: productVariants.sku,
@@ -148,6 +186,7 @@ export class InventoryService {
       .from(inventoryLogs)
       .innerJoin(productVariants, eq(inventoryLogs.variantId, productVariants.id))
       .innerJoin(products, eq(productVariants.productId, products.id))
+      .leftJoin(warehouses, eq(inventoryLogs.reference, warehouses.id))
       .where(where)
       .orderBy(desc(inventoryLogs.createdAt))
       .limit(limit)
@@ -293,7 +332,13 @@ export class InventoryService {
     }
   }
 
-  static async adjust(db: DB, merchantId: string, variantId: string, input: { change: number; reason: string }) {
+  static async adjust(
+    db: DB,
+    merchantId: string,
+    variantId: string,
+    input: { change: number; reason: string; warehouseId?: string },
+    actor?: { id?: string; name?: string | null }
+  ) {
     if (input.change === 0) throw badRequest('BAD_REQUEST', 'Change must be non-zero')
 
     const [found] = await db
@@ -302,6 +347,18 @@ export class InventoryService {
       .innerJoin(products, eq(productVariants.productId, products.id))
       .where(and(eq(productVariants.id, variantId), eq(products.merchantId, merchantId)))
     if (!found) throw notFound('NOT_FOUND', 'Variant not found')
+
+    // Optional warehouse leg: the same delta mirrors into that warehouse row
+    // so location detail and the global ledger move together (single tx).
+    let warehouse: { id: string; name: string } | null = null
+    if (input.warehouseId) {
+      const [foundWh] = await db
+        .select({ id: warehouses.id, name: warehouses.name })
+        .from(warehouses)
+        .where(and(eq(warehouses.id, input.warehouseId), eq(warehouses.merchantId, merchantId)))
+      if (!foundWh) throw notFound('WAREHOUSE_NOT_FOUND', 'Warehouse not found')
+      warehouse = foundWh
+    }
 
     // Locked read-modify-write so a concurrent sale can't lose this adjustment.
     const result = await db.transaction(async (tx) => {
@@ -313,6 +370,44 @@ export class InventoryService {
       const afterValue = variant.inventory + input.change
       if (afterValue < 0) {
         throw badRequest('BAD_REQUEST', `Cannot reduce below zero (current stock ${variant.inventory})`)
+      }
+
+      let warehouseAfter: number | null = null
+      if (warehouse) {
+        const [row] = await tx
+          .select()
+          .from(warehouseInventory)
+          .where(
+            and(
+              eq(warehouseInventory.warehouseId, warehouse.id),
+              eq(warehouseInventory.variantId, variantId)
+            )
+          )
+          .for('update')
+        const currentWh = row?.quantity ?? 0
+        if (input.change < 0 && row == null) {
+          throw badRequest('BAD_REQUEST', `No stock of this item in ${warehouse.name}`)
+        }
+        warehouseAfter = currentWh + input.change
+        if (warehouseAfter < 0) {
+          throw badRequest(
+            'BAD_REQUEST',
+            `Cannot reduce below zero in ${warehouse.name} (current stock ${currentWh})`
+          )
+        }
+        if (row) {
+          await tx
+            .update(warehouseInventory)
+            .set({ quantity: warehouseAfter, updatedAt: new Date() })
+            .where(eq(warehouseInventory.id, row.id))
+        } else {
+          await tx.insert(warehouseInventory).values({
+            merchantId,
+            warehouseId: warehouse.id,
+            variantId,
+            quantity: warehouseAfter
+          })
+        }
       }
 
       const [updated] = await tx
@@ -329,11 +424,14 @@ export class InventoryService {
           change: input.change,
           beforeValue: variant.inventory,
           afterValue,
-          reason: input.reason
+          reason: input.reason,
+          reference: warehouse?.id ?? null,
+          actorUserId: actor?.id ?? null,
+          actorName: actor?.name ?? null
         })
         .returning()
 
-      return { updated, log }
+      return { updated, log, warehouseAfter }
     })
 
     emit(merchantId, 'inventory.updated', {

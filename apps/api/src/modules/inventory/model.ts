@@ -7,8 +7,12 @@ export const adjustBody = t.Object({
     purchase: 'purchase',
     return: 'return',
     sale: 'sale',
-    stocktake: 'stocktake'
-  })
+    stocktake: 'stocktake',
+    damage: 'damage',
+    correction: 'correction'
+  }),
+  /** Specific warehouse to move; omitted = merchant-global stock only. */
+  warehouseId: t.Optional(t.String({ maxLength: 30 }))
 })
 
 export const inventoryQuery = t.Object({

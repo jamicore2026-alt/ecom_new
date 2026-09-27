@@ -254,7 +254,7 @@ export class WarehousesService {
     db: DB,
     merchantId: string,
     input: {
-      fromWarehouseId: string
+      fromWarehouseId: string | null
       toWarehouseId: string
       variantId: string
       quantity: number
@@ -281,7 +281,7 @@ export class WarehousesService {
           merchantId,
           kind: 'manual',
           groupKey: null,
-          fromWarehouseId: from.id,
+          fromWarehouseId: from?.id ?? null,
           toWarehouseId: to.id,
           variantId: variant.variantId,
           quantity: input.quantity,
@@ -295,7 +295,7 @@ export class WarehousesService {
     await db.transaction(async (tx) => {
       await this.transferLineTx(tx, merchantId, {
         variant,
-        fromWarehouseId: from.id,
+        fromWarehouseId: from?.id ?? null,
         toWarehouseId: to.id,
         quantity: input.quantity,
         kind: 'manual',
@@ -317,8 +317,10 @@ export class WarehousesService {
     if (row.status !== 'in_transit') {
       throw conflict('BAD_TRANSFER_STATUS', `Only in_transit transfers can be received (current: ${row.status})`)
     }
-    if (!row.fromWarehouseId || !row.toWarehouseId) {
-      throw badRequest('TRANSFER_NO_WAREHOUSES', 'Transfer is missing its warehouses')
+    // Null source = global pool draw (re-validated at receive time); only the
+    // destination is mandatory.
+    if (!row.toWarehouseId) {
+      throw badRequest('TRANSFER_NO_WAREHOUSES', 'Transfer is missing its destination warehouse')
     }
     const variant = await this.resolveTransferVariant(db, merchantId, row.variantId)
 
@@ -326,8 +328,8 @@ export class WarehousesService {
       // Re-lock + re-validate availability at receive time, then move.
       await this.moveStockTx(tx, merchantId, {
         variant,
-        fromWarehouseId: row.fromWarehouseId as string,
-        toWarehouseId: row.toWarehouseId as string,
+        fromWarehouseId: row.fromWarehouseId,
+        toWarehouseId: row.toWarehouseId,
         quantity: row.quantity
       })
       await tx
@@ -371,19 +373,21 @@ export class WarehousesService {
     if (row.status !== 'completed') {
       throw conflict('BAD_TRANSFER_STATUS', `Only completed transfers can be reversed (current: ${row.status})`)
     }
-    if (!row.fromWarehouseId || !row.toWarehouseId) {
-      throw badRequest('TRANSFER_NO_WAREHOUSES', 'Transfer is missing its warehouses')
+    if (!row.toWarehouseId) {
+      throw badRequest('TRANSFER_NO_WAREHOUSES', 'Transfer is missing its destination warehouse')
     }
     const variant = await this.resolveTransferVariant(db, merchantId, row.variantId)
     let reversalId: string | null = null
     await db.transaction(async (tx) => {
-      // Move back: destination -> source. Availability is validated against
-      // the destination's current holdings/pool, so a reversal can fail
-      // with INSUFFICIENT_STOCK if the stock has since been consumed.
+      // Move back: destination -> source. A null source means the stock came
+      // from the global pool, so the reversal credits the pool back.
+      // Availability is validated against the destination's current
+      // holdings/pool, so a reversal can fail with INSUFFICIENT_STOCK if the
+      // stock has since been consumed.
       await this.moveStockTx(tx, merchantId, {
         variant,
-        fromWarehouseId: row.toWarehouseId as string,
-        toWarehouseId: row.fromWarehouseId as string,
+        fromWarehouseId: row.toWarehouseId,
+        toWarehouseId: row.fromWarehouseId,
         quantity: row.quantity
       })
       await tx.update(stockTransfers).set({ status: 'reversed' }).where(eq(stockTransfers.id, id))
@@ -419,7 +423,7 @@ export class WarehousesService {
     db: DB,
     merchantId: string,
     input: {
-      fromWarehouseId: string
+      fromWarehouseId: string | null
       toWarehouseId: string
       items?: Array<{ variantId: string; quantity: number }>
       allStock?: boolean
@@ -428,7 +432,7 @@ export class WarehousesService {
       trackingNumber?: string
     }
   ) {
-    const { from, to } = await this.resolveWarehouses(db, merchantId, input.fromWarehouseId, input.toWarehouseId)
+    const { from, to } = await this.resolveWarehouses(db, merchantId, input.fromWarehouseId ?? null, input.toWarehouseId)
     const items = input.items ?? []
     if (items.length === 0 && !input.allStock) {
       throw badRequest('EMPTY_TRANSFER', 'Provide at least one item or enable "transfer all stock"')
@@ -436,7 +440,7 @@ export class WarehousesService {
 
     let lines: Array<{ variant: TransferVariant; quantity: number }>
     if (input.allStock) {
-      lines = await this.resolveAllStockLines(db, merchantId, from.id, to.id)
+      lines = await this.resolveAllStockLines(db, merchantId, from?.id ?? null, to.id)
       if (lines.length === 0) {
         throw badRequest('EMPTY_TRANSFER', 'There is no stock to transfer from this warehouse')
       }
@@ -463,7 +467,7 @@ export class WarehousesService {
       for (const line of sorted) {
         await this.transferLineTx(tx, merchantId, {
           variant: line.variant,
-          fromWarehouseId: from.id,
+          fromWarehouseId: from?.id ?? null,
           toWarehouseId: to.id,
           quantity: line.quantity,
           kind: 'bulk',
@@ -483,14 +487,19 @@ export class WarehousesService {
     })
   }
 
-  /** Load both warehouses and fail fast if either is missing or foreign. */
-  private static async resolveWarehouses(db: DB, merchantId: string, fromId: string, toId: string) {
-    if (fromId === toId) throw badRequest('SAME_WAREHOUSE', 'Source and destination warehouses must differ')
-    const [from] = await db
-      .select()
-      .from(warehouses)
-      .where(and(eq(warehouses.id, fromId), eq(warehouses.merchantId, merchantId)))
-    if (!from) throw notFound('WAREHOUSE_NOT_FOUND', 'Source warehouse not found')
+  /** Load the destination warehouse always; the source is optional (null =
+   *  unallocated global pool). Fail fast if either provided ID is missing or foreign. */
+  private static async resolveWarehouses(db: DB, merchantId: string, fromId: string | null, toId: string) {
+    if (fromId !== null && fromId === toId) throw badRequest('SAME_WAREHOUSE', 'Source and destination warehouses must differ')
+    let from = null
+    if (fromId !== null) {
+      const [found] = await db
+        .select()
+        .from(warehouses)
+        .where(and(eq(warehouses.id, fromId), eq(warehouses.merchantId, merchantId)))
+      if (!found) throw notFound('WAREHOUSE_NOT_FOUND', 'Source warehouse not found')
+      from = found
+    }
     const [to] = await db
       .select()
       .from(warehouses)
@@ -544,26 +553,30 @@ export class WarehousesService {
   private static async moveStockTx(
     tx: Tx,
     merchantId: string,
-    line: { variant: TransferVariant; fromWarehouseId: string; toWarehouseId: string; quantity: number }
+    line: { variant: TransferVariant; fromWarehouseId: string | null; toWarehouseId: string | null; quantity: number }
   ) {
     // Serialize per-variant moves (including storefront checkout locks) by
     // locking the variant row itself.
-    await tx
-      .select({ id: productVariants.id })
+    const [locked] = await tx
+      .select({ id: productVariants.id, inventory: productVariants.inventory })
       .from(productVariants)
       .where(eq(productVariants.id, line.variant.variantId))
       .for('update')
+    if (!locked) throw notFound('VARIANT_NOT_FOUND', 'Variant not found')
 
-    const [sourceRow] = await tx
-      .select()
-      .from(warehouseInventory)
-      .where(
-        and(
-          eq(warehouseInventory.warehouseId, line.fromWarehouseId),
-          eq(warehouseInventory.variantId, line.variant.variantId)
-        )
-      )
-      .for('update')
+    const [sourceRow] =
+      line.fromWarehouseId === null
+        ? [null]
+        : await tx
+            .select()
+            .from(warehouseInventory)
+            .where(
+              and(
+                eq(warehouseInventory.warehouseId, line.fromWarehouseId),
+                eq(warehouseInventory.variantId, line.variant.variantId)
+              )
+            )
+            .for('update')
 
     let available: number
     if (sourceRow) {
@@ -575,7 +588,7 @@ export class WarehousesService {
         line.variant.variantId,
         line.fromWarehouseId
       )
-      available = Math.max(0, line.variant.globalInventory - otherAllocations)
+      available = Math.max(0, (locked.inventory ?? line.variant.globalInventory) - otherAllocations)
     }
 
     if (available < line.quantity) {
@@ -590,23 +603,38 @@ export class WarehousesService {
         .update(warehouseInventory)
         .set({ quantity: sourceRow.quantity - line.quantity, updatedAt: new Date() })
         .where(eq(warehouseInventory.id, sourceRow.id))
+    } else if (line.fromWarehouseId === null) {
+      // Pool draw: stock leaves the unallocated global pool, so the global
+      // ledger must shrink or the pool math double-counts it.
+      await tx
+        .update(productVariants)
+        .set({ inventory: (locked.inventory ?? 0) - line.quantity })
+        .where(eq(productVariants.id, line.variant.variantId))
     }
 
-    await tx
-      .insert(warehouseInventory)
-      .values({
-        merchantId,
-        warehouseId: line.toWarehouseId,
-        variantId: line.variant.variantId,
-        quantity: line.quantity
-      })
-      .onConflictDoUpdate({
-        target: [warehouseInventory.warehouseId, warehouseInventory.variantId],
-        set: {
-          quantity: sql`${warehouseInventory.quantity} + ${line.quantity}`,
-          updatedAt: new Date()
-        }
-      })
+    if (line.toWarehouseId === null) {
+      // Reversal into the pool: credit the unallocated global ledger back.
+      await tx
+        .update(productVariants)
+        .set({ inventory: (locked.inventory ?? 0) + line.quantity })
+        .where(eq(productVariants.id, line.variant.variantId))
+    } else {
+      await tx
+        .insert(warehouseInventory)
+        .values({
+          merchantId,
+          warehouseId: line.toWarehouseId,
+          variantId: line.variant.variantId,
+          quantity: line.quantity
+        })
+        .onConflictDoUpdate({
+          target: [warehouseInventory.warehouseId, warehouseInventory.variantId],
+          set: {
+            quantity: sql`${warehouseInventory.quantity} + ${line.quantity}`,
+            updatedAt: new Date()
+          }
+        })
+    }
   }
 
   /**
@@ -621,7 +649,7 @@ export class WarehousesService {
     merchantId: string,
     line: {
       variant: TransferVariant
-      fromWarehouseId: string
+      fromWarehouseId: string | null
       toWarehouseId: string
       quantity: number
       kind: 'manual' | 'bulk'
@@ -651,22 +679,28 @@ export class WarehousesService {
     })
   }
 
-  /** Sum of a variant's allocations across every warehouse except `excludedId`. */
+  /** Sum of a variant's allocations across every warehouse except `excludedId`
+   *  (null = no exclusion: the whole allocated total). */
   private static async otherAllocationsTx(
     tx: Tx,
     merchantId: string,
     variantId: string,
-    excludedId: string
+    excludedId: string | null
   ): Promise<number> {
     const [row] = await tx
       .select({ total: sql<number>`coalesce(sum(${warehouseInventory.quantity}), 0)` })
       .from(warehouseInventory)
       .where(
-        and(
-          eq(warehouseInventory.merchantId, merchantId),
-          eq(warehouseInventory.variantId, variantId),
-          ne(warehouseInventory.warehouseId, excludedId)
-        )
+        excludedId === null
+          ? and(
+              eq(warehouseInventory.merchantId, merchantId),
+              eq(warehouseInventory.variantId, variantId)
+            )
+          : and(
+              eq(warehouseInventory.merchantId, merchantId),
+              eq(warehouseInventory.variantId, variantId),
+              ne(warehouseInventory.warehouseId, excludedId)
+            )
       )
     return Number(row?.total ?? 0)
   }
@@ -676,26 +710,31 @@ export class WarehousesService {
   private static async resolveAllStockLines(
     db: DB,
     merchantId: string,
-    fromWarehouseId: string,
+    fromWarehouseId: string | null,
     toWarehouseId: string
   ): Promise<Array<{ variant: TransferVariant; quantity: number }>> {
-    if (fromWarehouseId === toWarehouseId) {
+    if (fromWarehouseId !== null && fromWarehouseId === toWarehouseId) {
       throw badRequest('SAME_WAREHOUSE', 'Source and destination warehouses must differ')
     }
 
-    const sourceRows = await db
-      .select({
-        variantId: warehouseInventory.variantId,
-        quantity: warehouseInventory.quantity
-      })
-      .from(warehouseInventory)
-      .where(
-        and(
-          eq(warehouseInventory.merchantId, merchantId),
-          eq(warehouseInventory.warehouseId, fromWarehouseId),
-          sql`${warehouseInventory.quantity} > 0`
-        )
-      )
+    // Null source = pure pool draw: no warehouse rows move, everything comes
+    // from the unallocated remainder (global minus ALL allocations).
+    const sourceRows =
+      fromWarehouseId === null
+        ? []
+        : await db
+            .select({
+              variantId: warehouseInventory.variantId,
+              quantity: warehouseInventory.quantity
+            })
+            .from(warehouseInventory)
+            .where(
+              and(
+                eq(warehouseInventory.merchantId, merchantId),
+                eq(warehouseInventory.warehouseId, fromWarehouseId),
+                sql`${warehouseInventory.quantity} > 0`
+              )
+            )
 
     const heldVariantIds = sourceRows.map((r) => r.variantId)
 
@@ -728,11 +767,16 @@ export class WarehousesService {
           })
           .from(warehouseInventory)
           .where(
-            and(
-              eq(warehouseInventory.merchantId, merchantId),
-              ne(warehouseInventory.warehouseId, fromWarehouseId),
-              inArray(warehouseInventory.variantId, poolIds)
-            )
+            fromWarehouseId === null
+              ? and(
+                  eq(warehouseInventory.merchantId, merchantId),
+                  inArray(warehouseInventory.variantId, poolIds)
+                )
+              : and(
+                  eq(warehouseInventory.merchantId, merchantId),
+                  ne(warehouseInventory.warehouseId, fromWarehouseId),
+                  inArray(warehouseInventory.variantId, poolIds)
+                )
           )
           .groupBy(warehouseInventory.variantId)
       : []

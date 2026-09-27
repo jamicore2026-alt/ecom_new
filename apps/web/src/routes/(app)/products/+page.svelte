@@ -368,7 +368,7 @@
 				{/each}
 			</div>
 			<div class="hidden overflow-x-auto md:block">
-				<table class="w-full text-left text-sm">
+				<table class="w-full min-w-[960px] text-left text-sm">
 					<thead>
 						<tr class="border-b border-outline-variant font-table-header text-table-header uppercase tracking-wider text-secondary">
 							{#if canWrite()}
@@ -376,16 +376,16 @@
 									<input type="checkbox" class="field-check" checked={selected.length === items.length} onchange={toggleAll} aria-label="Select all products" />
 								</th>
 							{/if}
-							<th class="w-12 px-table-cell-x py-table-cell-y font-semibold"></th>
-						<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.name')}</th>
+						<th class="w-12 px-table-cell-x py-table-cell-y font-semibold">{t('products.image')}</th>
+					<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.name')}</th>
 						<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.sku')}</th>
 						<th class="px-table-cell-x py-table-cell-y font-semibold">
 							<button class="font-semibold uppercase hover:text-on-surface" onclick={() => toggleSort('price')} aria-label="Sort by price">
 								{t('common.price')}{sortArrow('price')}
 							</button>
 						</th>
-						<th class="px-table-cell-x py-table-cell-y font-semibold">Sale</th>
-						<th class="px-table-cell-x py-table-cell-y font-semibold">Visibility</th>
+					<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.sale')}</th>
+					<th class="px-table-cell-x py-table-cell-y font-semibold">{t('products.visibility')}</th>
 						<th class="px-table-cell-x py-table-cell-y font-semibold">
 							<button class="font-semibold uppercase hover:text-on-surface" onclick={() => toggleSort('stock')} aria-label="Sort by stock">
 								{t('common.stock')}{sortArrow('stock')}
@@ -409,24 +409,22 @@
 									</td>
 								{/if}
 								<td class="px-table-cell-x py-table-cell-y">
-									<div class="flex items-center gap-3">
-										<div class="h-9 w-9 shrink-0 overflow-hidden rounded border border-outline-variant bg-surface-container-low">
-											{#if p.primaryImage}
-												<img src={p.primaryImage} alt="" class="h-full w-full object-cover" onerror={handleImageError} />
-											{/if}
-										</div>
-										<div>
-											<a href="/products/{p.id}" class="inline-flex min-h-11 items-center rounded font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{p.name}</a>
-											{#if p.category}
-												<span class="ml-1 text-xs text-outline">· {p.category.name}</span>
-											{/if}
-										</div>
+									<div class="h-9 w-9 shrink-0 overflow-hidden rounded border border-outline-variant bg-surface-container-low">
+										{#if p.primaryImage}
+											<img src={p.primaryImage} alt="" class="h-full w-full object-cover" onerror={handleImageError} />
+										{/if}
 									</div>
+								</td>
+								<td class="px-table-cell-x py-table-cell-y">
+									<a href="/products/{p.id}" class="inline-flex min-h-11 items-center rounded font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{p.name}</a>
+									{#if p.category}
+										<span class="ml-1 text-xs text-outline">· {p.category.name}</span>
+									{/if}
 								</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{p.sku ?? '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface">{currency(p.price)}</td>
 								<td class="px-table-cell-x py-table-cell-y font-mono-label text-mono-label text-on-surface-variant">{p.compareAtPrice != null ? currency(p.compareAtPrice) : '—'}</td>
-								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{p.visibility}</td>
+								<td class="px-table-cell-x py-table-cell-y"><Badge label={p.visibility} /></td>
 								<td class="px-table-cell-x py-table-cell-y">
 									<span class:font-semibold={p.stock > 0} class:text-error={p.stock <= 0 && p.trackInventory} class:text-on-surface-variant={p.stock > 0}>
 										{number(p.stock)}

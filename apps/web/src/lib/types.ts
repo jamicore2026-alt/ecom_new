@@ -89,7 +89,7 @@ export type ProductStatus = 'active' | 'draft' | 'archived'
 export type ProductVisibility = 'both' | 'pos' | 'website'
 export type CouponType = 'percentage' | 'fixed' | 'free_shipping'
 export type PromotionType = 'discount_on_products' | 'buy_x_get_y'
-export type InventoryReason = 'sale' | 'adjustment' | 'purchase' | 'return' | 'cancel' | 'stocktake'
+export type InventoryReason = 'sale' | 'adjustment' | 'purchase' | 'return' | 'cancel' | 'stocktake' | 'damage' | 'correction' | 'production' | 'import'
 export type UserRole = 'owner' | 'admin' | 'staff'
 export type ModuleId = 'commerce' | 'restaurant' | 'pos' | 'kitchen' | 'tables' | 'delivery' | 'inventory' | 'marketing' | 'analytics'
 export type OutletStatus = 'active' | 'inactive' | 'archived'
@@ -377,6 +377,7 @@ export interface InventoryRow {
 	lowStockThreshold: number
 	trackInventory: boolean
 	categoryName: string | null
+	warehouses: Array<{ id: string; name: string; code: string; quantity: number }>
 }
 
 export interface InventoryHistoryRow {
@@ -387,6 +388,8 @@ export interface InventoryHistoryRow {
 	afterValue: number
 	reason: InventoryReason
 	reference: string | null
+	actorName: string | null
+	warehouseName: string | null
 	createdAt: string
 	productId: string
 	sku: string | null

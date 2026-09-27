@@ -27,7 +27,8 @@ const shippingFields = {
 }
 
 const transferBody = t.Object({
-  fromWarehouseId: t.String(),
+  /** Null/omitted = unallocated global pool. */
+  fromWarehouseId: t.Optional(t.Union([t.String(), t.Null()])),
   toWarehouseId: t.String(),
   variantId: t.String(),
   quantity: t.Integer({ minimum: 1 }),
@@ -36,7 +37,8 @@ const transferBody = t.Object({
 })
 
 const bulkTransferBody = t.Object({
-  fromWarehouseId: t.String(),
+  /** Null/omitted = unallocated global pool. */
+  fromWarehouseId: t.Optional(t.Union([t.String(), t.Null()])),
   toWarehouseId: t.String(),
   items: t.Optional(
     t.Array(
@@ -70,8 +72,8 @@ export const warehousesModule = new Elysia({ prefix: '/api' })
   .post('/warehouses', async ({ auth, body }) => WarehousesService.create(auth.db, auth.merchant.id, body), { body: warehouseBody })
   .put('/warehouses/:id', async ({ auth, params, body }) => WarehousesService.update(auth.db, auth.merchant.id, params.id, body), { params: warehouseParams, body: warehouseBody })
   .delete('/warehouses/:id', async ({ auth, params }) => WarehousesService.remove(auth.db, auth.merchant.id, params.id), { params: warehouseParams })
-  .post('/transfers', async ({ auth, body }) => WarehousesService.transfer(auth.db, auth.merchant.id, body), { body: transferBody })
-  .post('/transfers/bulk', async ({ auth, body }) => WarehousesService.transferBulk(auth.db, auth.merchant.id, body), { body: bulkTransferBody })
+  .post('/transfers', async ({ auth, body }) => WarehousesService.transfer(auth.db, auth.merchant.id, { ...body, fromWarehouseId: body.fromWarehouseId ?? null }), { body: transferBody })
+  .post('/transfers/bulk', async ({ auth, body }) => WarehousesService.transferBulk(auth.db, auth.merchant.id, { ...body, fromWarehouseId: body.fromWarehouseId ?? null }), { body: bulkTransferBody })
   .post('/transfers/:id/receive', async ({ auth, params }) => WarehousesService.receiveTransfer(auth.db, auth.merchant.id, params.id), { params: transferParams })
   .post('/transfers/:id/cancel', async ({ auth, params }) => WarehousesService.cancelTransfer(auth.db, auth.merchant.id, params.id), { params: transferParams })
   .post('/transfers/:id/reverse', async ({ auth, params }) =>

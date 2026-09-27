@@ -26,7 +26,9 @@
 
 	let adjustTarget = $state<InventoryRow | null>(null)
 	let adjustChange = $state('1')
-	let adjustReason = $state<'adjustment' | 'purchase' | 'return' | 'sale' | 'stocktake'>('adjustment')
+	let adjustReason = $state<'adjustment' | 'purchase' | 'return' | 'sale' | 'stocktake' | 'damage' | 'correction'>('adjustment')
+	let adjustWarehouseId = $state('')
+	let modalWarehouses = $state<Array<{ id: string; name: string; code: string }>>([])
 	let adjusting = $state(false)
 
 	let valuation = $state<{ skuCount: number; unitCount: number; totalValue: number } | null>(null)
@@ -98,7 +100,8 @@
 		try {
 			await api.post<{ success: boolean }>(`/api/inventory/${adjustTarget.id}/adjust`, {
 				change: Number(adjustChange),
-				reason: adjustReason
+				reason: adjustReason,
+				...(adjustWarehouseId ? { warehouseId: adjustWarehouseId } : {})
 			})
 			toast.success('Inventory adjusted')
 			adjustTarget = null
@@ -107,6 +110,22 @@
 			toast.error((e as Error).message)
 		} finally {
 			adjusting = false
+		}
+	}
+
+	async function openAdjust(it: InventoryRow) {
+		adjustTarget = it
+		adjustChange = '1'
+		adjustReason = 'adjustment'
+		adjustWarehouseId = ''
+		modalWarehouses = it.warehouses?.map((w) => ({ id: w.id, name: w.name, code: w.code })) ?? []
+		if (modalWarehouses.length === 0) {
+			try {
+				const res = await api.get<{ success: boolean; data: { items: Array<{ id: string; name: string; code: string }> } }>('/api/warehouses')
+				modalWarehouses = res.data.items ?? []
+			} catch {
+				modalWarehouses = []
+			}
 		}
 	}
 
@@ -195,6 +214,8 @@
 						</p>
 						<p class="mt-0.5 text-xs text-secondary">
 							<span class="rounded-full bg-secondary/10 px-2 py-0.5">{titleCase(h.reason)}</span>
+							{#if h.warehouseName}<span> · {h.warehouseName}</span>{/if}
+							{#if h.actorName}<span> · {h.actorName}</span>{/if}
 							<span class="text-outline"> · {dateTime(h.createdAt)}</span>
 						</p>
 					</div>
@@ -210,6 +231,8 @@
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Before</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">After</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Reason</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Warehouse</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">By</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">When</th>
 						</tr>
 					</thead>
@@ -228,6 +251,8 @@
 								<td class="px-table-cell-x py-table-cell-y">
 									<span class="rounded-full bg-secondary/10 px-2 py-0.5 text-xs text-secondary">{titleCase(h.reason)}</span>
 								</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{h.warehouseName ?? '—'}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{h.actorName ?? '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y text-secondary" title={dateTimeFull(h.createdAt)}>{dateTime(h.createdAt)}</td>
 							</tr>
 						{/each}
@@ -255,10 +280,13 @@
 								<span class:font-semibold={true} class:text-error={it.inventory === 0} class:text-warning={it.inventory > 0 && it.trackInventory && it.inventory <= it.lowStockThreshold}>
 									{number(it.inventory)} in stock
 								</span>
+								{#if (it.warehouses ?? []).length > 0}
+									<span class="text-outline">· {it.warehouses.map((w) => `${w.code}: ${number(w.quantity)}`).join(' · ')}</span>
+								{/if}
 							</p>
 						</div>
 						{#if canWrite()}
-							<button class="inline-flex min-h-11 shrink-0 items-center rounded px-2 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => { adjustTarget = it; adjustChange = '1'; adjustReason = 'adjustment' }}>Adjust</button>
+							<button class="inline-flex min-h-11 shrink-0 items-center rounded px-2 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openAdjust(it)}>Adjust</button>
 						{/if}
 					</div>
 				{/each}
@@ -272,6 +300,7 @@
 							<th class="px-table-cell-x py-table-cell-y font-semibold">SKU</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Price</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Inventory</th>
+							<th class="px-table-cell-x py-table-cell-y font-semibold">Warehouses</th>
 							<th class="px-table-cell-x py-table-cell-y font-semibold">Status</th>
 							{#if canWrite()}
 								<th class="px-table-cell-x py-table-cell-y text-right font-semibold">Actions</th>
@@ -309,10 +338,21 @@
 										<span class="ml-1 text-xs text-outline">(threshold {it.lowStockThreshold})</span>
 									{/if}
 								</td>
+								<td class="px-table-cell-x py-table-cell-y">
+									{#if (it.warehouses ?? []).length === 0}
+										<span class="text-xs text-outline">Global only</span>
+									{:else}
+										<span class="flex flex-wrap gap-1">
+											{#each it.warehouses as w (w.id)}
+												<span class="rounded-full bg-surface-container px-2 py-0.5 text-xs text-on-surface-variant" title="{w.name}">{w.code}: {number(w.quantity)}</span>
+											{/each}
+										</span>
+									{/if}
+								</td>
 								<td class="px-table-cell-x py-table-cell-y"><Badge label={it.productStatus} /></td>
 								{#if canWrite()}
 									<td class="px-table-cell-x py-table-cell-y text-right">
-										<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => { adjustTarget = it; adjustChange = '1'; adjustReason = 'adjustment' }}>
+										<button class="rounded p-1.5 text-xs font-medium text-primary hover:bg-primary-fixed-dim/40" onclick={() => openAdjust(it)}>
 											Adjust
 										</button>
 									</td>
@@ -343,7 +383,17 @@
 					<option value="return">Return</option>
 					<option value="sale">Sale</option>
 					<option value="stocktake">Stocktake</option>
+					<option value="damage">Damage</option>
+					<option value="correction">Correction</option>
 				</select>
+			</div>
+			<div>
+				<label for="adjust-warehouse" class="field-label">Warehouse</label>
+				<select id="adjust-warehouse" class="field" bind:value={adjustWarehouseId}>
+					<option value="">Global (all locations)</option>
+					{#each modalWarehouses as w (w.id)}<option value={w.id}>{w.name} ({w.code})</option>{/each}
+				</select>
+				<p class="mt-1 text-xs text-secondary">Warehouse moves mirror into global stock in the same step.</p>
 			</div>
 			<div class="flex justify-end gap-2 pt-2">
 				<Button variant="secondary" onclick={() => (adjustTarget = null)}>Cancel</Button>

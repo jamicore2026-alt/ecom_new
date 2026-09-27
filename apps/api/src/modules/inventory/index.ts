@@ -26,7 +26,10 @@ export const inventoryModule = new Elysia({ prefix: '/api' })
   )
   .use(requirePermission('inventory.adjust', 'inventory.manage'))
   .post('/inventory/:variantId/adjust', async ({ params, body, auth, request }) => {
-    const result = await InventoryService.adjust(auth.db, auth.merchant.id, params.variantId, body)
+    const result = await InventoryService.adjust(auth.db, auth.merchant.id, params.variantId, body, {
+      id: auth.user.id,
+      name: auth.user.name ?? null
+    })
     await auditFromRequest(auth, request, {
       action: 'inventory.adjust',
       entityType: 'product',

@@ -141,7 +141,7 @@
 					<h2 class="text-sm font-semibold text-on-surface">Source</h2>
 					<Icon name="route" size="text-[18px]" class="text-primary" />
 				</div>
-				<p class="font-medium text-on-surface">{transfer.sourceName ?? '—'}</p>
+				<p class="font-medium text-on-surface">{transfer.sourceName ?? 'Global pool'}</p>
 				<p class="text-xs text-secondary">{transfer.sourceCode ? `Code ${transfer.sourceCode}` : 'No code'}</p>
 			</Card>
 

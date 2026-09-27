@@ -427,6 +427,11 @@ export const inventoryLogs = pgTable(
     afterValue: integer('after_value').notNull(),
     reason: varchar('reason', { length: 20 }).notNull(),
     reference: varchar('reference', { length: 255 }),
+    /** Who made the change (adjust UI; system paths leave null). */
+    actorUserId: varchar('actor_user_id', { length: 30 }).references(() => users.id, {
+      onDelete: 'set null'
+    }),
+    actorName: varchar('actor_name', { length: 255 }),
     createdAt: tstz('created_at').defaultNow().notNull()
   },
   (t) => [index('inventory_logs_variant_idx').on(t.variantId)]
@@ -1803,12 +1808,12 @@ export const stockTransfers = pgTable(
     /** Ties bulk-transfer rows into one logical operation, so the UI can show
      *  status per batch and the storefront validates atomically. */
     groupKey: varchar('group_key', { length: 64 }),
-    fromWarehouseId: varchar('from_warehouse_id', { length: 30 })
-      .notNull()
-      .references(() => warehouses.id, { onDelete: 'set null' }),
-    toWarehouseId: varchar('to_warehouse_id', { length: 30 })
-      .notNull()
-      .references(() => warehouses.id, { onDelete: 'set null' }),
+    fromWarehouseId: varchar('from_warehouse_id', { length: 30 }).references(() => warehouses.id, {
+      onDelete: 'set null'
+    }),
+    toWarehouseId: varchar('to_warehouse_id', { length: 30 }).references(() => warehouses.id, {
+      onDelete: 'set null'
+    }),
     variantId: varchar('variant_id', { length: 30 })
       .notNull()
       .references(() => productVariants.id, { onDelete: 'cascade' }),

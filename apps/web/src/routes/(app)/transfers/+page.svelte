@@ -65,7 +65,7 @@
 
 	async function loadSourceStock() {
 		sourceStock = {}
-		if (!fFrom) return
+		if (!fFrom || fFrom === '__pool') return
 		try {
 			const inv = await api.get<{ success: boolean; data: { items: WarehouseInventoryRow[] } }>(`/api/warehouses/${fFrom}/inventory`)
 			sourceStock = Object.fromEntries(inv.data.items.map((r) => [r.variantId, r.quantity]))
@@ -95,8 +95,10 @@
 
 	async function openCreate() {
 		showCreate = true
-		fFrom = ''
+		fFrom = '__pool'
 		fTo = ''
+		sourceText = 'Global pool'
+		destText = ''
 		fReasonCode = ''
 		fCarrier = ''
 		fTracking = ''
@@ -125,8 +127,9 @@
 	}
 
 	async function create() {
-		if (!fFrom || !fTo) return toast.error('Select source and destination')
-		if (fFrom === fTo) return toast.error('Source and destination must differ')
+		if (!fTo) return toast.error('Select a destination warehouse')
+		if (fFrom !== '' && fFrom !== '__pool' && fFrom === fTo) return toast.error('Source and destination must differ')
+		const fromId = fFrom === '' || fFrom === '__pool' ? null : fFrom
 		const items = lines
 			.filter((l) => l.variantId)
 			.map((l) => ({ variantId: l.variantId, quantity: Number(l.quantity) || 1 }))
@@ -142,7 +145,7 @@
 			// deferred) instead of the bulk endpoint.
 			if (!fAll && items.length === 1) {
 				await api.post<{ success: boolean }>('/api/transfers', {
-					fromWarehouseId: fFrom,
+					fromWarehouseId: fromId,
 					toWarehouseId: fTo,
 					variantId: items[0].variantId,
 					quantity: items[0].quantity,
@@ -152,8 +155,8 @@
 				toast.success(fDeferred ? 'Deferred transfer created (in transit)' : 'Transfer created')
 			} else {
 				const payload = fAll
-					? { fromWarehouseId: fFrom, toWarehouseId: fTo, allStock: true, ...shipping }
-					: { fromWarehouseId: fFrom, toWarehouseId: fTo, items, ...shipping }
+					? { fromWarehouseId: fromId, toWarehouseId: fTo, allStock: true, ...shipping }
+					: { fromWarehouseId: fromId, toWarehouseId: fTo, items, ...shipping }
 				await api.post<{ success: boolean }>('/api/transfers/bulk', payload)
 				toast.success(fAll ? 'All stock transferred' : `Transfer created (${items.length} item${items.length === 1 ? '' : 's'})`)
 			}
@@ -304,7 +307,7 @@
 										<span class="ml-2 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-info ring-1 ring-inset ring-info/30">Bulk</span>
 									{/if}
 								</td>
-								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{t.sourceName ?? '—'}</td>
+								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{t.sourceName ?? 'Global pool'}</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">{t.destinationName ?? '—'}</td>
 								<td class="px-table-cell-x py-table-cell-y text-on-surface-variant">
 									<a href="/products/{t.productId}" class="inline-block rounded py-1 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center font-medium text-primary hover:bg-primary-fixed-dim/40 hover:text-on-primary-fixed-variant">{itemLabel(t)}</a>
@@ -336,23 +339,33 @@
 	<Modal title="Create transfer" open={true} width="md" onClose={() => (showCreate = false)}>
 		<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); create() }}>
 			<div>
-				<label for="tr-from" class="field-label">Source warehouse</label>
+				<label for="tr-from" class="field-label">Source warehouse <span class="font-normal text-outline">(optional — global pool)</span></label>
 				<select
 					id="tr-from"
 					class="field"
 					bind:value={fFrom}
-					onchange={() => { sourceText = warehouses.find((w) => w.id === fFrom)?.name ?? ''; loadSourceStock() }}
+					onchange={() => {
+						sourceText = fFrom === '__pool' ? 'Global pool' : (warehouses.find((w) => w.id === fFrom)?.name ?? '')
+						if (fTo !== '' && fTo === fFrom) fTo = ''
+						loadSourceStock()
+					}}
 				>
-					<option value="" disabled>Select source</option>
+					<option value="__pool">Global pool (unallocated stock)</option>
 					{#each warehouses as w (w.id)}<option value={w.id}>{w.name} ({w.code})</option>{/each}
 				</select>
+				{#if warehouses.length === 0}
+					<p class="mt-1 text-xs text-secondary">No warehouses yet — transfers draw from the global pool until you add one.</p>
+				{/if}
 			</div>
 			<div>
 				<label for="tr-to" class="field-label">Destination warehouse</label>
 				<select id="tr-to" class="field" bind:value={fTo} onchange={() => (destText = warehouses.find((w) => w.id === fTo)?.name ?? '')}>
 					<option value="" disabled>Select destination</option>
-					{#each warehouses as w (w.id)}<option value={w.id} disabled={w.id === fFrom}>{w.name} ({w.code})</option>{/each}
+					{#each warehouses.filter((w) => w.id !== fFrom) as w (w.id)}<option value={w.id}>{w.name} ({w.code})</option>{/each}
 				</select>
+				{#if warehouses.filter((w) => w.id !== fFrom).length === 0}
+					<p class="mt-1 text-xs text-error">Add a destination warehouse first — nothing to transfer into.</p>
+				{/if}
 			</div>
 
 			<label class="flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm text-on-surface-variant max-sm:min-h-11">
