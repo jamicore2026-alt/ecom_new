@@ -26,9 +26,9 @@ export interface ShippingQuote {
 /**
  * Resolve the delivery rate for a subtotal + location + order weight.
  *
- * Priority (PDF-correction): PIN (exact or leading-prefix "*") → city → state →
- * country → default. When the merchant configured hierarchical rules, those
- * govern; otherwise we fall back to the legacy country zones. A configured rule
+ * Priority: PIN (exact or leading-prefix "*") → state → country → default.
+ * (City-level matching was removed; legacy city rows are skipped.) When the
+ * merchant configured hierarchical rules, those govern; otherwise we fall back to the legacy country zones. A configured rule
  * set that matches nothing still falls back to zones so a partially populated
  * rule list can never silently block every order. Returns 0/flat when the store
  * has neither rules nor zones.
@@ -49,7 +49,6 @@ export function computeShippingRate(
   const norm = (v?: string) => v?.trim().toLowerCase() ?? ''
   const country = norm(location?.country)
   const state = norm(location?.state)
-  const city = norm(location?.city)
   const postalCode = (location?.postalCode ?? '').trim()
 
   const rules = (ctx.rules ?? []).filter((r) => r.enabled)
@@ -74,14 +73,13 @@ export function computeShippingRate(
     }
     const matchesArea = (rule: ShippingRule) => {
       if (rule.country && norm(rule.country) !== country) return false
-      if (rule.type === 'city') return city !== '' && norm(rule.city) === city
+      if ((rule.type as string) === 'city') return false // legacy level, retired
       if (rule.type === 'state') return state !== '' && norm(rule.state) === state
       if (rule.type === 'country') return country !== '' && norm(rule.country) === country
       return false
     }
     const rule =
       rules.find((r) => matchesWeight(r) && matchesPin(r)) ??
-      rules.find((r) => r.type === 'city' && matchesWeight(r) && matchesArea(r)) ??
       rules.find((r) => r.type === 'state' && matchesWeight(r) && matchesArea(r)) ??
       rules.find((r) => r.type === 'country' && matchesWeight(r) && matchesArea(r)) ??
       rules.find((r) => r.type === 'default' && matchesWeight(r)) ??

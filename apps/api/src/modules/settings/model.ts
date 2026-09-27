@@ -69,7 +69,7 @@ export const providerBody = t.Object({
 
 const shippingRuleSchema = t.Object({
   id: t.String(),
-  type: t.Enum({ pin: 'pin', city: 'city', state: 'state', country: 'country', default: 'default' }),
+  type: t.Enum({ pin: 'pin', state: 'state', country: 'country', default: 'default' }),
   name: t.String(),
   rate: t.Number({ minimum: 0 }),
   enabled: t.Boolean(),

@@ -97,6 +97,7 @@ export const en: Record<string, string> = {
 	'checkout.phone': 'Phone',
 	'checkout.city': 'City',
 	'checkout.state': 'State / Province',
+	'checkout.selectState': 'Select state…',
 	'checkout.postalCode': 'Postal code',
 	'checkout.country': 'Country',
 	'checkout.notes': 'Order notes (optional)',

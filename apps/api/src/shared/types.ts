@@ -239,15 +239,18 @@ export const DEFAULT_CHECKOUT_REQUIRED_FIELDS: CheckoutFieldRequirements = {
 }
 
 /** Hierarchical shipping-rate rule. Precedence at lookup time:
- *  postalCode (pin, prefix-wildcard) > city > state > country > default. */
-export type ShippingRuleType = 'pin' | 'city' | 'state' | 'country' | 'default'
+ *  postalCode (pin, prefix-wildcard) > state > country > default.
+ *  (`city` level removed: legacy rows keep the field for reads, the engine
+ *  and validation ignore it.) */
+export type ShippingRuleType = 'pin' | 'state' | 'country' | 'default'
 export interface ShippingRule {
   id: string
   name: string
-  type: ShippingRuleType
+  type: ShippingRuleType | 'city'
   /** ISO 2-letter code; used for type=country (and required context for lower levels). */
   country?: string
   state?: string
+  /** Legacy only — city-level matching was removed (kept for reading old rows). */
   city?: string
   /** Exact PIN or prefix wildcard (e.g. "1100*"). Used for type=pin. */
   postalCode?: string

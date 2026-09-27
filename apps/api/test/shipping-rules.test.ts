@@ -31,41 +31,53 @@ describe('computeShippingRate (hierarchical rules)', () => {
       zones: [],
       freeAt: 0,
       rules: [
-        rule({ id: '1', name: 'City', type: 'city', city: 'salmiya', rate: 3, enabled: true }),
+        rule({ id: '1', name: 'Hawalli', type: 'state', state: 'hawalli', rate: 3, enabled: true }),
         rule({ id: '2', name: 'Default', type: 'default', rate: 9, enabled: true })
       ]
     }
-    expect(computeShippingRate(ctx, 10, { country: 'KW', city: 'hawally' })).toEqual({ method: 'Default', rate: 9 })
+    expect(computeShippingRate(ctx, 10, { country: 'KW', state: 'salmiya' })).toEqual({ method: 'Default', rate: 9 })
   })
 
-  it('prefers city over default', () => {
+  it('prefers state over default', () => {
     const ctx = {
       zones: [],
       freeAt: 0,
       rules: [
-        rule({ id: '1', name: 'City', type: 'city', city: 'salmiya', rate: 3, enabled: true }),
+        rule({ id: '1', name: 'Hawalli', type: 'state', state: 'salmiya', rate: 3, enabled: true }),
         rule({ id: '2', name: 'Default', type: 'default', rate: 9, enabled: true })
       ]
     }
-    expect(computeShippingRate(ctx, 10, { country: 'KW', city: 'salmiya' })).toEqual({ method: 'City', rate: 3 })
+    expect(computeShippingRate(ctx, 10, { country: 'KW', state: 'salmiya' })).toEqual({ method: 'Hawalli', rate: 3 })
   })
 
-  it('prefers pin over city when the pin matches a prefix wildcard', () => {
+  it('skips legacy city-level rules', () => {
+    const ctx = {
+      zones: [],
+      freeAt: 0,
+      rules: [
+        { id: '1', name: 'City', type: 'city', city: 'salmiya', rate: 3, enabled: true } as unknown as ShippingRule,
+        rule({ id: '2', name: 'Default', type: 'default', rate: 9, enabled: true })
+      ]
+    }
+    expect(computeShippingRate(ctx, 10, { country: 'KW', city: 'salmiya' })).toEqual({ method: 'Default', rate: 9 })
+  })
+
+  it('prefers pin over state when the pin matches a prefix wildcard', () => {
     const ctx = {
       zones: [],
       freeAt: 0,
       rules: [
         rule({ id: '1', name: 'Salmiya block', type: 'pin', postalCode: '1100*', rate: 2 }),
-        rule({ id: '2', name: 'Salmiya city', type: 'city', city: 'salmiya', rate: 3 }),
+        rule({ id: '2', name: 'Hawalli state', type: 'state', state: 'hawalli', rate: 3 }),
         rule({ id: '3', name: 'Default', type: 'default', rate: 9 })
       ]
     }
-    expect(computeShippingRate(ctx, 10, { postalCode: '110050', city: 'salmiya' })).toEqual({
+    expect(computeShippingRate(ctx, 10, { postalCode: '110050', state: 'hawalli' })).toEqual({
       method: 'Salmiya block',
       rate: 2
     })
-    expect(computeShippingRate(ctx, 10, { postalCode: '120100', city: 'salmiya' })).toEqual({
-      method: 'Salmiya city',
+    expect(computeShippingRate(ctx, 10, { postalCode: '120100', state: 'hawalli' })).toEqual({
+      method: 'Hawalli state',
       rate: 3
     })
   })
@@ -95,13 +107,13 @@ it('applies rule freeAbove', () => {
     const ctx = {
       zones: [],
       freeAt: 0,
-      rules: [rule({ id: '1', name: 'City', type: 'city', city: 'salmiya', rate: 3, freeAbove: 100 })]
+      rules: [rule({ id: '1', name: 'Hawalli', type: 'state', state: 'hawalli', rate: 3, freeAbove: 100 })]
     }
-    expect(computeShippingRate(ctx, 120, { city: 'salmiya' })).toEqual({ method: 'City', rate: 0 })
+    expect(computeShippingRate(ctx, 120, { state: 'hawalli' })).toEqual({ method: 'Hawalli', rate: 0 })
   })
 
   it('falls back to legacy zones when rules are set up but nothing matches', () => {
-    const ctx = { zones, freeAt: 0, rules: [rule({ id: '1', name: 'City', type: 'city', city: 'nowhere', rate: 1 })] }
+    const ctx = { zones, freeAt: 0, rules: [rule({ id: '1', name: 'Nowhere', type: 'state', state: 'nowhere', rate: 1 })] }
     expect(computeShippingRate(ctx, 10, { country: 'KW' })).toEqual({ method: 'Gulf', rate: 6 })
   })
 

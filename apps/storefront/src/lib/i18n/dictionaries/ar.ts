@@ -97,6 +97,7 @@ export const ar: Record<string, string> = {
 	'checkout.phone': 'الهاتف',
 	'checkout.city': 'المدينة',
 	'checkout.state': 'المنطقة / المحافظة',
+	'checkout.selectState': 'اختر المنطقة…',
 	'checkout.postalCode': 'الرمز البريدي',
 	'checkout.country': 'الدولة',
 	'checkout.notes': 'ملاحظات الطلب (اختيارية)',

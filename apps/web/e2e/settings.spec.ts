@@ -57,13 +57,53 @@ test.describe('Settings end-to-end', () => {
 		const card = page.locator('div.rounded-lg.border').last()
 		await card.getByPlaceholder('Rate').fill('2.5')
 		await card.locator('select').first().selectOption('country')
-		await card.getByPlaceholder(/country \(e\.g\. kw\)/i).fill('KW')
+		await card.locator('select').nth(1).selectOption('KW')
+		await expect(card.locator('select').nth(1)).toHaveValue('KW')
 		await page.getByRole('button', { name: /^save$/i }).click()
 		await expect(page.getByText(/shipping settings saved/i)).toBeVisible({ timeout: 20_000 })
 
 		await page.reload()
 		await page.getByRole('button', { name: /^shipping$/i }).click()
 		await expect(page.getByPlaceholder('Rule name').last()).toHaveValue('E2E Kuwait')
-		await expect(page.getByPlaceholder(/country \(e\.g\. kw\)/i).last()).toHaveValue('KW')
+		const reloaded = page.locator('div.rounded-lg.border').last()
+		await expect(reloaded.locator('select').nth(1)).toHaveValue('KW')
+	})
+
+	test('state select auto-populates from the country (geolookup)', async ({ page }) => {
+		await page.goto('/settings')
+		await page.getByRole('button', { name: /^shipping$/i }).click()
+
+		await page.getByRole('button', { name: /add rule/i }).click()
+		await page.getByPlaceholder('Rule name').last().fill('E2E Hawalli')
+		const card = page.locator('div.rounded-lg.border').last()
+		await card.getByPlaceholder('Rate').fill('1.5')
+		await card.locator('select').first().selectOption('state')
+		// Pick country → states auto-populate via /api/countries/:code/states
+		const countrySelect = card.locator('select').nth(1)
+		await countrySelect.selectOption('KW')
+		const stateSelect = card.locator('select').nth(2)
+		await expect(stateSelect).toBeVisible({ timeout: 20_000 })
+		await stateSelect.selectOption({ label: 'Hawalli' })
+		await page.getByRole('button', { name: /^save$/i }).click()
+		await expect(page.getByText(/shipping settings saved/i)).toBeVisible({ timeout: 20_000 })
+
+		await page.reload()
+		await page.getByRole('button', { name: /^shipping$/i }).click()
+		const reloaded = page.locator('div.rounded-lg.border').last()
+		await expect(reloaded.getByPlaceholder('Rule name')).toHaveValue('E2E Hawalli')
+		await expect(reloaded.locator('select').nth(2)).toHaveValue('Hawalli')
+
+		// Cleanup so runs stay idempotent
+		const token = await adminToken()
+		const current = await api('/api/settings/shipping', token)
+		const data = current.data ?? {}
+		await api('/api/settings/shipping', token, {
+			method: 'PUT',
+			body: JSON.stringify({
+				freeShippingThreshold: data.freeShippingThreshold ?? 0,
+				zones: data.zones ?? [],
+				rules: (data.rules ?? []).filter((r: any) => r.name !== 'E2E Hawalli')
+			})
+		})
 	})
 })

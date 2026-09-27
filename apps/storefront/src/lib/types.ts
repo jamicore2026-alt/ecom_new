@@ -7,7 +7,7 @@ export interface StoreMerchant {
 	country: string | null
 }
 
-export type ShippingRuleType = 'pin' | 'city' | 'state' | 'country' | 'default'
+export type ShippingRuleType = 'pin' | 'state' | 'country' | 'default'
 
 export interface ShippingRule {
 	id: string

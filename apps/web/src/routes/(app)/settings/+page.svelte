@@ -61,6 +61,30 @@
 		}>
 	>([])
 
+	// Reference geography for country/state selects (embedded ISO dataset).
+	let geoCountries = $state<Array<{ code: string; name: string }>>([])
+	let geoStates = $state<Record<string, Array<{ code: string; name: string }>>>({})
+	async function loadGeoCountries() {
+		if (geoCountries.length > 0) return
+		try {
+			const res = await api.get<{ success: boolean; data: { items: Array<{ code: string; name: string }> } }>('/api/countries')
+			geoCountries = res.data.items
+		} catch {
+			geoCountries = []
+		}
+	}
+	async function loadRuleStates(i: number) {
+		const code = (rules[i].country ?? '').trim().toUpperCase()
+		rules[i].country = code
+		if (!code || geoStates[code]) return
+		try {
+			const res = await api.get<{ success: boolean; data: { items: Array<{ code: string; name: string }> } }>(`/api/countries/${code}/states`)
+			geoStates[code] = res.data.items
+		} catch {
+			geoStates[code] = []
+		}
+	}
+
 	// taxes
 	let taxes = $state<TaxSettings | null>(null)
 	let autoCalculate = $state(true)
@@ -234,6 +258,8 @@
 		} else if (section === 'shipping') {
 				const res = await api.get<{ success: boolean; data: ShippingSettings }>('/api/settings/shipping')
 				shipping = res.data
+				void loadGeoCountries()
+				shipping = res.data
 				freeShippingThreshold = String(res.data.freeShippingThreshold)
 				zones = res.data.zones.map((z) => ({ name: z.name, countriesText: z.countries.join(', '), rate: String(z.rate) }))
 			rules = (res.data.rules ?? []).map((r) => ({
@@ -251,6 +277,14 @@
 				weightMax: r.weightMax === undefined ? '' : String(r.weightMax),
 				etaDays: r.etaDays === undefined ? '' : String(r.etaDays)
 			}))
+			for (const code of new Set(rules.map((r) => (r.country ?? '').trim().toUpperCase()).filter(Boolean))) {
+				if (!geoStates[code]) {
+					api
+						.get<{ success: boolean; data: { items: Array<{ code: string; name: string }> } }>(`/api/countries/${code}/states`)
+						.then((res) => (geoStates[code] = res.data.items))
+						.catch(() => (geoStates[code] = []))
+				}
+			}
 			} else if (section === 'taxes') {
 				const res = await api.get<{ success: boolean; data: TaxSettings }>('/api/settings/taxes')
 				taxes = res.data
@@ -984,7 +1018,7 @@
 				</form>
 			</Card>
 		{:else if section === 'shipping' && shipping}
-			<Card title="Shipping" headingLevel="h2">
+			<Card title="Local Shipping Rules" headingLevel="h2">
 				<form class="space-y-4" onsubmit={(e) => { e.preventDefault(); saveShipping() }}>
 					<div>
 						<label for="free-shipping-threshold" class="field-label">Free shipping threshold</label>
@@ -1020,14 +1054,13 @@
 							+ Add rule
 						</button>
 						</div>
-						<p class="mb-3 text-[11px] text-outline">Matched in order: PIN → City → State → Country → Default. A PIN ending in * is a prefix match (e.g. 1100*).</p>
+						<p class="mb-3 text-[11px] text-outline">Matched in order: PIN → State → Country → Default. A PIN ending in * is a prefix match (e.g. 1100*).</p>
 						<div class="space-y-3">
 							{#each rules as r, i (r.id)}
 								<div class="rounded-lg border border-outline-variant bg-surface-container-lowest p-3">
 									<div class="flex flex-wrap gap-2">
 										<select class="field w-32" bind:value={rules[i].type}>
 											<option value="pin">PIN</option>
-											<option value="city">City</option>
 											<option value="state">State</option>
 											<option value="country">Country</option>
 											<option value="default">Default</option>
@@ -1041,16 +1074,24 @@
 										<button type="button" aria-label="Remove rule" class="inline-flex min-h-11 min-w-11 items-center justify-center rounded p-1.5 text-sm text-outline hover:bg-error-container/40 hover:text-error" onclick={() => rules = rules.filter((_, j) => j !== i)}>×</button>
 									</div>
 									{#if rules[i].type === 'country'}
-										<input class="field mt-2 w-40 uppercase" placeholder="Country (e.g. KW)" maxlength="3" bind:value={rules[i].country} />
+										<select class="field mt-2 w-64" bind:value={rules[i].country} onchange={() => loadRuleStates(i)}>
+											<option value="">Select country…</option>
+											{#each geoCountries as c (c.code)}<option value={c.code}>{c.name}</option>{/each}
+										</select>
 									{:else if rules[i].type === 'state'}
 										<div class="mt-2 flex gap-2">
-											<input class="field flex-1" placeholder="State" bind:value={rules[i].state} />
-											<input class="field w-40 uppercase" placeholder="Country" maxlength="3" bind:value={rules[i].country} />
-										</div>
-									{:else if rules[i].type === 'city'}
-										<div class="mt-2 flex gap-2">
-											<input class="field flex-1" placeholder="City" bind:value={rules[i].city} />
-											<input class="field w-40 uppercase" placeholder="Country" maxlength="3" bind:value={rules[i].country} />
+											<select class="field w-40" bind:value={rules[i].country} onchange={() => loadRuleStates(i)}>
+												<option value="">Country…</option>
+												{#each geoCountries as c (c.code)}<option value={c.code}>{c.code} — {c.name}</option>{/each}
+											</select>
+											{#if (geoStates[rules[i].country] ?? []).length > 0}
+												<select class="field flex-1" bind:value={rules[i].state}>
+													<option value="">Select state…</option>
+													{#each geoStates[rules[i].country] as s (s.code)}<option value={s.name}>{s.name}</option>{/each}
+												</select>
+											{:else}
+												<input class="field flex-1" placeholder="State" bind:value={rules[i].state} />
+											{/if}
 										</div>
 									{:else if rules[i].type === 'pin'}
 										<div class="mt-2 flex gap-2">

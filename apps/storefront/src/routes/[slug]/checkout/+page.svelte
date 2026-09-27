@@ -36,6 +36,7 @@
 
 	// Restore an abandoned cart via a ?recovery=<code> link, then drop the param.
 	onMount(async () => {
+		void loadCountryNames()
 		const code = page.url.searchParams.get('recovery')
 		if (!code || !slug) return
 		try {
@@ -90,6 +91,34 @@
 
 	const countries = ['SA', 'AE', 'KW', 'QA', 'BH', 'OM', 'US', 'GB', 'DE', 'FR']
 
+	// Reference geography: country names + per-country states for proper
+	// selectable lists (embedded ISO dataset, no external dependency).
+	let countryNames = $state<Record<string, string>>({})
+	let stateOptions = $state<Array<{ code: string; name: string }>>([])
+	async function loadCountryNames() {
+		try {
+			const res = await fetch('/api/countries')
+			const body = await res.json()
+			if (body?.success) {
+				countryNames = Object.fromEntries((body.data.items ?? []).map((c: { code: string; name: string }) => [c.code, c.name]))
+			}
+		} catch {
+			/* names optional — codes still work */
+		}
+	}
+	async function loadStatesFor(code: string) {
+		stateOptions = []
+		if (!code) return
+		try {
+			const res = await fetch(`/api/countries/${encodeURIComponent(code)}/states`)
+			const body = await res.json()
+			if (body?.success) stateOptions = body.data.items ?? []
+		} catch {
+			stateOptions = []
+		}
+	}
+	const countryLabel = (c: string) => (countryNames[c] ? `${c} — ${countryNames[c]}` : c)
+
 	// Countries this merchant actually sells to: explicit shipping-zone lists
 	// win, then the merchant home country (delivery restriction), then a broad
 	// fallback for fully-unrestricted stores.
@@ -131,6 +160,19 @@
 		}
 	})
 
+	// Geolocation-based state lookup: when the country changes, pull its
+	// states; an empty list keeps the free-text input. A stale state value
+	// from another country is cleared once the new list arrives.
+	$effect(() => {
+		const code = country
+		void (async () => {
+			await loadStatesFor(code)
+			if (code === country && region && stateOptions.length > 0 && !stateOptions.some((s) => s.name === region)) {
+				region = ''
+			}
+		})()
+	})
+
 	const selectedIsProvider = $derived(onlineProviders.some((p) => p.id === paymentMethod))
 
 	const lineOptions = (options: Record<string, string>) =>
@@ -145,7 +187,7 @@
 		})),
 		couponCode: couponCode.trim() || undefined,
 		// Preview accepts city/state/postal/country so the quoted shipping
-		// matches pin/city-level rules, not just the country.
+		// matches pin/state-level rules, not just the country.
 		shippingAddress: {
 			country,
 			state: region.trim() || undefined,
@@ -511,13 +553,26 @@ shippingAddress: {
 						</div>
 						<div>
 							<label class="text-sm font-medium text-neutral-700" for="state">{t('checkout.state')}{requiredMark('state')}</label>
-							<input
-								id="state"
-								type="text"
-								bind:value={region}
-								placeholder={t('checkout.state')}
-								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-							/>
+							{#if stateOptions.length > 0}
+								<select
+									id="state"
+									bind:value={region}
+									class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+								>
+									<option value="">{t('checkout.selectState')}</option>
+									{#each stateOptions as s (s.code)}
+										<option value={s.name}>{s.name}</option>
+									{/each}
+								</select>
+							{:else}
+								<input
+									id="state"
+									type="text"
+									bind:value={region}
+									placeholder={t('checkout.state')}
+									class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+								/>
+							{/if}
 						</div>
 						<div>
 							<label class="text-sm font-medium text-neutral-700" for="postalCode">{t('checkout.postalCode')}{requiredMark('postalCode')}</label>
@@ -537,7 +592,7 @@ shippingAddress: {
 								class="mt-1 w-full rounded-lg border border-neutral-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
 							>
 								{#each allowedCountries as c (c)}
-									<option value={c}>{c}</option>
+									<option value={c}>{countryLabel(c)}</option>
 								{/each}
 							</select>
 						</div>
