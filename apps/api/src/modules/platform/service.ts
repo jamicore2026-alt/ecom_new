@@ -13,12 +13,17 @@ import {
   type MerchantStatus
 } from '../../shared/merchant-lifecycle'
 import { AuditService } from '../audit-logs/service'
+import { loginAttempts } from '../auth/login-attempts'
+import { validatePassword } from '../../shared/password'
 
 /** Burn a bcrypt round for unknown emails so timing doesn't leak account existence. */
 const DUMMY_HASH = hashSync('timing-equalizer', 10)
 const alwaysCompare = async (password: string) => {
   await compare(password, DUMMY_HASH)
 }
+
+/** Namespace platform buckets away from merchant login-attempt keys. */
+const attemptKey = (email: string) => `platform:${email}`
 
 export interface PlatformActor {
   id: string
@@ -33,6 +38,17 @@ export interface PlatformActor {
 export class PlatformService {
   static async login(email: string, password: string) {
     const normalized = email.trim().toLowerCase()
+
+    // Account-level lockout mirrors merchant login (5 fails / 15 min).
+    // Keys are namespaced so merchant and platform buckets never collide.
+    // NOTE: login attempts are not written to audit_logs — rows require a
+    // merchant FK and a platform login has no attributable merchant (same
+    // rationale as merchant unknown-email skips).
+    if (await loginAttempts.get(attemptKey(normalized))) {
+      await alwaysCompare(password)
+      throw unauthorized('Invalid email or password')
+    }
+
     const [admin] = await db
       .select()
       .from(platformAdmins)
@@ -41,7 +57,11 @@ export class PlatformService {
     const matches = admin
       ? await compare(password, admin.passwordHash)
       : await alwaysCompare(password).then(() => false)
-    if (!admin || !matches) throw unauthorized('Invalid email or password')
+    if (!admin || !matches) {
+      await loginAttempts.increment(attemptKey(normalized))
+      throw unauthorized('Invalid email or password')
+    }
+    await loginAttempts.reset(attemptKey(normalized))
 
     return { id: admin.id, email: admin.email }
   }
@@ -130,6 +150,7 @@ export class PlatformService {
     const slug = input.slug.trim().toLowerCase()
     const email = input.email.trim().toLowerCase()
     const ownerEmail = input.owner.email.trim().toLowerCase()
+    validatePassword(input.owner.password)
 
     const [slugTaken] = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.slug, slug))
     if (slugTaken) throw conflict('MERCHANT_SLUG_TAKEN', 'A merchant with this slug already exists')

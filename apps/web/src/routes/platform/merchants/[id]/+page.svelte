@@ -30,10 +30,7 @@
 	async function loadModules() {
 		modulesLoading = true
 		try {
-			const res = await fetch(`/api/platform/merchants/${id()}/modules`, { credentials: 'same-origin' })
-			if (!res.ok) throw new Error(`Failed to load modules (${res.status})`)
-			const body = await res.json()
-			modules = body.data
+			modules = await platformApi.listModules(id())
 		} catch (e) {
 			toast.error((e as Error).message)
 		} finally {
@@ -44,16 +41,7 @@
 	async function toggleModule(module: string, enabled: boolean) {
 		toggling = module
 		try {
-			const res = await fetch(`/api/platform/merchants/${id()}/modules`, {
-				method: 'PUT',
-				credentials: 'same-origin',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ module, enabled })
-			})
-			if (!res.ok) {
-				const text = await res.text()
-				throw new Error(text || `Failed to update module (${res.status})`)
-			}
+			await platformApi.setModule(id(), module, enabled)
 			modules = modules.map((m) => (m.module === module ? { ...m, enabled } : m))
 			toast.success(`${module} ${enabled ? 'enabled' : 'disabled'}`)
 		} catch (e) {

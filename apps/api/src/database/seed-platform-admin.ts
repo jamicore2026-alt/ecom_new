@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import { db } from './client'
 import { connection } from './client'
 import { platformAdmins } from './schema'
+import { validatePassword } from '../shared/password'
 
 /**
  * Create or reset the platform admin row. Idempotent upsert keyed on email so
@@ -17,17 +18,21 @@ export async function ensurePlatformAdmin(opts?: { email?: string; password?: st
     .trim()
     .toLowerCase()
   const password = opts?.password ?? process.env.PLATFORM_ADMIN_PASSWORD ?? 'password123'
-  if (
-    process.env.NODE_ENV === 'production' &&
-    !opts?.password &&
-    !process.env.PLATFORM_ADMIN_PASSWORD
-  ) {
+  const usingDefault = !opts?.password && !process.env.PLATFORM_ADMIN_PASSWORD
+  if (process.env.NODE_ENV === 'production' && usingDefault) {
     throw new Error('Refusing to seed the default platform-admin password in production: set PLATFORM_ADMIN_PASSWORD')
+  }
+  if (usingDefault && process.env.NODE_ENV !== 'production') {
+    // Local-dev convenience only: the well-known default intentionally
+    // bypasses the complexity policy. Never rely on this in production.
+    console.warn('Seeding default platform-admin password (dev only, fails password policy)')
+  } else {
+    validatePassword(password)
   }
 
   await db
     .insert(platformAdmins)
-    .values({ email, passwordHash: await hash(password, 10) })
+    .values({ email, passwordHash: await hash(password, 12) })
     .onConflictDoUpdate({
       target: platformAdmins.email,
       set: { passwordHash: sql`excluded.password_hash` }

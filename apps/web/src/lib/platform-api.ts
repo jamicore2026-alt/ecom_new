@@ -2,13 +2,28 @@
 // Unlike $lib/api.ts it never touches the merchant access token (md.access) or
 // the merchant refresh flow. Sessions ride the httpOnly pd.session cookie the
 // API sets; the client just forwards it and lets the /api/* proxy pass it on.
+import { goto } from '$app/navigation'
 import { ApiError } from './api'
 import type { ApiErrorBody } from './types'
+
+function csrfToken(): string | null {
+	if (typeof document === 'undefined') return null
+	const match = document.cookie
+		.split(';')
+		.map((s) => s.trim())
+		.find((s) => s.startsWith('pd.csrf='))
+	return match ? decodeURIComponent(match.slice('pd.csrf='.length)) : null
+}
 
 async function raw(url: string, init: RequestInit): Promise<Response> {
 	const headers = new Headers(init.headers)
 	if (init.body && !(init.body instanceof FormData) && !headers.has('content-type')) {
 		headers.set('content-type', 'application/json')
+	}
+	const method = (init.method ?? 'GET').toUpperCase()
+	if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+		const token = csrfToken()
+		if (token) headers.set('x-csrf-token', token)
 	}
 	return fetch(url, { ...init, headers, credentials: 'same-origin' })
 }
@@ -25,6 +40,9 @@ async function envelope<T>(url: string, init: RequestInit = {}): Promise<T> {
 		}
 	}
 	if (!res.ok) {
+		if (res.status === 401 && typeof window !== 'undefined' && !url.includes('/auth/login')) {
+			window.location.href = '/platform/login'
+		}
 		if (body && typeof body === 'object' && 'error' in (body as object)) {
 			throw new ApiError((body as ApiErrorBody).error, res.status)
 		}
@@ -74,5 +92,12 @@ export const platformApi = {
 		envelope<{
 			merchant: { id: string; name: string; slug: string; email: string; status: string }
 			owner: { id: string; email: string }
-		}>(`/api/platform/merchants`, { method: 'POST', body: JSON.stringify(input) })
+		}>(`/api/platform/merchants`, { method: 'POST', body: JSON.stringify(input) }),
+	listModules: (id: string) =>
+		envelope<Array<{ module: string; enabled: boolean }>>(`/api/platform/merchants/${id}/modules`),
+	setModule: (id: string, module: string, enabled: boolean) =>
+		envelope<{ module: string; enabled: boolean }>(`/api/platform/merchants/${id}/modules`, {
+			method: 'PUT',
+			body: JSON.stringify({ module, enabled })
+		})
 }

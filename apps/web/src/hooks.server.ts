@@ -34,10 +34,11 @@ export const handle: Handle = ({ event, resolve }) => {
 	if (pathname === '/login' && hasSession) redirect(302, '/dashboard')
 
 	const hasPlatform = event.cookies.get(PLATFORM_COOKIE) !== undefined
-	const isPlatformProtected = pathname === '/platform/merchants' || pathname.startsWith('/platform/merchants/')
+	const isPlatformLogin = pathname === '/platform/login'
+	const isPlatformProtected = pathname === '/platform' || pathname.startsWith('/platform/')
 
-	if (isPlatformProtected && !hasPlatform) redirect(302, '/platform/login')
-	if (pathname === '/platform/login' && hasPlatform) redirect(302, '/platform/merchants')
+	if (isPlatformProtected && !isPlatformLogin && !hasPlatform) redirect(302, '/platform/login')
+	if (isPlatformLogin && hasPlatform) redirect(302, '/platform/merchants')
 
 	const locale = event.cookies.get('locale') === 'ar' ? 'ar' : 'en'
 	const dir = locale === 'ar' ? 'rtl' : 'ltr'

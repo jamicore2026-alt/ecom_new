@@ -60,8 +60,8 @@
 	}
 
 	async function submitCreate() {
-		if (!fName.trim() || !fSlug.trim() || !fEmail.trim() || !fOwnerName.trim() || !fOwnerEmail.trim() || fOwnerPassword.length < 10) {
-			toast.error('Fill all required fields (owner password min 10 chars)')
+		if (!fName.trim() || !fSlug.trim() || !fEmail.trim() || !fOwnerName.trim() || !fOwnerEmail.trim() || fOwnerPassword.length < 12) {
+			toast.error('Fill all required fields (owner password min 12 chars: upper, lower + digit)')
 			return
 		}
 		creating = true
@@ -261,8 +261,8 @@
 						<input id="nm-owner-email" type="email" class="field" bind:value={fOwnerEmail} required />
 					</div>
 					<div>
-						<label for="nm-owner-password" class="field-label">Owner password (min 10) *</label>
-						<input id="nm-owner-password" type="password" class="field" bind:value={fOwnerPassword} required minlength={10} autocomplete="new-password" />
+						<label for="nm-owner-password" class="field-label">Owner password (min 12: upper, lower + digit) *</label>
+						<input id="nm-owner-password" type="password" class="field" bind:value={fOwnerPassword} required minlength={12} autocomplete="new-password" />
 					</div>
 				</div>
 			</div>

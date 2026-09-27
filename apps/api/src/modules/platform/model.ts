@@ -30,6 +30,6 @@ export const platformCreateMerchantBody = t.Object({
   owner: t.Object({
     name: t.String({ minLength: 2, maxLength: 255 }),
     email: t.String({ format: 'email', maxLength: 255 }),
-    password: t.String({ minLength: 10, maxLength: 72 })
+    password: t.String({ minLength: 12, maxLength: 72 })
   })
 })

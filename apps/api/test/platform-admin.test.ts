@@ -8,7 +8,7 @@ import { ensurePlatformAdmin } from '../src/database/seed-platform-admin'
 import { AuditService } from '../src/modules/audit-logs/service'
 
 const ADMIN_EMAIL = 'ops@jamicore.com'
-const ADMIN_PASSWORD = 'ops-password-123'
+const ADMIN_PASSWORD = 'Ops-Password-123'
 
 const base = (path: string, init?: RequestInit) =>
   app.handle(new Request(`http://localhost${path}`, init))
@@ -25,8 +25,21 @@ const cookieOf = (res: Response): string | null => {
   return raw?.split(';')[0] ?? null
 }
 
+const csrfOf = (res: Response): string => {
+  const setCookies = res.headers.getSetCookie?.() ?? []
+  const raw = setCookies.find((c) => c.startsWith('pd.csrf='))
+  return raw?.split(';')[0].slice('pd.csrf='.length) ?? ''
+}
+
 let sessionCookie: string
+let csrfToken = ''
 let merchantId: string
+
+const mheaders = () => ({
+  'content-type': 'application/json',
+  cookie: sessionCookie,
+  ...(csrfToken ? { 'x-csrf-token': csrfToken } : {})
+})
 
 beforeAll(async () => {
   await ensurePlatformAdmin({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
@@ -50,6 +63,12 @@ describe('platform auth', () => {
     expect(body.data.email).toBe(ADMIN_EMAIL)
     sessionCookie = cookieOf(res)!
     expect(sessionCookie).toBeTruthy()
+    const setCookies = res.headers.getSetCookie?.() ?? []
+    const csrfRaw = setCookies.find((c) => c.startsWith('pd.csrf='))
+    csrfToken = csrfRaw?.split(';')[0].slice('pd.csrf='.length) ?? ''
+    expect(csrfToken).toBeTruthy()
+    // Send both cookies back like a browser would.
+    sessionCookie = `${sessionCookie}; pd.csrf=${csrfToken}`
   })
 
   it('rejects a bad password', async () => {
@@ -123,7 +142,7 @@ describe('platform status changes', () => {
 
     const res = await base(`/api/platform/merchants/${merchant.id}/status`, {
       ...json({ to: 'suspended', reason: 'Payment fraud flagged by ops' }),
-      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+      headers: mheaders()
     })
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -146,7 +165,7 @@ describe('platform status changes', () => {
     const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     const res = await base(`/api/platform/merchants/${merchant.id}/status`, {
       ...json({ to: 'pending', reason: 'should not be allowed' }),
-      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+      headers: mheaders()
     })
     expect(res.status).toBe(400)
     expect((await res.json()).error.code).toBe('ILLEGAL_TRANSITION')
@@ -156,7 +175,7 @@ describe('platform status changes', () => {
     const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     const res = await base(`/api/platform/merchants/${merchant.id}/status`, {
       ...json({ to: 'suspended', reason: '   ' }),
-      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+      headers: mheaders()
     })
     expect(res.status).toBe(400)
     expect((await res.json()).error.code).toBe('REASON_REQUIRED')
@@ -166,7 +185,7 @@ describe('platform status changes', () => {
     const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     const res = await base(`/api/platform/merchants/${merchant.id}/status`, {
       ...json({ to: 'active', reason: 'abuse claim cleared' }),
-      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+      headers: mheaders()
     })
     // None of 'suspended -> active', 'suspended -> suspended' exist -> illegal/400;
     // a real admin flow would go 'create fresh' or 'archive', proving the state
@@ -205,7 +224,7 @@ describe('platform offboarding', () => {
 
     const cancel = await base(`/api/platform/merchants/${doomed.id}/status`, {
       ...json({ to: 'cancelled', reason: 'merchant requested closure' }),
-      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+      headers: mheaders()
     })
     expect(cancel.status).toBe(200)
     expect((await cancel.json()).data.merchant.usersDisabled).toBe(1)
@@ -215,7 +234,7 @@ describe('platform offboarding', () => {
 
     const archive = await base(`/api/platform/merchants/${doomed.id}/status`, {
       ...json({ to: 'archived', reason: 'retention window elapsed' }),
-      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+      headers: mheaders()
     })
     expect(archive.status).toBe(200)
 
@@ -252,9 +271,9 @@ describe('platform merchant creation', () => {
         slug,
         email: `hq-${stamp}@acme.example.com`,
         currency: 'USD',
-        owner: { name: 'Acme Owner', email: ownerEmail, password: 'sup3rsecretpw' }
+        owner: { name: 'Acme Owner', email: ownerEmail, password: 'Sup3rsecret99' }
       }),
-      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+      headers: mheaders()
     })
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -267,7 +286,7 @@ describe('platform merchant creation', () => {
     // Owner can sign straight in (trialing is operational).
     const login = await base(
       '/api/auth/login',
-      json({ email: ownerEmail, password: 'sup3rsecretpw' })
+      json({ email: ownerEmail, password: 'Sup3rsecret99' })
     )
     expect(login.status).toBe(200)
     expect((await login.json()).data.merchant.slug).toBe(slug)
@@ -289,9 +308,9 @@ describe('platform merchant creation', () => {
         name: 'Acme Clone',
         slug,
         email: `clone-${stamp}@acme.example.com`,
-        owner: { name: 'Clone Owner', email: `clone-${stamp}@acme.example.com`, password: 'sup3rsecretpw' }
+        owner: { name: 'Clone Owner', email: `clone-${stamp}@acme.example.com`, password: 'Sup3rsecret99' }
       }),
-      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+      headers: mheaders()
     })
     expect(res.status).toBe(409)
     expect((await res.json()).error.code).toBe('MERCHANT_SLUG_TAKEN')
@@ -305,7 +324,7 @@ describe('platform merchant creation', () => {
         email: `short-${stamp}@acme.example.com`,
         owner: { name: 'Short Owner', email: `short-${stamp}@acme.example.com`, password: 'tiny' }
       }),
-      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+      headers: mheaders()
     })
     expect(res.status).toBe(400)
   })
@@ -321,10 +340,45 @@ describe('platform logout', () => {
   it('clears the session cookie', async () => {
     const res = await base('/api/platform/auth/logout', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+      headers: mheaders()
     })
     expect(res.status).toBe(200)
     const cleared = res.headers.getSetCookie().find((c) => c.startsWith('pd.session='))
     expect(cleared).toBeTruthy()
+  })
+})
+describe('platform auth hardening', () => {
+  it('rejects mutations without a CSRF token', async () => {
+    const res = await base('/api/platform/merchants', {
+      ...json({ name: 'X', slug: 'x', email: 'x@x.com', owner: { name: 'X', email: 'x@x.com', password: 'Xx1234567890' } }),
+      headers: { 'content-type': 'application/json', cookie: sessionCookie }
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('locks an email after 5 failed logins', async () => {
+    const email = `locked-${Date.now()}@jamicore.com`
+    for (let i = 0; i < 5; i++) {
+      const res = await base('/api/platform/auth/login', json({ email, password: 'wrong-password' }))
+      expect(res.status).toBe(401)
+    }
+    const locked = await base('/api/platform/auth/login', json({ email, password: 'wrong-password' }))
+    expect(locked.status).toBe(401)
+    // Lockout state is per-email; unknown emails lock the same way (no oracle).
+  })
+
+  it('rejects a weak owner password with WEAK_PASSWORD', async () => {
+    const stamp = Date.now()
+    const res = await base('/api/platform/merchants', {
+      ...json({
+        name: 'Weak Pass',
+        slug: `weak-pass-${stamp}`,
+        email: `weak-${stamp}@acme.example.com`,
+        owner: { name: 'Weak Owner', email: `weak-owner-${stamp}@acme.example.com`, password: 'password1234' }
+      }),
+      headers: mheaders()
+    })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('WEAK_PASSWORD')
   })
 })
