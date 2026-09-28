@@ -181,17 +181,15 @@ describe('platform status changes', () => {
     expect((await res.json()).error.code).toBe('REASON_REQUIRED')
   })
 
-  it('re-suspends a subsequent request is still legal via the any -> suspended wildcard', async () => {
+  it('recovers a suspended merchant back to active (appeal path)', async () => {
     const [merchant] = await db.select().from(merchants).where(eq(merchants.slug, 'jamicore-store'))
     const res = await base(`/api/platform/merchants/${merchant.id}/status`, {
       ...json({ to: 'active', reason: 'abuse claim cleared' }),
       headers: mheaders()
     })
-    // None of 'suspended -> active', 'suspended -> suspended' exist -> illegal/400;
-    // a real admin flow would go 'create fresh' or 'archive', proving the state
-    // machine (not the UI) is the source of truth.
-    expect(res.status).toBe(400)
-    expect((await res.json()).error.code).toBe('ILLEGAL_TRANSITION')
+    // suspended -> active is the appeal/recovery path (was illegal before).
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.merchant.status).toBe('active')
   })
 })
 

@@ -99,6 +99,18 @@ export const MERCHANT_LIFECYCLE: LifecycleTransition[] = [
     to: 'suspended',
     trigger: 'platform abuse/admin action',
     requiredEffect: 'immediate access restriction'
+  },
+  {
+    from: 'suspended',
+    to: 'active',
+    trigger: 'appeal approved / issue resolved',
+    requiredEffect: 'restore access'
+  },
+  {
+    from: 'suspended',
+    to: 'cancelled',
+    trigger: 'closure while suspended',
+    requiredEffect: 'stop renewal and preserve retention window'
   }
 ]
 

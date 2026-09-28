@@ -73,6 +73,8 @@ describe('merchant lifecycle state machine (P0-4)', () => {
           'past_due->suspended',
           'active->cancelled',
           'cancelled->archived',
+          'suspended->active',
+          'suspended->cancelled',
           'any->suspended'
         ].sort()
       )
