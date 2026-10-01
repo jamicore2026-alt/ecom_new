@@ -129,29 +129,34 @@
 					</div>
 				</div>
 
-				<nav class="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-stack-comfortable" aria-label={t('nav.main')}>
-					{#each Object.entries(navGroups) as [group, items]}
+				<nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-stack-comfortable" aria-label={t('nav.main')}>
+					{#each Object.entries(navGroups) as [group, items], gi (group)}
 						{@const open = !collapsed[group]}
-						<div class="overflow-hidden rounded-lg border border-transparent transition-colors" class:border-outline-variant={!open && isGroupActive(items)}>
+						{#if gi > 0}
+							<div class="mx-3 border-t border-outline-variant/60" aria-hidden="true"></div>
+						{/if}
+						<div class="overflow-hidden rounded-xl transition-colors" class:bg-surface-container-low={!open && isGroupActive(items)}>
 							<button
 								onclick={() => toggleGroup(group)}
 								aria-expanded={open}
 								aria-controls="nav-group-{group}"
-								class="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-widest transition-colors hover:bg-surface-container-low {isGroupActive(items) ? 'text-primary' : 'text-secondary'}"
+								class="flex min-h-12 w-full items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-surface-container-low {isGroupActive(items) ? 'text-primary' : 'text-on-surface'}"
 							>
-								<Icon name={NAV_GROUP_ICONS[group] ?? 'menu'} size="text-[16px]" />
-								<span class="flex-1 text-start">{t('nav.' + group.toLowerCase())}</span>
-								<span class="rounded-full bg-surface-container px-1.5 py-0.5 text-[10px] font-bold normal-case tracking-normal text-secondary">{items.length}</span>
-								<Icon name="expand_more" size="text-[16px]" class="transition-transform {open ? '' : '-rotate-90 rtl:rotate-90'}" />
+								<span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg {isGroupActive(items) ? 'bg-primary text-on-primary' : 'bg-surface-container text-secondary'}">
+									<Icon name={NAV_GROUP_ICONS[group] ?? 'menu'} size="text-[18px]" />
+								</span>
+								<span class="flex-1 text-start text-[13px] font-bold uppercase tracking-wider">{t('nav.' + group.toLowerCase())}</span>
+								<span class="rounded-full bg-surface-container px-2 py-0.5 text-[11px] font-bold normal-case tracking-normal text-secondary">{items.length}</span>
+								<Icon name="expand_more" size="text-[18px]" class="text-secondary transition-transform {open ? '' : '-rotate-90 rtl:rotate-90'}" />
 							</button>
 							{#if open}
-								<div id="nav-group-{group}" class="space-y-0.5 pb-1 pt-0.5">
+								<div id="nav-group-{group}" class="space-y-0.5 px-1 pb-2 pt-1">
 									{#each items as item}
 										<a
 											href={item.route}
 											onclick={() => (sidebarOpen = false)}
 											title={t(item.key ?? item.label)}
-											class="flex items-center gap-3 rounded border-s-2 px-3 py-2.5 ps-9 text-sm font-medium transition-colors"
+											class="flex items-center gap-3 rounded-lg px-3 py-2.5 ps-4 text-sm font-medium transition-colors border-s-2"
 											class:bg-surface-container={active === item.route || active.startsWith(item.route + '/')}
 											class:text-primary={active === item.route || active.startsWith(item.route + '/')}
 											class:border-primary={active === item.route || active.startsWith(item.route + '/')}
@@ -159,7 +164,7 @@
 											class:text-secondary={!(active === item.route || active.startsWith(item.route + '/'))}
 											class:hover:bg-surface-container-low={!(active === item.route || active.startsWith(item.route + '/'))}
 										>
-											<Icon name={item.icon} size="text-[18px]" />
+											<Icon name={item.icon} size="text-[20px]" />
 											{t(item.key ?? item.label)}
 										</a>
 									{/each}
