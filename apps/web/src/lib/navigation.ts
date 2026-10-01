@@ -85,3 +85,45 @@ export const NAV_GROUP_ICONS: Record<string, string> = {
 
 /** Sidebar order for groups (navGroups from session is a filtered record). */
 export const NAV_GROUP_ORDER = ['General', 'Catalog', 'Marketing', 'Fulfillment', 'Restaurant', 'Insights']
+
+/**
+ * Module definitions for the Zoho-style app launcher (pilot: Customers only).
+ * Each module references existing NAV_ITEMS by route — labels, icons and
+ * permission gating always resolve from there, never duplicated here.
+ */
+export interface AppModule {
+	id: string
+	/** i18n key for the module name. */
+	labelKey: string
+	/** Material Symbols Outlined name. */
+	icon: string
+	/** Member routes; resolved against NAV_ITEMS at render time. */
+	routes: string[]
+}
+
+export const APP_MODULES: AppModule[] = [
+	{
+		id: 'customers',
+		labelKey: 'nav.moduleCustomers',
+		icon: 'contacts',
+		routes: ['/segments', '/loyalty', '/reviews', '/affiliates']
+	}
+]
+
+/** Daily-use routes pinned above the module view (one click away). */
+export const PINNED_ROUTES = ['/dashboard', '/orders', '/pos']
+
+/** Find the module whose member route best matches a pathname (longest match). */
+export function moduleForPath(pathname: string): AppModule | null {
+	let best: AppModule | null = null
+	let bestLen = 0
+	for (const mod of APP_MODULES) {
+		for (const r of mod.routes) {
+			if ((pathname === r || pathname.startsWith(r + '/')) && r.length > bestLen) {
+				best = mod
+				bestLen = r.length
+			}
+		}
+	}
+	return best
+}

@@ -45,6 +45,9 @@ export const ar: Record<string, string> = {
 	'nav.roles': 'الأدوار',
 	'nav.apiKeys': 'مفاتيح API',
 	'nav.modules': 'الوحدات',
+	'nav.moduleCustomers': 'العملاء',
+	'nav.allItems': 'كل العناصر',
+	'nav.launcherTitle': 'تبديل الوحدة',
 	'nav.theme': 'المظهر',
 	'nav.settings': 'الإعدادات',
 

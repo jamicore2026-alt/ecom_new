@@ -3,10 +3,12 @@
 	import { page } from '$app/state'
 	import { goto } from '$app/navigation'
 	import { initials } from '$lib/format'
-	import { NAV_GROUP_ICONS, NAV_GROUP_ORDER } from '$lib/navigation'
+	import { APP_MODULES, NAV_GROUP_ORDER, PINNED_ROUTES, moduleForPath, type NavItem } from '$lib/navigation'
 	import { i18n, t } from '$lib/i18n'
 	import { theme } from '$lib/i18n/theme.svelte'
 	import Icon from '$lib/components/Icon.svelte'
+	import AppLauncher from '$lib/components/AppLauncher.svelte'
+	import Sidebar from '$lib/components/Sidebar.svelte'
 
 	let { children } = $props<{ children?: import('svelte').Snippet }>()
 
@@ -53,6 +55,57 @@
 
 	function toggleGroup(group: string) {
 		collapsed[group] = !collapsed[group]
+	}
+
+	// ---- Module app-switcher (Zoho-style pilot: Customers module) ----
+	let launcherOpen = $state(false)
+	/** Explicit module pin from the launcher; null = derive from the route. */
+	let pinnedModuleId = $state<string | null>(null)
+	/** Explicit "show everything" from the sidebar back link; sticks until the
+	 *  next launcher selection (otherwise exiting on a module route would
+	 *  instantly re-derive the same module). */
+	let showAll = $state(false)
+
+	const allNavItems = $derived.by((): NavItem[] => Object.values(navGroups).flat())
+
+	/** Modules with at least one item visible to this user, in config order. */
+	const launcherModules = $derived.by(() =>
+		APP_MODULES.map((module) => ({
+			module,
+			items: module.routes.flatMap((r) => allNavItems.filter((i) => i.route === r))
+		})).filter((m) => m.items.length > 0)
+	)
+
+	/** Daily-use items, always one click away above the module view. */
+	const pinnedItems = $derived.by(() =>
+		PINNED_ROUTES.flatMap((r) => allNavItems.filter((i) => i.route === r))
+	)
+
+	const activeModule = $derived.by(() => {
+		if (showAll) return null
+		if (pinnedModuleId) return APP_MODULES.find((m) => m.id === pinnedModuleId) ?? null
+		return moduleForPath(active)
+	})
+
+	const activeModuleItems = $derived.by(() => {
+		const mod = activeModule
+		if (!mod) return []
+		const items = allNavItems.filter((i) => mod.routes.includes(i.route))
+		return mod.routes.flatMap((r) => items.filter((i) => i.route === r))
+	})
+
+	// Leaving a pinned module's routes clears the pin (falls back to route view).
+	$effect(() => {
+		if (!pinnedModuleId) return
+		const mod = APP_MODULES.find((m) => m.id === pinnedModuleId)
+		if (mod && !mod.routes.some((r) => active === r || active.startsWith(r + '/'))) {
+			pinnedModuleId = null
+		}
+	})
+
+	function selectModule(id: string | null) {
+		pinnedModuleId = id
+		showAll = id === null
 	}
 
 	function cycleTheme() {
@@ -129,50 +182,18 @@
 					</div>
 				</div>
 
-				<nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-stack-comfortable" aria-label={t('nav.main')}>
-					{#each Object.entries(navGroups) as [group, items], gi (group)}
-						{@const open = !collapsed[group]}
-						{#if gi > 0}
-							<div class="mx-3 border-t border-outline-variant/60" aria-hidden="true"></div>
-						{/if}
-						<div class="overflow-hidden rounded-xl transition-colors" class:bg-surface-container-low={!open && isGroupActive(items)}>
-							<button
-								onclick={() => toggleGroup(group)}
-								aria-expanded={open}
-								aria-controls="nav-group-{group}"
-								class="flex min-h-12 w-full items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-surface-container-low {isGroupActive(items) ? 'text-primary' : 'text-on-surface'}"
-							>
-								<span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg {isGroupActive(items) ? 'bg-primary text-on-primary' : 'bg-surface-container text-secondary'}">
-									<Icon name={NAV_GROUP_ICONS[group] ?? 'menu'} size="text-[18px]" />
-								</span>
-								<span class="flex-1 text-start text-[13px] font-bold uppercase tracking-wider">{t('nav.' + group.toLowerCase())}</span>
-								<span class="rounded-full bg-surface-container px-2 py-0.5 text-[11px] font-bold normal-case tracking-normal text-secondary">{items.length}</span>
-								<Icon name="expand_more" size="text-[18px]" class="text-secondary transition-transform {open ? '' : '-rotate-90 rtl:rotate-90'}" />
-							</button>
-							{#if open}
-								<div id="nav-group-{group}" class="space-y-0.5 px-1 pb-2 pt-1">
-									{#each items as item}
-										<a
-											href={item.route}
-											onclick={() => (sidebarOpen = false)}
-											title={t(item.key ?? item.label)}
-											class="flex items-center gap-3 rounded-lg px-3 py-2.5 ps-4 text-sm font-medium transition-colors border-s-2"
-											class:bg-surface-container={active === item.route || active.startsWith(item.route + '/')}
-											class:text-primary={active === item.route || active.startsWith(item.route + '/')}
-											class:border-primary={active === item.route || active.startsWith(item.route + '/')}
-											class:border-transparent={!(active === item.route || active.startsWith(item.route + '/'))}
-											class:text-secondary={!(active === item.route || active.startsWith(item.route + '/'))}
-											class:hover:bg-surface-container-low={!(active === item.route || active.startsWith(item.route + '/'))}
-										>
-											<Icon name={item.icon} size="text-[20px]" />
-											{t(item.key ?? item.label)}
-										</a>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					{/each}
-				</nav>
+				<Sidebar
+					{navGroups}
+					{collapsed}
+					onToggleGroup={toggleGroup}
+					{isGroupActive}
+					{active}
+					onNavigate={() => (sidebarOpen = false)}
+					{activeModule}
+					moduleItems={activeModuleItems}
+					{pinnedItems}
+					onExitModule={() => selectModule(null)}
+				/>
 
 				<!-- Footer: user + actions -->
 				<div class="mt-auto space-y-1 border-t border-outline-variant p-3">
@@ -221,7 +242,23 @@
 						>
 							<Icon name="menu" size="text-[22px]" />
 						</button>
+						<!-- App launcher -->
+						<button
+							class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-secondary transition-colors hover:bg-surface-container hover:text-on-surface"
+							onclick={() => (launcherOpen = !launcherOpen)}
+							aria-label={t('nav.launcherTitle')}
+							aria-expanded={launcherOpen}
+							title={t('nav.launcherTitle')}
+						>
+							<Icon name="apps" size="text-[22px]" />
+						</button>
 						<span class="truncate text-headline-sm font-bold tracking-tight text-primary">{merchant.name}</span>
+						{#if activeModule}
+							<span class="hidden items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-on-primary sm:inline-flex">
+								<Icon name={activeModule.icon} size="text-[16px]" />
+								{t(activeModule.labelKey)}
+							</span>
+						{/if}
 						{#if session.allowedOutlets.length > 0}
 							<div class="hidden h-6 w-px bg-outline-variant sm:block"></div>
 							{#if session.allowedOutlets.length > 1}
@@ -294,5 +331,12 @@
 				</main>
 			</div>
 		</div>
+		<AppLauncher
+			open={launcherOpen}
+			modules={launcherModules}
+			activeModuleId={activeModule?.id ?? null}
+			onClose={() => (launcherOpen = false)}
+			onSelectModule={selectModule}
+		/>
 	</div>
 {/if}

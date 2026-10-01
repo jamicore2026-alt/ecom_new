@@ -45,6 +45,9 @@ export const en: Record<string, string> = {
 	'nav.roles': 'Roles',
 	'nav.apiKeys': 'API Keys',
 	'nav.modules': 'Modules',
+	'nav.moduleCustomers': 'Customers',
+	'nav.allItems': 'All items',
+	'nav.launcherTitle': 'Switch module',
 	'nav.theme': 'Theme',
 	'nav.settings': 'Settings',
 
